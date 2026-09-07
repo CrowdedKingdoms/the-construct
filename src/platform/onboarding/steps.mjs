@@ -1,0 +1,255 @@
+/**
+ * Self-service onboarding: from "I have an account" to "my app is ready to
+ * play and mod", using only the public API a signed-in developer can call.
+ *
+ * Every step is idempotent and reports whether it changed anything, so the
+ * whole sequence can be re-run after editing the model or the templates, and
+ * so a step that fails half-way can be retried without cleanup. Plain ES
+ * module: the browser Setup wizard and `scripts/setup.mjs` run the same code.
+ *
+ * Tokens: steps 1-3 and the tier grant use the IDENTITY session (org and app
+ * administration). Everything on the game plane (claim policy, model, Studio
+ * common files) uses an APP-SCOPED token minted for the new app — the caller
+ * supplies `enterApp(appId)` which returns a game client holding one.
+ */
+import { constructBlueprints } from '../../../model/blueprints.mjs';
+import { STARTER_TEMPLATES, commonFileFor } from '../../../mods/templates/index.mjs';
+
+/**
+ * Seeding a model twice reports "created 0" the second time; that is the
+ * idempotency working, not a failure. The counts are for the log.
+ */
+
+export const CONSTRUCTOR_TIER_NAME = 'Constructor';
+
+/** Default free-tier keys plus the four Crowdy Studio code keys. */
+export const CONSTRUCTOR_TIER_KEYS = [
+  'access',
+  'teleport',
+  'update_voxel_data',
+  'use_voice_chat',
+  'write_server_code',
+  'run_server_code',
+  'write_client_code',
+  'run_client_code',
+];
+
+export function slugify(value) {
+  return String(value)
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'construct';
+}
+
+/** 1. Use the caller's first org, or create one. */
+export async function ensureOrganization(identity, { name, slug }, log = noop) {
+  const mine = await identity.organizations.mine();
+  const owned = mine.find((m) => Array.isArray(m.permissions) && m.permissions.includes('manage_apps')) ?? mine[0];
+  if (owned) {
+    log(`Using organization "${owned.org.name}" (${owned.org.slug})`);
+    return { org: owned.org, created: false, permissions: owned.permissions ?? [] };
+  }
+  const org = await identity.organizations.create({ name, slug: slugify(slug ?? name) });
+  log(`Created organization "${org.name}" (${org.slug})`);
+  return { org, created: true, permissions: ['manage_apps', 'manage_access_tiers'] };
+}
+
+/** 2. Use the org's app with this slug, or create it on a placeable datacenter. */
+export async function ensureApp(identity, { orgId, orgSlug, name, slug, datacenter }, log = noop) {
+  const existing = await identity.apps.forOrg(orgSlug);
+  const match = existing.find((app) => app.slug === slug) ?? null;
+  if (match) {
+    log(`Using app "${match.name}" (${match.appId})`);
+    return { app: match, created: false };
+  }
+  const placement = await identity.apps.placeableDatacenters();
+  const choices = (placement.datacenters ?? []).filter((dc) => dc.placeable && dc.serving);
+  const pick = datacenter
+    ? choices.find((dc) => dc.code === datacenter)
+    : choices.sort((a, b) => Number(a.appShardCount ?? 0) - Number(b.appShardCount ?? 0))[0];
+  if (!pick) {
+    throw new Error(
+      `No datacenter can place an app right now${datacenter ? ` (asked for "${datacenter}")` : ''}. ` +
+        `Placeable: ${choices.map((dc) => dc.code).join(', ') || 'none'}.`,
+    );
+  }
+  const app = await identity.apps.create({
+    orgId,
+    name,
+    slug,
+    datacenter: pick.code,
+    description: 'Created by The Construct starter.',
+  });
+  log(`Created app "${app.name}" (${app.appId}) in datacenter ${pick.code}`);
+  return { app, created: true };
+}
+
+/**
+ * 3. A "Constructor" access tier carrying the Crowdy Studio code keys, and a
+ * grant of that tier to the developer. Visitors keep the default free tier the
+ * app was created with (access/teleport/voxels/voice), so they can play and
+ * paint but not deploy code on grids they do not own.
+ */
+export async function ensureConstructorTier(identity, { appId, userId }, log = noop) {
+  const tiers = await identity.appAccess.tiers(appId);
+  let tier = tiers.find((t) => t.name === CONSTRUCTOR_TIER_NAME && t.status !== 'archived') ?? null;
+  let created = false;
+  let updated = false;
+  if (!tier) {
+    tier = await identity.appAccess.createTier({
+      appId,
+      name: CONSTRUCTOR_TIER_NAME,
+      isFree: true,
+      isDefault: false,
+      description: 'The Construct developer tier: play, paint, and write SERVER + CLIENT mods.',
+      permissionKeys: CONSTRUCTOR_TIER_KEYS,
+    });
+    created = true;
+    log(`Created access tier "${CONSTRUCTOR_TIER_NAME}" (${tier.tierId})`);
+  } else {
+    const have = new Set((tier.permissionKeys ?? []).map(String));
+    if (!CONSTRUCTOR_TIER_KEYS.every((key) => have.has(key))) {
+      tier = await identity.appAccess.updateTier(tier.tierId, {
+        permissionKeys: [...new Set([...have, ...CONSTRUCTOR_TIER_KEYS])],
+      });
+      updated = true;
+      log(`Updated access tier "${CONSTRUCTOR_TIER_NAME}" with the code keys`);
+    }
+  }
+  await identity.appAccess.grant({
+    appId,
+    userId,
+    tierId: tier.tierId,
+    idempotencyKey: `construct-grant-${appId}-${userId}-${tier.tierId}`,
+  });
+  log(`Granted "${CONSTRUCTOR_TIER_NAME}" to user ${userId}`);
+  return { tier, created, updated };
+}
+
+/** 4. Players may claim an unowned chunk for themselves (the Claim pad). */
+export async function ensureSelfClaimPolicy(game, { appId }, log = noop) {
+  const current = await game.marketplace.gridClaimPolicy({ appId }).catch(() => null);
+  if (current === 'SELF_CLAIM') {
+    log('Grid claim policy already SELF_CLAIM');
+    return { policy: 'SELF_CLAIM', changed: false };
+  }
+  await game.marketplace.setGridClaimPolicy({ appId, policy: 'SELF_CLAIM' });
+  log(`Grid claim policy set to SELF_CLAIM${current ? ` (was ${current})` : ''}`);
+  return { policy: 'SELF_CLAIM', changed: true };
+}
+
+/** 5. Deploy the game model (kit blueprints). Idempotent by construction. */
+export async function deployModel(game, { appId }, log = noop) {
+  const result = await game.kit(appId).deploy(constructBlueprints());
+  const seed = result.seed ?? {};
+  log(
+    `Model deployed: ${seed.containerTypesCreated ?? 0} new types, ` +
+      `${seed.functionsCreated ?? 0} new functions, ${seed.containersCreated ?? 0} new containers, ` +
+      `${result.automations?.length ?? 0} automations upserted`,
+  );
+  for (const warning of result.warnings ?? seed.warnings ?? []) log(`  seed warning: ${warning}`);
+  return result;
+}
+
+const PUBLISH_COMMON = `mutation PublishCommon($input: PublishCrowdyStudioCommonFileInput!) {
+  crowdyStudioCommonPublish(input: $input) { commonFileId slug versionId versionNo }
+}`;
+
+/** 6. Publish the starter templates' entrypoints to the Studio's Common Files. */
+export async function publishStarterFiles(game, { appId }, log = noop) {
+  const existing = await game.crowdyStudio.listCommonFiles({ appId, gridId: '' });
+  const results = [];
+  for (const template of STARTER_TEMPLATES) {
+    const common = commonFileFor(template);
+    const current = existing.find((file) => file.title === common.title && file.content === common.content);
+    if (current) {
+      log(`Common file "${common.slug}" already current`);
+      results.push({ slug: common.slug, status: 'current' });
+      continue;
+    }
+    const data = await game.graphql.query(PUBLISH_COMMON, {
+      input: {
+        appId,
+        slug: common.slug,
+        title: common.title,
+        description: common.description,
+        path: common.path,
+        target: common.target,
+        tags: common.tags,
+        content: common.content,
+        idempotencyKey: `construct-common-${common.slug}-${simpleHash(common.content)}`,
+      },
+    });
+    const version = data?.crowdyStudioCommonPublish?.versionNo;
+    log(`Common file "${common.slug}" published (v${version ?? '?'})`);
+    results.push({ slug: common.slug, status: 'published', versionNo: version });
+  }
+  return results;
+}
+
+/**
+ * The whole sequence. `enterApp(appId)` must return a client holding an
+ * app-scoped token for `appId` (browser: NetworkManager.enterApp; Node: mint
+ * and build a client). Returns a report the UI renders.
+ */
+export async function runOnboarding(options) {
+  const {
+    identity,
+    userId,
+    enterApp,
+    orgName,
+    appName,
+    appSlug,
+    datacenter,
+    log = noop,
+    onStep = noop,
+  } = options;
+  const report = { steps: [] };
+  const step = async (id, label, fn) => {
+    onStep({ id, label, status: 'running' });
+    try {
+      const value = await fn();
+      report.steps.push({ id, label, status: 'done', value });
+      onStep({ id, label, status: 'done', value });
+      return value;
+    } catch (error) {
+      report.steps.push({ id, label, status: 'failed', error });
+      onStep({ id, label, status: 'failed', error });
+      throw error;
+    }
+  };
+
+  const { org } = await step('org', 'Organization', () =>
+    ensureOrganization(identity, { name: orgName, slug: orgName }, log),
+  );
+  const { app } = await step('app', 'App', () =>
+    ensureApp(
+      identity,
+      { orgId: org.orgId, orgSlug: org.slug, name: appName, slug: appSlug ?? slugify(appName), datacenter },
+      log,
+    ),
+  );
+  const appId = String(app.appId);
+  await step('tier', 'Constructor access tier', () => ensureConstructorTier(identity, { appId, userId }, log));
+  const game = await step('enter', 'App token', () => enterApp(appId));
+  await step('claims', 'Grid claim policy', () => ensureSelfClaimPolicy(game, { appId }, log));
+  await step('model', 'Game model', () => deployModel(game, { appId }, log));
+  await step('studio', 'Crowdy Studio starter files', () => publishStarterFiles(game, { appId }, log));
+  report.org = org;
+  report.app = app;
+  report.appId = appId;
+  return report;
+}
+
+function simpleHash(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(16);
+}
+
+function noop() {}

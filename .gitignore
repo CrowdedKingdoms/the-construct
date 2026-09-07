@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# local environment (never commit an app id or credentials)
+.env
+.env.local
+.env.*.local
+
+# test artifacts
+test-results/
+playwright-report/
+coverage/
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

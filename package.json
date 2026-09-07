@@ -1,0 +1,46 @@
+{
+  "name": "the-construct",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Starter repo for browser games on Crowded Kingdoms: engine-agnostic platform layer, three.js holodeck hub, pixi.js program scene, Crowdy Studio with client mods, and in-app onboarding.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run test:unit && npm run test:headers",
+    "test:unit": "vitest run",
+    "test:headers": "node --test security-headers.test.mjs",
+    "test:e2e": "playwright test",
+    "check:pin": "node scripts/ci/check-sdk-pin.mjs",
+    "setup": "node scripts/setup.mjs",
+    "seed": "node scripts/seed.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@crowdedkingdoms/crowdyjs": "15.4.2-dev.1",
+    "pixi.js": "^8.20.1",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^20.19.0",
+    "@types/three": "^0.185.0",
+    "eslint": "^10.10.0",
+    "happy-dom": "^20.14.0",
+    "prettier": "^3.6.0",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.46.0",
+    "vite": "^6.4.3",
+    "vitest": "^4.0.0"
+  }
+}
