@@ -66,6 +66,7 @@ export class SceneRouter {
         scene = factory();
         this.instances.set(id, scene);
       }
+      const previousPose = previous?.localPose();
       try {
         previous?.unmount();
         this.active = null;
@@ -75,6 +76,18 @@ export class SceneRouter {
         this.events.emit('scene', scene);
         return scene;
       } catch (error) {
+        // Never leave the player staring at nothing: put the previous scene
+        // back where it was, then report.
+        try {
+          scene.unmount();
+        } catch {
+          // best effort
+        }
+        if (previous) {
+          await previous.mount(context, this.size);
+          if (previousPose) previous.setLocalPosition(previousPose);
+          this.active = previous;
+        }
         this.events.emit('error', { sceneId: id, error });
         throw error;
       }

@@ -9,6 +9,10 @@
  * everyone. Players in the program see each other as tinted discs; players in
  * the holodeck are not drawn here (different `program` byte).
  */
+// The page's Content-Security-Policy has no 'unsafe-eval' (it runs untrusted
+// player mods, so it must not). pixi.js's default shader generator uses
+// `new Function`; this side-effect import swaps in the CSP-safe path.
+import 'pixi.js/unsafe-eval';
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 
 import type { GameScene, SceneContext, SceneSize } from '@/engine/GameScene';
@@ -22,6 +26,8 @@ const CELL_PX = 28;
 const MOVE_SPEED = 9;
 const DRAW_RADIUS_CHUNKS = 2;
 const PALETTE = TINT_COLORS;
+/** One zero byte, base64: the smallest non-empty voxel state the API accepts. */
+const PAINT_STATE = 'AA==';
 
 interface PlayerSprite {
   container: Container;
@@ -112,6 +118,8 @@ export class PaintScene implements GameScene {
   }
 
   unmount(): void {
+    // Persist any paint still queued before the scene goes away.
+    void this.context?.session.world.chunks.flush().catch(() => undefined);
     for (const dispose of this.disposables) dispose();
     this.disposables = [];
     for (const entry of this.chunkGraphics.values()) entry.graphics.destroy();
@@ -202,8 +210,22 @@ export class PaintScene implements GameScene {
     const chunk = worldToChunk(cell);
     const voxel = worldToVoxel(cell);
     const voxelType = erase ? 0 : this.paletteIndex;
-    void context.session.world.chunks
-      .setVoxel({ chunk, x: voxel.x, y: 0, z: voxel.z, voxelType })
+    // The API refuses an empty voxelState ("voxelState should not be empty",
+    // 2026-09-07) and the store sends '' when `state` is omitted, so every
+    // paint carries one byte of state. A richer game would encode metadata here.
+    const chunks = context.session.world.chunks;
+    void chunks
+      .setVoxel({ chunk, x: voxel.x, y: 0, z: voxel.z, voxelType, state: PAINT_STATE })
+      .then(() => {
+        // Two paths, two jobs: the realtime voxel update above is what other
+        // players see NOW; it is not the durable terrain (a chunk nobody has
+        // written comes back `missing` on the next load — measured
+        // 2026-09-07). Marking the chunk dirty queues the store's throttled
+        // write-back (`chunks.update`), which is what makes today's canvas
+        // exist tomorrow. Last writer wins per chunk; each writer's cache
+        // already merged everyone's live edits, so that is rarely visible.
+        chunks.markDirty(chunk);
+      })
       .catch((error) => context.hud.toast(`Paint failed: ${error instanceof Error ? error.message : String(error)}`, 'error'));
   }
 
