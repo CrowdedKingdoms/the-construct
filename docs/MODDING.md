@@ -98,13 +98,11 @@ re-run `npm run seed`; publishing is idempotent by content.
 
 ### Platform status note
 
-Crowded Kingdoms' player-compute program tracked CLIENT-mod rollout beyond its
-first-party pilot under a security gate (an external review of the sandbox
-bridge and money paths). The platform admits CLIENT modules for any app whose
-tiers grant the keys — there is no first-party allowlist — and this starter
-demonstrates the full path with the mitigations above. Whether to enable CLIENT
-mods in *your* game is your call; the switch and the SERVER-only path are here
-so it can be a deliberate one.
+The platform admits CLIENT modules for any app whose tiers grant the keys —
+there is no first-party allowlist — and this starter ships them **on** by
+default, with the mitigations above, as the reference integration the public
+docs point at. Whether to keep them on in *your* game is your call; the switch
+and the SERVER-only path are here so it can be a deliberate one.
 
 ## Not wired (and where it lives)
 
