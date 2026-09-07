@@ -13,7 +13,7 @@
  * supplies `enterApp(appId)` which returns a game client holding one.
  */
 import { constructBlueprints } from '../../../model/blueprints.mjs';
-import { STARTER_TEMPLATES, commonFileFor } from '../../../mods/templates/index.mjs';
+import { STARTER_TEMPLATES, commonFilesFor } from '../../../mods/templates/index.mjs';
 
 /**
  * Seeding a model twice reports "created 0" the second time; that is the
@@ -33,6 +33,15 @@ export const CONSTRUCTOR_TIER_KEYS = [
   'write_client_code',
   'run_client_code',
 ];
+
+/**
+ * What every visitor gets: the default free tier's keys plus permission to RUN
+ * mods others wrote. Fetching a grid-attached CLIENT artifact is gated on the
+ * VISITOR holding `run_client_code` (measured 2026-09-07: "Attachment not
+ * found" without it), so a default tier without it means nobody ever sees
+ * anyone's mod. Writing code stays on the Constructor tier.
+ */
+export const VISITOR_RUN_KEYS = ['run_server_code', 'run_client_code'];
 
 export function slugify(value) {
   return String(value)
@@ -94,6 +103,19 @@ export async function ensureApp(identity, { orgId, orgSlug, name, slug, datacent
  */
 export async function ensureConstructorTier(identity, { appId, userId }, log = noop) {
   const tiers = await identity.appAccess.tiers(appId);
+
+  // Visitors (default tier) may run mods; only Constructors may write them.
+  const defaultTier = tiers.find((t) => t.isDefault && t.status !== 'archived');
+  if (defaultTier) {
+    const have = new Set((defaultTier.permissionKeys ?? []).map(String));
+    if (!VISITOR_RUN_KEYS.every((key) => have.has(key))) {
+      await identity.appAccess.updateTier(defaultTier.tierId, {
+        permissionKeys: [...new Set([...have, ...VISITOR_RUN_KEYS])],
+      });
+      log(`Default tier "${defaultTier.name}" now lets visitors run mods (${VISITOR_RUN_KEYS.join(', ')})`);
+    }
+  }
+
   let tier = tiers.find((t) => t.name === CONSTRUCTOR_TIER_NAME && t.status !== 'archived') ?? null;
   let created = false;
   let updated = false;
@@ -118,14 +140,18 @@ export async function ensureConstructorTier(identity, { appId, userId }, log = n
       log(`Updated access tier "${CONSTRUCTOR_TIER_NAME}" with the code keys`);
     }
   }
-  await identity.appAccess.grant({
-    appId,
-    userId,
-    tierId: tier.tierId,
-    idempotencyKey: `construct-grant-${appId}-${userId}-${tier.tierId}`,
-  });
+  // Check before granting rather than replaying an idempotency key: on
+  // 2026-09-07 the replay path of grantAppAccess answered a DateTime
+  // serialization error on dev, and "already on this tier" is the honest
+  // idempotent answer anyway.
+  const mine = await identity.appAccess.myAccess(appId).catch(() => null);
+  if (mine && String(mine.tierId) === String(tier.tierId) && mine.status !== 'revoked') {
+    log(`User ${userId} already holds "${CONSTRUCTOR_TIER_NAME}"`);
+    return { tier, created, updated, granted: false };
+  }
+  await identity.appAccess.grant({ appId, userId, tierId: tier.tierId });
   log(`Granted "${CONSTRUCTOR_TIER_NAME}" to user ${userId}`);
-  return { tier, created, updated };
+  return { tier, created, updated, granted: true };
 }
 
 /** 4. Players may claim an unowned chunk for themselves (the Claim pad). */
@@ -140,9 +166,39 @@ export async function ensureSelfClaimPolicy(game, { appId }, log = noop) {
   return { policy: 'SELF_CLAIM', changed: true };
 }
 
-/** 5. Deploy the game model (kit blueprints). Idempotent by construction. */
+/**
+ * 5. Deploy the game model (kit blueprints).
+ *
+ * `gameModelSeed` upserts DEFINITIONS (types, properties, functions) by name,
+ * but seed CONTAINERS are instances and are created every time they are sent.
+ * Re-running a seed that lists containers therefore duplicates them — measured
+ * on 2026-09-07: two runs, two `WorldState`s. So before deploying, drop every
+ * seed container whose type already has an instance with the same display
+ * name. Definitions still refresh; existing data is left alone.
+ */
 export async function deployModel(game, { appId }, log = noop) {
-  const result = await game.kit(appId).deploy(constructBlueprints());
+  const blueprints = constructBlueprints();
+  for (const blueprint of blueprints) {
+    if (!blueprint.containers?.length) continue;
+    const keep = [];
+    const seenTypes = new Map();
+    for (const container of blueprint.containers) {
+      let existing = seenTypes.get(container.typeName);
+      if (!existing) {
+        existing = await game.gameModel
+          .containers({ appId, typeName: container.typeName })
+          .catch(() => []);
+        seenTypes.set(container.typeName, existing);
+      }
+      if (existing.some((row) => row.displayName === container.displayName)) {
+        log(`Container "${container.displayName}" (${container.typeName}) already exists; not re-seeding`);
+      } else {
+        keep.push(container);
+      }
+    }
+    blueprint.containers = keep;
+  }
+  const result = await game.kit(appId).deploy(blueprints);
   const seed = result.seed ?? {};
   log(
     `Model deployed: ${seed.containerTypesCreated ?? 0} new types, ` +
@@ -161,8 +217,7 @@ const PUBLISH_COMMON = `mutation PublishCommon($input: PublishCrowdyStudioCommon
 export async function publishStarterFiles(game, { appId }, log = noop) {
   const existing = await game.crowdyStudio.listCommonFiles({ appId, gridId: '' });
   const results = [];
-  for (const template of STARTER_TEMPLATES) {
-    const common = commonFileFor(template);
+  for (const common of STARTER_TEMPLATES.flatMap(commonFilesFor)) {
     const current = existing.find((file) => file.title === common.title && file.content === common.content);
     if (current) {
       log(`Common file "${common.slug}" already current`);

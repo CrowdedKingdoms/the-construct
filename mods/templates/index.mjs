@@ -132,20 +132,45 @@ export const STARTER_TEMPLATES = [
 ];
 
 /**
- * The common-file form of a template: its entrypoint, ready for
- * `crowdyStudioCommonPublish`. `contentSha256` is computed by the caller
- * (browser and Node hash differently) and used for idempotency.
+ * The common-file form of a template, ready for `crowdyStudioCommonPublish`.
+ *
+ * Two entries per template: the entrypoint AND its Cargo.toml. The Studio's
+ * blank project declares only `crowdy-compute-sdk`, and `host_call` takes a
+ * `serde_json::Value`, so any template that builds JSON needs the `serde_json`
+ * dependency declared — measured on 2026-09-07 as `E0432: unresolved import
+ * serde_json` when only the entrypoint was imported. Players add both files;
+ * each import defaults to the right destination path.
  */
-export function commonFileFor(template) {
+export function commonFilesFor(template) {
   const entrypoint = template.files.find((file) => file.path === 'src/lib.rs');
-  if (!entrypoint) throw new Error(`${template.id} has no src/lib.rs`);
-  return {
-    slug: template.id,
-    title: `${template.title} entrypoint`,
-    description: `${template.description} Copy this versioned file into a ${template.target} project.`,
-    path: 'src/lib.rs',
-    target: template.target,
-    tags: ['crowdy-studio', 'the-construct', template.target.toLowerCase(), 'starter'],
-    content: entrypoint.content,
-  };
+  const cargo = template.files.find((file) => file.path === 'Cargo.toml');
+  if (!entrypoint || !cargo) throw new Error(`${template.id} needs src/lib.rs and Cargo.toml`);
+  const tags = ['crowdy-studio', 'the-construct', template.target.toLowerCase(), 'starter'];
+  return [
+    {
+      slug: template.id,
+      title: `${template.title} entrypoint`,
+      description:
+        `${template.description} Add this src/lib.rs AND the matching "${template.title} Cargo.toml" ` +
+        `to a ${template.target} project, then Test draft.`,
+      path: 'src/lib.rs',
+      target: template.target,
+      tags,
+      content: entrypoint.content,
+    },
+    {
+      slug: `${template.id}-cargo`,
+      title: `${template.title} Cargo.toml`,
+      description: `Cargo.toml for "${template.title}": declares serde_json beside the compute SDK.`,
+      path: 'Cargo.toml',
+      target: template.target,
+      tags: [...tags, 'cargo'],
+      content: cargo.content,
+    },
+  ];
+}
+
+/** Back-compat alias: the entrypoint entry only. */
+export function commonFileFor(template) {
+  return commonFilesFor(template)[0];
 }

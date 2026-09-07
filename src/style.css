@@ -263,6 +263,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: min(360px, calc(100vw - 28px));
 }
 
 .hud-top-right {
@@ -353,6 +354,18 @@ label {
   padding: 4px 10px;
   font-size: 12px;
   flex: none;
+}
+
+/* ---------- Crowdy Studio mod HUD (SDK layer; restyled by class override) ---------- */
+
+/* The SDK places the text HUD at top-left where our chips live. Move it below
+   them; the SDK keeps ownership of its contents (text only, never HTML). */
+.ck-crowdy-studio-hud-layer {
+  top: 190px;
+  left: 14px;
+  right: auto;
+  width: min(360px, calc(100vw - 28px));
+  pointer-events: none;
 }
 
 /* ---------- chat ---------- */

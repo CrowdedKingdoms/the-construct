@@ -56,8 +56,28 @@ export function constructWorldBlueprint() {
         defaultPropertyVisibility: 'public',
         description: 'The single shared world record the pulse automation advances.',
       },
+      {
+        // Who claimed which chunk. The platform's own grid tables answer
+        // "which grid contains this chunk" only to app admins
+        // (`nearbyGridPermissions` needs manage_apps), so the game records
+        // every claim here, where any player may read it — the same pattern
+        // Blocks With Friends uses with its Plot containers. Players create
+        // their own row (instantiableBy: member); the server still decides
+        // every permission.
+        typeName: 'Claim',
+        displayName: 'Claim',
+        instantiableBy: 'member',
+        defaultPropertyVisibility: 'public',
+        description: 'A player-claimed chunk and the grid id it became.',
+      },
     ],
     propertyDefinitions: [
+      { containerTypeName: 'Claim', key: 'grid_id', valueType: 'string', defaultValueJson: '""' },
+      { containerTypeName: 'Claim', key: 'cx', valueType: 'int', defaultValueJson: '0' },
+      { containerTypeName: 'Claim', key: 'cy', valueType: 'int', defaultValueJson: '0' },
+      { containerTypeName: 'Claim', key: 'cz', valueType: 'int', defaultValueJson: '0' },
+      { containerTypeName: 'Claim', key: 'owner_user_id', valueType: 'int', defaultValueJson: '0' },
+      { containerTypeName: 'Claim', key: 'owner_name', valueType: 'string', defaultValueJson: '""' },
       { containerTypeName: 'Program', key: 'program_id', valueType: 'int', defaultValueJson: '0' },
       { containerTypeName: 'Program', key: 'scene_id', valueType: 'string', defaultValueJson: '""' },
       { containerTypeName: 'Program', key: 'name', valueType: 'string', defaultValueJson: '""' },
@@ -123,19 +143,35 @@ export function constructWorldBlueprint() {
   };
 }
 
+/** The prefixes the kit layers are deployed with; the client's `kit()` must use the same. */
+export const KIT_PREFIXES = { progression: 'Construct', leaderboards: 'Paint' };
+
 /** Everything `kit.deploy` needs, in one array. */
 export function constructBlueprints() {
   return [
-    progressionBlueprint({ typePrefix: 'Construct', xpAuthority: 'server' }),
-    leaderboardsBlueprint({ typePrefix: 'Paint', submitAuthority: 'host' }),
+    progressionBlueprint({ typePrefix: KIT_PREFIXES.progression, xpAuthority: 'server' }),
+    leaderboardsBlueprint({ typePrefix: KIT_PREFIXES.leaderboards, submitAuthority: 'host' }),
     constructWorldBlueprint(),
   ];
+}
+
+/**
+ * Options for `client.kit(appId, ...)` that match the deployed blueprints. A
+ * runtime helper built with a different prefix looks for containers the model
+ * does not define (`Progress` instead of `ConstructProgress`) and fails.
+ */
+export function kitOptions() {
+  return {
+    progression: { typePrefix: KIT_PREFIXES.progression },
+    leaderboards: { typePrefix: KIT_PREFIXES.leaderboards },
+  };
 }
 
 /** Names the client reads back (kept here so the facade and seed agree). */
 export const MODEL_NAMES = {
   programType: 'Program',
   worldStateType: 'WorldState',
+  claimType: 'Claim',
   progressType: 'ConstructProgress',
   leaderboardEntryType: 'PaintLeaderboardEntry',
   pulseAutomation: 'construct-pulse',

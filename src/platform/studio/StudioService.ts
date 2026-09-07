@@ -59,6 +59,13 @@ export interface StudioHooks {
 
 const GRID_REFRESH_MS = 8_000;
 const MODS_REFRESH_MS = 10_000;
+/**
+ * Presence is written by Buddy when the actor's chunk changes; the trust and
+ * artifact gates check it server-side. Asking within the first seconds of
+ * entering a grid races that write ("Grid author bundle not found" on
+ * 2026-09-07), so wait a moment before the first sync.
+ */
+const GRID_SETTLE_MS = 4_000;
 
 export class StudioService {
   readonly events = new Emitter<{ state: StudioState }>();
@@ -66,6 +73,8 @@ export class StudioService {
   private readonly hud = new CrowdyStudioTextHud();
   private readonly lifecycle = new ClientModLifecycle();
   private readonly declinedAuthors = new Set<string>();
+  private readonly approvedAuthors = new Set<string>();
+  private gridEnteredAt = 0;
   private embed: CrowdyStudioEmbed | null = null;
   private hooks: StudioHooks | null = null;
   private state: StudioState;
@@ -138,7 +147,7 @@ export class StudioService {
   async claimHereAndOpen(position: Vec3): Promise<GridSnapshot> {
     const chunk = worldToChunk(position);
     this.hooks?.notify('Claiming this chunk…');
-    const grid = await this.grids.claimHere(chunk);
+    const grid = await this.grids.claimHere(chunk, this.session.displayName);
     this.adoptGrid(grid, chunk);
     if (!hasAnyStudioPermission(grid.permissions)) {
       throw new Error(
@@ -257,7 +266,9 @@ export class StudioService {
     this.lastGridReadAt = Date.now();
     if (this.lifecycle.enterGrid(grid?.gridId ?? null)) {
       this.declinedAuthors.clear();
+      this.approvedAuthors.clear();
       this.lastModsReadAt = 0;
+      this.gridEnteredAt = Date.now();
     }
     this.state = { ...this.state, grid };
     this.emit();
@@ -292,7 +303,12 @@ export class StudioService {
         this.session.network.log(`grid lookup failed: ${messageOf(error)}`);
       }
     }
-    if (this.state.clientModsAvailable && this.currentGrid && !this.currentGrid.owned) {
+    if (
+      this.state.clientModsAvailable &&
+      this.currentGrid &&
+      !this.currentGrid.owned &&
+      now - this.gridEnteredAt >= GRID_SETTLE_MS
+    ) {
       await this.syncGridClientMods(this.currentGrid);
     }
   }
@@ -320,14 +336,19 @@ export class StudioService {
         if (mod.callerTrustsAuthor) continue;
         const authorKey = `${mod.authorKind}:${mod.authorRef}:${mod.authorCapabilityHash}`;
         if (this.declinedAuthors.has(authorKey)) continue;
-        const approved = await this.confirmTrust(
-          `Trust ${String(mod.authorKind).toLowerCase()} ${mod.authorRef}'s mods on this grid?\n\n` +
-            'Their client code will run in a sandbox while you are here.\n\n' +
-            prettyCapabilities(mod.authorCapabilitySummaryJson),
-        );
-        if (!approved) {
-          this.declinedAuthors.add(authorKey);
-          continue;
+        if (!this.approvedAuthors.has(authorKey)) {
+          const approved = await this.confirmTrust(
+            `Trust ${String(mod.authorKind).toLowerCase()} ${mod.authorRef}'s mods on this grid?\n\n` +
+              'Their client code will run in a sandbox while you are here.\n\n' +
+              prettyCapabilities(mod.authorCapabilitySummaryJson),
+          );
+          if (!approved) {
+            this.declinedAuthors.add(authorKey);
+            continue;
+          }
+          // Remembered so a transient refusal (presence not registered yet)
+          // retries silently instead of asking the player again.
+          this.approvedAuthors.add(authorKey);
         }
         await client.marketplace.trustGridAuthor({
           appId,

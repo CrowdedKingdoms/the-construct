@@ -43,4 +43,4 @@ export function programBySceneId(sceneId: string): ProgramDefinition | undefined
 export const CLAIM_PAD = { x: -10, z: -6, color: 0x5ef2c8 };
 
 /** Where new players appear in the holodeck. */
-export const HOLODECK_SPAWN = { x: 0, y: 0, z: 6, yaw: Math.PI };
+export const HOLODECK_SPAWN = { x: 0, y: 0, z: 6, yaw: 0 };

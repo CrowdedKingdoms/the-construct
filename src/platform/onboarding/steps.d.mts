@@ -2,6 +2,7 @@ import type { CrowdyClient } from '@crowdedkingdoms/crowdyjs';
 
 export const CONSTRUCTOR_TIER_NAME: string;
 export const CONSTRUCTOR_TIER_KEYS: readonly string[];
+export const VISITOR_RUN_KEYS: readonly string[];
 export function slugify(value: string): string;
 
 export type Logger = (line: string) => void;
@@ -47,7 +48,7 @@ export function ensureConstructorTier(
   identity: CrowdyClient,
   input: { appId: string; userId: string },
   log?: Logger,
-): Promise<{ tier: { tierId: string; name: string }; created: boolean; updated: boolean }>;
+): Promise<{ tier: { tierId: string; name: string }; created: boolean; updated: boolean; granted: boolean }>;
 export function ensureSelfClaimPolicy(
   game: CrowdyClient,
   input: { appId: string },

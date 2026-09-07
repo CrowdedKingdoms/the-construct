@@ -22,4 +22,5 @@ export interface CommonFileSeed {
 }
 
 export const STARTER_TEMPLATES: readonly StarterTemplate[];
+export function commonFilesFor(template: StarterTemplate): CommonFileSeed[];
 export function commonFileFor(template: StarterTemplate): CommonFileSeed;

@@ -129,6 +129,12 @@ export async function runConsentedGridMod(options: {
   workerUrl: string;
   reads: ClientModHostReads;
   hud: CrowdyStudioTextHud;
+  /**
+   * How often the worker self-drives `on_tick`. Omitted/0 means invoke-only
+   * and a HUD mod then never runs (measured 2026-09-07: broker started, HUD
+   * stayed empty). ~1 Hz is right for presentation mods.
+   */
+  tickIntervalMs?: number;
 }): Promise<{ stop: () => void } | null> {
   let fetched: { bytes: ArrayBuffer; artifactHash?: string; fuelPerDispatch?: string | bigint };
   const cached = artifactCache.get(options.artifactCacheKey);
@@ -154,6 +160,7 @@ export async function runConsentedGridMod(options: {
     grid: options.grid,
     artifactHash: fetched.artifactHash,
     fuelPerDispatch: fetched.fuelPerDispatch != null ? BigInt(fetched.fuelPerDispatch) : undefined,
+    tickIntervalMs: options.tickIntervalMs ?? 1000,
     onHostCall: (call) => routeClientHostCall(call, options.reads, options.grid),
     onPresentation: (presentation: PlayerCodePresentation) => {
       if (presentation.channel === 'hud') {

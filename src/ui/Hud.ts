@@ -24,6 +24,7 @@ export class Hud implements SceneHud {
   private readonly banner: HTMLElement;
   private readonly bannerText: HTMLElement;
   private bannerDismissed = false;
+  private lastModel: { pulses?: number; level?: number } | null = null;
 
   constructor(parent: HTMLElement, actions: HudActions) {
     this.identity = el('div', { class: 'panel chip' });
@@ -68,8 +69,15 @@ export class Hud implements SceneHud {
   }
 
   /** Refresh the chips from the session (called on a slow interval). */
-  render(session: GameSession, extras: { players: number; sceneId: string; pulses?: number; level?: number }): void {
+  render(
+    session: GameSession,
+    extras: { players: number; sceneId: string; model?: { pulses?: number; level?: number } },
+  ): void {
     const user = session.network.user;
+    // Presence refreshes often; model reads rarely. Keep the last model answer
+    // so a presence-only render does not blank the world row.
+    if (extras.model) this.lastModel = extras.model;
+    const model = this.lastModel;
     this.identity.replaceChildren(
       el('div', { class: 'row' }, [el('strong', { text: session.displayName }), el('span', { class: 'muted', text: user?.email ?? '' })]),
       el('div', { class: 'row muted' }, [
@@ -79,9 +87,12 @@ export class Hud implements SceneHud {
       ]),
     );
     const worldRows: Node[] = [];
-    if (extras.pulses !== undefined) worldRows.push(el('div', { text: `world pulses ${extras.pulses}` }));
-    if (extras.level !== undefined) worldRows.push(el('div', { text: `level ${extras.level}` }));
-    if (worldRows.length === 0) worldRows.push(el('div', { class: 'muted', text: 'model not seeded — run Setup' }));
+    if (!model) worldRows.push(el('div', { class: 'muted', text: 'reading the game model…' }));
+    else {
+      if (model.pulses !== undefined) worldRows.push(el('div', { text: `world pulses ${model.pulses}` }));
+      if (model.level !== undefined) worldRows.push(el('div', { text: `level ${model.level}` }));
+      if (worldRows.length === 0) worldRows.push(el('div', { class: 'muted', text: 'model not seeded — run Setup' }));
+    }
     this.world.replaceChildren(...worldRows);
   }
 

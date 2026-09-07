@@ -7,7 +7,7 @@
  *   CONSTRUCT_EMAIL=... CONSTRUCT_PASSWORD=... APP_ID=<id> npm run smoke
  */
 import { MODEL_NAMES } from '../model/blueprints.mjs';
-import { STARTER_TEMPLATES } from '../mods/templates/index.mjs';
+import { STARTER_TEMPLATES, commonFilesFor } from '../mods/templates/index.mjs';
 import { CONSTRUCTOR_TIER_KEYS, CONSTRUCTOR_TIER_NAME } from '../src/platform/onboarding/steps.mjs';
 import { enterApp, loadDotEnv, messageOf, requireEnv, signIn } from './lib/cli.mjs';
 
@@ -47,10 +47,10 @@ try {
   check(world.length === 1, 'WorldState singleton exists', 'run npm run seed');
 
   const common = await game.crowdyStudio.listCommonFiles({ appId, gridId: '' });
-  for (const template of STARTER_TEMPLATES) {
+  for (const file of STARTER_TEMPLATES.flatMap(commonFilesFor)) {
     check(
-      common.some((f) => f.title === `${template.title} entrypoint`),
-      `Studio common file "${template.id}" published`,
+      common.some((f) => f.title === file.title && f.content === file.content),
+      `Studio common file "${file.slug}" published and current`,
       'run npm run seed',
     );
   }

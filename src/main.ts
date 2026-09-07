@@ -164,8 +164,7 @@ async function startGame(): Promise<void> {
     hud.render(session, {
       players: session.players().length,
       sceneId: scene?.id ?? '…',
-      pulses: world.seeded ? world.pulses : undefined,
-      level: progress?.level,
+      model: { pulses: world.seeded ? world.pulses : undefined, level: progress?.level },
     });
   };
   void refreshHud();
@@ -180,6 +179,12 @@ async function startGame(): Promise<void> {
   );
 
   window.addEventListener('beforeunload', () => void session.flushSave(), { once: true });
+
+  if (import.meta.env.DEV) {
+    // Dev-only console handle for poking at the running game
+    // (`__construct.session.players()`, `__construct.router.load('paint')`).
+    (window as unknown as { __construct?: unknown }).__construct = { session, router, loop, network };
+  }
 }
 
 async function toggleStudio(): Promise<void> {

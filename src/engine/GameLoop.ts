@@ -59,9 +59,12 @@ export class GameLoop {
   }
 
   size(): SceneSize {
+    // The stylesheet already shrinks #game-root by --ck-game-right-inset while
+    // Crowdy Studio is docked, so the rect is the visible area; the inset is
+    // passed along for scenes that want to know, not subtracted again.
     const rect = this.root.getBoundingClientRect();
     return {
-      width: Math.max(1, Math.floor(rect.width - this.rightInset)),
+      width: Math.max(1, Math.floor(rect.width)),
       height: Math.max(1, Math.floor(rect.height)),
       rightInset: this.rightInset,
     };

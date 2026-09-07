@@ -8,7 +8,7 @@
  * cannot create types, and it cannot grant itself XP (the blueprint says who
  * may). Reads are cached briefly because the HUD polls them.
  */
-import { MODEL_NAMES } from '../../../model/blueprints.mjs';
+import { MODEL_NAMES, kitOptions } from '../../../model/blueprints.mjs';
 
 import type { GameSession } from '@/platform/GameSession';
 import { messageOf } from '@/platform/network/NetworkManager';
@@ -44,7 +44,7 @@ export class ModelService {
   constructor(private readonly session: GameSession) {}
 
   private get kit() {
-    return this.session.network.game.kit(this.session.appId);
+    return this.session.network.game.kit(this.session.appId, kitOptions());
   }
 
   private get gameModel() {
