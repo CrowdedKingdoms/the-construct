@@ -419,7 +419,13 @@ export class NetworkManager {
 
   // ---------------------------------------------------------------------------
 
+  /** The last 100 log lines, newest last — for the HUD and for debugging. */
+  readonly recentLogs: string[] = [];
+
   log(message: string): void {
+    const line = `${new Date().toISOString().slice(11, 19)} ${message}`;
+    this.recentLogs.push(line);
+    if (this.recentLogs.length > 100) this.recentLogs.shift();
     this.events.emit('log', message);
     if (import.meta.env.DEV) console.debug(`[network] ${message}`);
   }
