@@ -73,14 +73,24 @@ export class GridService {
   /** Claim the chunk under `position` as a one-chunk grid owned by the player. */
   async claimHere(chunk: ChunkCoord, ownerName: string): Promise<GridSnapshot> {
     const appId = this.requireAppId();
-    const claimed = await this.network.game.marketplace.claimGridChunk({ appId, chunk: chunkInput(chunk) });
+    const claimed = await this.network.game.marketplace.claimGridChunk({
+      appId,
+      chunk: chunkInput(chunk),
+    });
     const bounds = gridBoundsFrom(claimed.lowChunk, claimed.highChunk) ?? singleChunkBounds(chunk);
     const permissions = studioPermissions(claimed.effectivePermissionKeys);
     const gridId = String(claimed.gridId);
     this.owned.set(chunkKey(chunk), { gridId, bounds, effectiveKeys: permissions.effectiveKeys });
     this.saveOwned();
     await this.recordClaim(gridId, chunk, ownerName);
-    return { gridId, bounds, permissions, owned: true, ownerName, policy: claimed.policy ?? undefined };
+    return {
+      gridId,
+      bounds,
+      permissions,
+      owned: true,
+      ownerName,
+      policy: claimed.policy ?? undefined,
+    };
   }
 
   async release(gridId: string): Promise<void> {
@@ -137,12 +147,16 @@ export class GridService {
   private ownedAt(chunk: ChunkCoord): OwnedRecord | null {
     const direct = this.owned.get(chunkKey(chunk));
     if (direct) return direct;
-    for (const record of this.owned.values()) if (gridBoundsContain(record.bounds, chunk)) return record;
+    for (const record of this.owned.values())
+      if (gridBoundsContain(record.bounds, chunk)) return record;
     return null;
   }
 
   /** Admin-only read; returns the keys when it works, null when it does not. */
-  private async refreshOwnedKeys(chunk: ChunkCoord, record: OwnedRecord): Promise<PlayerCodePermissionKey[] | null> {
+  private async refreshOwnedKeys(
+    chunk: ChunkCoord,
+    record: OwnedRecord,
+  ): Promise<PlayerCodePermissionKey[] | null> {
     const userId = this.network.user?.userId;
     if (!userId) return null;
     try {
@@ -181,28 +195,42 @@ export class GridService {
           { key: 'cy', valueType: 'int', valueJson: String(chunk.y) },
           { key: 'cz', valueType: 'int', valueJson: String(chunk.z) },
           { key: 'owner_user_id', valueType: 'int', valueJson: String(userId) },
-          { key: 'owner_name', valueType: 'string', valueJson: JSON.stringify(ownerName.slice(0, 32)) },
+          {
+            key: 'owner_name',
+            valueType: 'string',
+            valueJson: JSON.stringify(ownerName.slice(0, 32)),
+          },
         ],
       });
       this.registry = null;
     } catch (error) {
       // The claim itself succeeded; only the registry row failed (model not
       // seeded yet). Say so rather than hide it.
-      this.network.log(`claim registry write failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.network.log(
+        `claim registry write failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
   /** The Claim registry, cached briefly (visitors poll it as they walk). */
   private async claims(force = false): Promise<ClaimRecord[]> {
-    if (!force && this.registry && Date.now() - this.registry.at < REGISTRY_TTL_MS) return this.registry.claims;
+    if (!force && this.registry && Date.now() - this.registry.at < REGISTRY_TTL_MS)
+      return this.registry.claims;
     if (this.registryInFlight) return this.registryInFlight;
     const appId = this.requireAppId();
     this.registryInFlight = (async () => {
       const claims: ClaimRecord[] = [];
       try {
-        const rows = await this.network.game.gameModel.containers({ appId, typeName: MODEL_NAMES.claimType, limit: 200 });
+        const rows = await this.network.game.gameModel.containers({
+          appId,
+          typeName: MODEL_NAMES.claimType,
+          limit: 200,
+        });
         for (const row of rows) {
-          const state = await this.network.game.gameModel.containerState({ appId, containerId: row.containerId });
+          const state = await this.network.game.gameModel.containerState({
+            appId,
+            containerId: row.containerId,
+          });
           let props: Record<string, unknown> = {};
           try {
             props = JSON.parse(state.propertiesJson) as Record<string, unknown>;
@@ -220,7 +248,9 @@ export class GridService {
           });
         }
       } catch (error) {
-        this.network.log(`claim registry unavailable: ${error instanceof Error ? error.message : String(error)}`);
+        this.network.log(
+          `claim registry unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       this.registry = { at: Date.now(), claims };
       this.registryInFlight = null;
@@ -248,7 +278,10 @@ export class GridService {
       this.owned = new Map(
         Object.entries(parsed)
           .filter(([, v]) => v.gridId && v.bounds)
-          .map(([k, v]) => [k, { gridId: v.gridId!, bounds: v.bounds!, effectiveKeys: v.effectiveKeys ?? [] }]),
+          .map(([k, v]) => [
+            k,
+            { gridId: v.gridId!, bounds: v.bounds!, effectiveKeys: v.effectiveKeys ?? [] },
+          ]),
       );
     } catch {
       this.owned = new Map();

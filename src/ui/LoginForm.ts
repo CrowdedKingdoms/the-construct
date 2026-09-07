@@ -13,10 +13,22 @@ export function showLoginForm(card: BootCard, auth: AuthService): Promise<Sessio
   return new Promise((resolve) => {
     let mode: Mode = auth.rememberedEmail() ? 'login' : 'register';
     const error = el('p', { class: 'error-text' });
-    const email = el('input', { type: 'email', autocomplete: 'email', placeholder: 'you@example.com' });
+    const email = el('input', {
+      type: 'email',
+      autocomplete: 'email',
+      placeholder: 'you@example.com',
+    });
     email.value = auth.rememberedEmail() ?? '';
-    const password = el('input', { type: 'password', autocomplete: 'current-password', placeholder: '••••••••' });
-    const gamertag = el('input', { type: 'text', autocomplete: 'nickname', placeholder: 'Shown above your avatar' });
+    const password = el('input', {
+      type: 'password',
+      autocomplete: 'current-password',
+      placeholder: '••••••••',
+    });
+    const gamertag = el('input', {
+      type: 'text',
+      autocomplete: 'nickname',
+      placeholder: 'Shown above your avatar',
+    });
     const passwordField = el('div', {}, [el('label', { text: 'Password' }), password]);
     const gamertagField = el('div', {}, [el('label', { text: 'Gamertag (optional)' }), gamertag]);
     const submit = el('button', { class: 'primary', type: 'submit' });
@@ -28,11 +40,13 @@ export function showLoginForm(card: BootCard, auth: AuthService): Promise<Sessio
     };
 
     const render = () => {
-      for (const [key, tab] of Object.entries(tabs)) tab.setAttribute('aria-selected', String(key === mode));
+      for (const [key, tab] of Object.entries(tabs))
+        tab.setAttribute('aria-selected', String(key === mode));
       passwordField.classList.toggle('hidden', mode === 'magic');
       gamertagField.classList.toggle('hidden', mode !== 'register');
       password.autocomplete = mode === 'register' ? 'new-password' : 'current-password';
-      submit.textContent = mode === 'register' ? 'Create account' : mode === 'login' ? 'Sign in' : 'Send link';
+      submit.textContent =
+        mode === 'register' ? 'Create account' : mode === 'login' ? 'Sign in' : 'Send link';
       error.textContent = '';
     };
     for (const [key, tab] of Object.entries(tabs)) {
@@ -71,7 +85,9 @@ export function showLoginForm(card: BootCard, auth: AuthService): Promise<Sessio
           card.setStatus('Check your inbox');
           error.textContent = '';
           form.replaceChildren(
-            el('p', {}, [`If ${email.value.trim()} can sign in, a link is on its way. Open it in this browser.`]),
+            el('p', {}, [
+              `If ${email.value.trim()} can sign in, a link is on its way. Open it in this browser.`,
+            ]),
           );
           return;
         }
@@ -108,7 +124,8 @@ export function showLoginForm(card: BootCard, auth: AuthService): Promise<Sessio
 
 function friendlyAuthError(error: unknown): string {
   const text = messageOf(error);
-  if (/UNAUTHENTICATED|invalid credentials|Unauthorized/i.test(text)) return 'Wrong email or password.';
+  if (/UNAUTHENTICATED|invalid credentials|Unauthorized/i.test(text))
+    return 'Wrong email or password.';
   if (/already/i.test(text)) return 'That email already has an account — use Sign in.';
   if (/password/i.test(text) && /confirm|unconfirmed/i.test(text)) {
     return 'This account needs its email confirmed before password sign-in. Try the magic link.';

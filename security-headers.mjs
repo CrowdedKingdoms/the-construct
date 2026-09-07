@@ -118,7 +118,4 @@ export function securityHeaders(options = {}) {
 }
 
 /** The two headers that decide `crossOriginIsolated`; listed for docs/tests. */
-export const ISOLATION_HEADERS = [
-  'Cross-Origin-Opener-Policy',
-  'Cross-Origin-Embedder-Policy',
-];
+export const ISOLATION_HEADERS = ['Cross-Origin-Opener-Policy', 'Cross-Origin-Embedder-Policy'];

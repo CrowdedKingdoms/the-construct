@@ -33,7 +33,10 @@ export function displayPose(player: RemotePlayer, nowMs: number): Pose {
   const older = samples[1];
 
   if (older && renderAt <= newest.receivedAt && newest.receivedAt !== older.receivedAt) {
-    const t = Math.max(0, Math.min(1, (renderAt - older.receivedAt) / (newest.receivedAt - older.receivedAt)));
+    const t = Math.max(
+      0,
+      Math.min(1, (renderAt - older.receivedAt) / (newest.receivedAt - older.receivedAt)),
+    );
     return {
       ...newest.pose,
       x: lerp(older.pose.x, newest.pose.x, t),
@@ -59,7 +62,10 @@ export const TINT_COLORS: readonly number[] = [
 ];
 
 export function tintColor(tint: number): number {
-  return TINT_COLORS[((tint % TINT_COLORS.length) + TINT_COLORS.length) % TINT_COLORS.length] ?? TINT_COLORS[0]!;
+  return (
+    TINT_COLORS[((tint % TINT_COLORS.length) + TINT_COLORS.length) % TINT_COLORS.length] ??
+    TINT_COLORS[0]!
+  );
 }
 
 export function hexColor(color: number): string {

@@ -25,7 +25,11 @@ import {
   type WorldSession,
 } from '@crowdedkingdoms/crowdyjs/stores';
 
-import { ACTOR_SYNC_INTERVAL_MS, REPLICATION_DISTANCE, STALE_ACTOR_TIMEOUT_MS } from '@/platform/config';
+import {
+  ACTOR_SYNC_INTERVAL_MS,
+  REPLICATION_DISTANCE,
+  STALE_ACTOR_TIMEOUT_MS,
+} from '@/platform/config';
 import { envScopedKey } from '@/platform/envScope';
 import { NetworkManager } from '@/platform/network/NetworkManager';
 import { NEUTRAL_POSE, poseCodec, type Pose } from '@/platform/realtime/actorCodec';
@@ -92,9 +96,7 @@ export function worldSession(): ConstructWorldSession {
     session = createWorldSession(network.game, appId, buildConfig());
     sessionAppId = appId;
     session.errors.onError((error) => {
-      network.log(
-        `UDP send error ${error.errorCode}${error.send ? ` (${error.send.kind})` : ''}`,
-      );
+      network.log(`UDP send error ${error.errorCode}${error.send ? ` (${error.send.kind})` : ''}`);
     });
   }
   return session;
@@ -122,15 +124,18 @@ export interface RemotePlayer {
 
 export function remotePlayers(): RemotePlayer[] {
   if (!session) return [];
-  return session.actors.lane('players').list().map((actor) => ({
-    uuid: actor.uuid,
-    pose: actor.state,
-    samples: actor.samples.map((s) => ({
-      pose: s.state,
-      epochMillis: s.epochMillis,
-      receivedAt: s.receivedAt,
-    })),
-    chunk: { x: Number(actor.chunk.x), y: Number(actor.chunk.y), z: Number(actor.chunk.z) },
-    receivedAt: actor.receivedAt,
-  }));
+  return session.actors
+    .lane('players')
+    .list()
+    .map((actor) => ({
+      uuid: actor.uuid,
+      pose: actor.state,
+      samples: actor.samples.map((s) => ({
+        pose: s.state,
+        epochMillis: s.epochMillis,
+        receivedAt: s.receivedAt,
+      })),
+      chunk: { x: Number(actor.chunk.x), y: Number(actor.chunk.y), z: Number(actor.chunk.z) },
+      receivedAt: actor.receivedAt,
+    }));
 }

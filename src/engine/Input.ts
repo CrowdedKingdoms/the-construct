@@ -29,7 +29,14 @@ export function isTextEntry(target: EventTarget | null): boolean {
 export class Input {
   private readonly keys = new Set<string>();
   private readonly keyHandlers = new Map<string, Set<KeyHandler>>();
-  private readonly pointerState: PointerState = { x: 0, y: 0, dx: 0, dy: 0, down: false, locked: false };
+  private readonly pointerState: PointerState = {
+    x: 0,
+    y: 0,
+    dx: 0,
+    dy: 0,
+    down: false,
+    locked: false,
+  };
   private suppressedDepth = 0;
   private detach: (() => void) | null = null;
 
@@ -117,8 +124,12 @@ export class Input {
 
   /** -1..1 on each axis from WASD / arrows. */
   axes(): { x: number; y: number } {
-    const x = (this.isDown('KeyD') || this.isDown('ArrowRight') ? 1 : 0) - (this.isDown('KeyA') || this.isDown('ArrowLeft') ? 1 : 0);
-    const y = (this.isDown('KeyW') || this.isDown('ArrowUp') ? 1 : 0) - (this.isDown('KeyS') || this.isDown('ArrowDown') ? 1 : 0);
+    const x =
+      (this.isDown('KeyD') || this.isDown('ArrowRight') ? 1 : 0) -
+      (this.isDown('KeyA') || this.isDown('ArrowLeft') ? 1 : 0);
+    const y =
+      (this.isDown('KeyW') || this.isDown('ArrowUp') ? 1 : 0) -
+      (this.isDown('KeyS') || this.isDown('ArrowDown') ? 1 : 0);
     return { x, y };
   }
 

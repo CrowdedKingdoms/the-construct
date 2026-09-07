@@ -119,7 +119,9 @@ export class GameSession {
     this.joinedFlag = true;
     this.chat.start();
     this.world.save.patch({ visits: (this.save.visits ?? 0) + 1 });
-    this.events.emit('joined', { chunk: { x: Number(chunk.x), y: Number(chunk.y), z: Number(chunk.z) } });
+    this.events.emit('joined', {
+      chunk: { x: Number(chunk.x), y: Number(chunk.y), z: Number(chunk.z) },
+    });
   }
 
   feedPose(pose: Pose): void {

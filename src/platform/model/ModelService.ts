@@ -53,11 +53,15 @@ export class ModelService {
 
   /** The seeded program catalog; empty when the model has not been seeded. */
   async programs(): Promise<ProgramRecord[]> {
-    if (this.programsCache && Date.now() - this.programsCache.at < CACHE_MS) return this.programsCache.value;
+    if (this.programsCache && Date.now() - this.programsCache.at < CACHE_MS)
+      return this.programsCache.value;
     const appId = this.session.appId;
     const value: ProgramRecord[] = [];
     try {
-      const containers = await this.gameModel.containers({ appId, typeName: MODEL_NAMES.programType });
+      const containers = await this.gameModel.containers({
+        appId,
+        typeName: MODEL_NAMES.programType,
+      });
       for (const container of containers) {
         const props = await this.properties(container.containerId);
         value.push({
@@ -81,7 +85,10 @@ export class ModelService {
     const appId = this.session.appId;
     let value: WorldSummary = { pulses: 0, seeded: false };
     try {
-      const [state] = await this.gameModel.containers({ appId, typeName: MODEL_NAMES.worldStateType });
+      const [state] = await this.gameModel.containers({
+        appId,
+        typeName: MODEL_NAMES.worldStateType,
+      });
       if (state) {
         const props = await this.properties(state.containerId);
         value = { pulses: Number(props.pulses ?? 0), seeded: true };
@@ -103,7 +110,12 @@ export class ModelService {
         this.progressId = container.containerId;
       }
       const state = await this.kit.progression.state(this.progressId);
-      return { containerId: state.containerId, xp: state.xp, level: state.level, skillPoints: state.skillPoints };
+      return {
+        containerId: state.containerId,
+        xp: state.xp,
+        level: state.level,
+        skillPoints: state.skillPoints,
+      };
     } catch (error) {
       this.session.network.log(`progression unavailable: ${messageOf(error)}`);
       return null;

@@ -15,7 +15,12 @@ export class ChatPanel {
 
   constructor(parent: HTMLElement, chat: ChatService, input: Input) {
     this.messages = el('div', { class: 'messages', role: 'log', 'aria-live': 'polite' });
-    this.inputBox = el('input', { type: 'text', placeholder: 'Say something nearby (T)', maxlength: '240', autocomplete: 'off' });
+    this.inputBox = el('input', {
+      type: 'text',
+      placeholder: 'Say something nearby (T)',
+      maxlength: '240',
+      autocomplete: 'off',
+    });
     const send = el('button', { type: 'submit', text: 'Send' });
     const form = el('form', {}, [this.inputBox, send]);
     this.root = el('div', { class: 'panel chat' }, [this.messages, form]);
@@ -25,7 +30,8 @@ export class ChatPanel {
       event.preventDefault();
       const text = this.inputBox.value;
       this.inputBox.value = '';
-      if (text.trim()) void chat.send(text).catch((error) => chat.system(`send failed: ${String(error)}`));
+      if (text.trim())
+        void chat.send(text).catch((error) => chat.system(`send failed: ${String(error)}`));
       this.inputBox.blur();
     });
     this.inputBox.addEventListener('focus', () => {
@@ -57,10 +63,14 @@ export class ChatPanel {
   }
 
   private append(message: ChatMessage): void {
-    const node = el('div', { class: `msg${message.self ? ' self' : ''}${message.uuid ? '' : ' system'}` }, [
-      message.uuid ? el('span', { class: 'who', text: `${message.name}: ` }) : null,
-      el('span', { text: message.text }),
-    ]);
+    const node = el(
+      'div',
+      { class: `msg${message.self ? ' self' : ''}${message.uuid ? '' : ' system'}` },
+      [
+        message.uuid ? el('span', { class: 'who', text: `${message.name}: ` }) : null,
+        el('span', { text: message.text }),
+      ],
+    );
     this.messages.appendChild(node);
     while (this.messages.childElementCount > 120) this.messages.firstElementChild?.remove();
     this.messages.scrollTop = this.messages.scrollHeight;

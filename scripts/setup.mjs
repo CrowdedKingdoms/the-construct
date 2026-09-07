@@ -29,7 +29,8 @@ try {
     datacenter: args.datacenter,
     log,
     onStep: (event) => {
-      if (event.status !== 'done') console.log(`${event.status === 'running' ? '→' : '✗'} ${event.label}`);
+      if (event.status !== 'done')
+        console.log(`${event.status === 'running' ? '→' : '✗'} ${event.label}`);
     },
   });
   console.log(`\nAPP_ID=${report.appId}`);

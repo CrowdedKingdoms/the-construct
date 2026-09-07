@@ -44,18 +44,22 @@ export const CONSTRUCTOR_TIER_KEYS = [
 export const VISITOR_RUN_KEYS = ['run_server_code', 'run_client_code'];
 
 export function slugify(value) {
-  return String(value)
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64) || 'construct';
+  return (
+    String(value)
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 64) || 'construct'
+  );
 }
 
 /** 1. Use the caller's first org, or create one. */
 export async function ensureOrganization(identity, { name, slug }, log = noop) {
   const mine = await identity.organizations.mine();
-  const owned = mine.find((m) => Array.isArray(m.permissions) && m.permissions.includes('manage_apps')) ?? mine[0];
+  const owned =
+    mine.find((m) => Array.isArray(m.permissions) && m.permissions.includes('manage_apps')) ??
+    mine[0];
   if (owned) {
     log(`Using organization "${owned.org.name}" (${owned.org.slug})`);
     return { org: owned.org, created: false, permissions: owned.permissions ?? [] };
@@ -112,7 +116,9 @@ export async function ensureConstructorTier(identity, { appId, userId }, log = n
       await identity.appAccess.updateTier(defaultTier.tierId, {
         permissionKeys: [...new Set([...have, ...VISITOR_RUN_KEYS])],
       });
-      log(`Default tier "${defaultTier.name}" now lets visitors run mods (${VISITOR_RUN_KEYS.join(', ')})`);
+      log(
+        `Default tier "${defaultTier.name}" now lets visitors run mods (${VISITOR_RUN_KEYS.join(', ')})`,
+      );
     }
   }
 
@@ -191,7 +197,9 @@ export async function deployModel(game, { appId }, log = noop) {
         seenTypes.set(container.typeName, existing);
       }
       if (existing.some((row) => row.displayName === container.displayName)) {
-        log(`Container "${container.displayName}" (${container.typeName}) already exists; not re-seeding`);
+        log(
+          `Container "${container.displayName}" (${container.typeName}) already exists; not re-seeding`,
+        );
       } else {
         keep.push(container);
       }
@@ -218,7 +226,9 @@ export async function publishStarterFiles(game, { appId }, log = noop) {
   const existing = await game.crowdyStudio.listCommonFiles({ appId, gridId: '' });
   const results = [];
   for (const common of STARTER_TEMPLATES.flatMap(commonFilesFor)) {
-    const current = existing.find((file) => file.title === common.title && file.content === common.content);
+    const current = existing.find(
+      (file) => file.title === common.title && file.content === common.content,
+    );
     if (current) {
       log(`Common file "${common.slug}" already current`);
       results.push({ slug: common.slug, status: 'current' });
@@ -282,16 +292,26 @@ export async function runOnboarding(options) {
   const { app } = await step('app', 'App', () =>
     ensureApp(
       identity,
-      { orgId: org.orgId, orgSlug: org.slug, name: appName, slug: appSlug ?? slugify(appName), datacenter },
+      {
+        orgId: org.orgId,
+        orgSlug: org.slug,
+        name: appName,
+        slug: appSlug ?? slugify(appName),
+        datacenter,
+      },
       log,
     ),
   );
   const appId = String(app.appId);
-  await step('tier', 'Constructor access tier', () => ensureConstructorTier(identity, { appId, userId }, log));
+  await step('tier', 'Constructor access tier', () =>
+    ensureConstructorTier(identity, { appId, userId }, log),
+  );
   const game = await step('enter', 'App token', () => enterApp(appId));
   await step('claims', 'Grid claim policy', () => ensureSelfClaimPolicy(game, { appId }, log));
   await step('model', 'Game model', () => deployModel(game, { appId }, log));
-  await step('studio', 'Crowdy Studio starter files', () => publishStarterFiles(game, { appId }, log));
+  await step('studio', 'Crowdy Studio starter files', () =>
+    publishStarterFiles(game, { appId }, log),
+  );
   report.org = org;
   report.app = app;
   report.appId = appId;

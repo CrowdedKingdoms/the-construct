@@ -259,9 +259,7 @@ export class NetworkManager {
         wsUrl,
         graphqlEndpoint: graphqlEndpoint(httpUrl),
         wsEndpoint: graphqlEndpoint(wsUrl),
-        tokenStore: new BrowserLocalStorageTokenStore(
-          envScopedKey(`crowdyjs:app:${route.appId}`),
-        ),
+        tokenStore: new BrowserLocalStorageTokenStore(envScopedKey(`crowdyjs:app:${route.appId}`)),
         realtime: {
           retryAttempts: 8,
           retryInitialDelayMs: 250,

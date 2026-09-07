@@ -38,7 +38,11 @@ export function ensureOrganization(
   identity: CrowdyClient,
   input: { name: string; slug?: string },
   log?: Logger,
-): Promise<{ org: { orgId: string; slug: string; name: string }; created: boolean; permissions: string[] }>;
+): Promise<{
+  org: { orgId: string; slug: string; name: string };
+  created: boolean;
+  permissions: string[];
+}>;
 export function ensureApp(
   identity: CrowdyClient,
   input: { orgId: string; orgSlug: string; name: string; slug: string; datacenter?: string },
@@ -48,13 +52,22 @@ export function ensureConstructorTier(
   identity: CrowdyClient,
   input: { appId: string; userId: string },
   log?: Logger,
-): Promise<{ tier: { tierId: string; name: string }; created: boolean; updated: boolean; granted: boolean }>;
+): Promise<{
+  tier: { tierId: string; name: string };
+  created: boolean;
+  updated: boolean;
+  granted: boolean;
+}>;
 export function ensureSelfClaimPolicy(
   game: CrowdyClient,
   input: { appId: string },
   log?: Logger,
 ): Promise<{ policy: string; changed: boolean }>;
-export function deployModel(game: CrowdyClient, input: { appId: string }, log?: Logger): Promise<unknown>;
+export function deployModel(
+  game: CrowdyClient,
+  input: { appId: string },
+  log?: Logger,
+): Promise<unknown>;
 export function publishStarterFiles(
   game: CrowdyClient,
   input: { appId: string },

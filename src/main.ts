@@ -85,7 +85,8 @@ async function enterAndPlay(appId: string, status: string): Promise<void> {
   try {
     await network.enterApp(appId);
     const boot = await network.bootstrap();
-    if (boot.udpConnected === false) network.log('UDP proxy not yet connected; the SDK will connect on subscribe');
+    if (boot.udpConnected === false)
+      network.log('UDP proxy not yet connected; the SDK will connect on subscribe');
   } catch (error) {
     // The pinned/remembered app may be gone, or not ours: fall back to Setup
     // with the reason on screen rather than a dead end.
@@ -145,7 +146,9 @@ async function startGame(): Promise<void> {
       network.log(`scene: ${scene.id}`);
     }),
   );
-  game.disposers.push(network.events.on('realtime', (status) => network.log(`realtime: ${String(status)}`)));
+  game.disposers.push(
+    network.events.on('realtime', (status) => network.log(`realtime: ${String(status)}`)),
+  );
 
   // Join where we left off (holodeck only; programs re-spawn at their entry).
   const spawn = saved.position && !saved.lastProgram ? saved.position : HOLODECK_SPAWN;
@@ -155,7 +158,9 @@ async function startGame(): Promise<void> {
   loop.start();
   card.hide();
   hud.toast(`Welcome to ${GAME_NAME}`);
-  session.chat.system('Proximity chat — only players within a few chunks hear you. Press T to type.');
+  session.chat.system(
+    'Proximity chat — only players within a few chunks hear you. Press T to type.',
+  );
 
   const refreshHud = async () => {
     if (running !== game) return;
@@ -183,7 +188,12 @@ async function startGame(): Promise<void> {
   if (import.meta.env.DEV) {
     // Dev-only console handle for poking at the running game
     // (`__construct.session.players()`, `__construct.router.load('paint')`).
-    (window as unknown as { __construct?: unknown }).__construct = { session, router, loop, network };
+    (window as unknown as { __construct?: unknown }).__construct = {
+      session,
+      router,
+      loop,
+      network,
+    };
   }
 }
 
@@ -202,8 +212,8 @@ async function toggleStudio(): Promise<void> {
 async function switchApp(): Promise<void> {
   await stopGame();
   card.setStatus('Setup');
-  await runSetupThenPlay('Create another app, switch apps, or re-run the seed on this one.').catch((error) =>
-    card.showError('Setup failed', messageOf(error), () => void boot()),
+  await runSetupThenPlay('Create another app, switch apps, or re-run the seed on this one.').catch(
+    (error) => card.showError('Setup failed', messageOf(error), () => void boot()),
   );
 }
 

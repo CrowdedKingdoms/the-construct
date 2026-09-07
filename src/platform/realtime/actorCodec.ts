@@ -19,7 +19,14 @@
  *   36-59 name          24 bytes UTF-8, NUL padded
  *   60-63 reserved
  */
-import { bytes, f32, reserved, structCodec, u8, type StateCodec } from '@crowdedkingdoms/crowdyjs/stores';
+import {
+  bytes,
+  f32,
+  reserved,
+  structCodec,
+  u8,
+  type StateCodec,
+} from '@crowdedkingdoms/crowdyjs/stores';
 
 export const FLAG_MOVING = 1 << 0;
 export const FLAG_IN_PROGRAM = 1 << 1;

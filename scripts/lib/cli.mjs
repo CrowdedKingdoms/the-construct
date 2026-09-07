@@ -23,7 +23,10 @@ export function loadDotEnv(rootDir = process.cwd()) {
         const eq = line.indexOf('=');
         if (eq < 0) continue;
         const key = line.slice(0, eq).trim();
-        const value = line.slice(eq + 1).trim().replace(/^(['"])(.*)\1$/, '$2');
+        const value = line
+          .slice(eq + 1)
+          .trim()
+          .replace(/^(['"])(.*)\1$/, '$2');
         if (process.env[key] === undefined) process.env[key] = value;
       }
     } catch {
@@ -48,7 +51,10 @@ export function apiRoot() {
 
 /** Identity client signed in with the developer's credentials. */
 export async function signIn(log = console.log) {
-  const email = requireEnv('CONSTRUCT_EMAIL', 'Set CONSTRUCT_EMAIL and CONSTRUCT_PASSWORD (an account you own).');
+  const email = requireEnv(
+    'CONSTRUCT_EMAIL',
+    'Set CONSTRUCT_EMAIL and CONSTRUCT_PASSWORD (an account you own).',
+  );
   const password = requireEnv('CONSTRUCT_PASSWORD');
   const root = apiRoot();
   const identity = createCrowdyClient(root ? { httpUrl: root } : {});

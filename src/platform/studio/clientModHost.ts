@@ -29,7 +29,12 @@ export interface ClientModHostReads {
 }
 
 /** The host calls this game answers. Exported so the docs and tests agree. */
-export const OFFERED_HOST_CALLS = ['actors_list', 'actors_list_radius', 'chunk_get', 'voxels_list'] as const;
+export const OFFERED_HOST_CALLS = [
+  'actors_list',
+  'actors_list_radius',
+  'chunk_get',
+  'voxels_list',
+] as const;
 
 const MAX_RADIUS = 8;
 
@@ -60,10 +65,18 @@ export async function routeClientHostCall(
         Number.isFinite(requested) ? Math.max(0, Math.min(MAX_RADIUS, Math.floor(requested))) : 0,
       );
       const low = grid
-        ? { x: maxBig(grid.low.x, origin.x - radius), y: maxBig(grid.low.y, origin.y - radius), z: maxBig(grid.low.z, origin.z - radius) }
+        ? {
+            x: maxBig(grid.low.x, origin.x - radius),
+            y: maxBig(grid.low.y, origin.y - radius),
+            z: maxBig(grid.low.z, origin.z - radius),
+          }
         : origin;
       const high = grid
-        ? { x: minBig(grid.high.x, origin.x + radius), y: minBig(grid.high.y, origin.y + radius), z: minBig(grid.high.z, origin.z + radius) }
+        ? {
+            x: minBig(grid.high.x, origin.x + radius),
+            y: minBig(grid.high.y, origin.y + radius),
+            z: minBig(grid.high.z, origin.z + radius),
+          }
         : origin;
       const actors: Array<Record<string, unknown>> = [];
       for (let x = low.x; x <= high.x; x++)
@@ -85,7 +98,9 @@ export async function routeClientHostCall(
 }
 
 /** Sparse `{x,y,z,voxelType}` rows for the non-zero cells of a dense grid. */
-export function voxelsFromBase64(voxelsBase64: string | null): Array<{ x: number; y: number; z: number; voxelType: number }> {
+export function voxelsFromBase64(
+  voxelsBase64: string | null,
+): Array<{ x: number; y: number; z: number; voxelType: number }> {
   if (!voxelsBase64) return [];
   const binary = atob(voxelsBase64);
   const out: Array<{ x: number; y: number; z: number; voxelType: number }> = [];
@@ -139,7 +154,11 @@ export async function runConsentedGridMod(options: {
   let fetched: { bytes: ArrayBuffer; artifactHash?: string; fuelPerDispatch?: string | bigint };
   const cached = artifactCache.get(options.artifactCacheKey);
   if (cached) {
-    fetched = { bytes: cached.bytes.slice().buffer, artifactHash: cached.artifactHash, fuelPerDispatch: cached.fuelPerDispatch };
+    fetched = {
+      bytes: cached.bytes.slice().buffer,
+      artifactHash: cached.artifactHash,
+      fuelPerDispatch: cached.fuelPerDispatch,
+    };
   } else {
     try {
       fetched = await options.client.marketplace.clientArtifactBytes({
@@ -164,7 +183,11 @@ export async function runConsentedGridMod(options: {
     onHostCall: (call) => routeClientHostCall(call, options.reads, options.grid),
     onPresentation: (presentation: PlayerCodePresentation) => {
       if (presentation.channel === 'hud') {
-        options.hud.set({ source: options.hudSource, label: options.hudLabel, payload: presentation.payload });
+        options.hud.set({
+          source: options.hudSource,
+          label: options.hudLabel,
+          payload: presentation.payload,
+        });
       }
     },
     onCircuitOpen: () => options.hud.remove(options.hudSource),

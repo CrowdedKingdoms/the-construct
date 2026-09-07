@@ -106,7 +106,9 @@ export class PaintScene implements GameScene {
         }),
       );
     }
-    this.disposables.push(context.input.onKey('Digit0', () => ((this.paletteIndex = 0), (this.hintDirty = true))));
+    this.disposables.push(
+      context.input.onKey('Digit0', () => ((this.paletteIndex = 0), (this.hintDirty = true))),
+    );
     this.disposables.push(
       context.input.onKey('KeyH', () => {
         if (context.input.suppressed) return;
@@ -189,7 +191,9 @@ export class PaintScene implements GameScene {
     if (this.hintDirty) {
       this.hintDirty = false;
       const colour = this.paletteIndex === 0 ? 'eraser' : `colour ${this.paletteIndex}`;
-      context.hud.setHint(`Paint — click/drag to paint (${colour}) · 1-8 colours, 0 eraser · WASD move · H back to holodeck`);
+      context.hud.setHint(
+        `Paint — click/drag to paint (${colour}) · 1-8 colours, 0 eraser · WASD move · H back to holodeck`,
+      );
     }
     app.renderer.render(app.stage);
   }
@@ -226,7 +230,12 @@ export class PaintScene implements GameScene {
         // already merged everyone's live edits, so that is rarely visible.
         chunks.markDirty(chunk);
       })
-      .catch((error) => context.hud.toast(`Paint failed: ${error instanceof Error ? error.message : String(error)}`, 'error'));
+      .catch((error) =>
+        context.hud.toast(
+          `Paint failed: ${error instanceof Error ? error.message : String(error)}`,
+          'error',
+        ),
+      );
   }
 
   private syncChunks(): void {
@@ -243,7 +252,10 @@ export class PaintScene implements GameScene {
         let entry = this.chunkGraphics.get(key);
         if (!entry) {
           entry = { graphics: new Graphics(), revision: -1 };
-          entry.graphics.position.set(coord.x * CHUNK_SIZE * CELL_PX, coord.z * CHUNK_SIZE * CELL_PX);
+          entry.graphics.position.set(
+            coord.x * CHUNK_SIZE * CELL_PX,
+            coord.z * CHUNK_SIZE * CELL_PX,
+          );
           this.chunkLayer.addChild(entry.graphics);
           this.chunkGraphics.set(key, entry);
         }
@@ -325,7 +337,12 @@ export class PaintScene implements GameScene {
     const disc = new Graphics();
     const label = new Text({
       text: name,
-      style: new TextStyle({ fill: 0xe9f5f1, fontSize: 13, fontFamily: 'system-ui, sans-serif', fontWeight: '600' }),
+      style: new TextStyle({
+        fill: 0xe9f5f1,
+        fontSize: 13,
+        fontFamily: 'system-ui, sans-serif',
+        fontWeight: '600',
+      }),
     });
     label.anchor.set(0.5, 1);
     label.position.set(0, -CELL_PX * 0.55);

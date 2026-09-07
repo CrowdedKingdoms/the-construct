@@ -40,7 +40,10 @@ export function sdkDefaultHttpOrigin(rootDir = process.cwd()) {
 /** The tier the installed SDK declares, if it declares one. */
 export function sdkDefaultTier(rootDir = process.cwd()) {
   try {
-    const file = path.join(rootDir, 'node_modules/@crowdedkingdoms/crowdyjs/dist/default-origin.js');
+    const file = path.join(
+      rootDir,
+      'node_modules/@crowdedkingdoms/crowdyjs/dist/default-origin.js',
+    );
     const source = readFileSync(file, 'utf8');
     const match = source.match(/CROWDY_DEFAULT_TIER\s*=\s*['"]([^'"]+)['"]/);
     return match ? match[1] : null;

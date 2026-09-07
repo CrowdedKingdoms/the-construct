@@ -55,7 +55,9 @@ export class ClientModLifecycle {
   }
 
   isCurrent(scope: ClientModScope): boolean {
-    return !this.stopped && scope.gridId === this.activeGridId && scope.generation === this.generation;
+    return (
+      !this.stopped && scope.gridId === this.activeGridId && scope.generation === this.generation
+    );
   }
 
   track(scope: ClientModScope, descriptor: ClientModDescriptor, handle: ClientModHandle): boolean {
@@ -73,7 +75,11 @@ export class ClientModLifecycle {
     const current = new Map(descriptors.map((d) => [d.attachmentId, d]));
     for (const [attachmentId, running] of this.running) {
       const next = current.get(attachmentId);
-      if (!next || next.artifactHash !== running.artifactHash || next.capabilityHash !== running.capabilityHash) {
+      if (
+        !next ||
+        next.artifactHash !== running.artifactHash ||
+        next.capabilityHash !== running.capabilityHash
+      ) {
         running.stop();
         this.running.delete(attachmentId);
       }

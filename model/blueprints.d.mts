@@ -12,7 +12,10 @@ export const PULSE_INTERVAL_MS: number;
 export function constructWorldBlueprint(): KitBlueprint;
 export function constructBlueprints(): KitBlueprint[];
 export const KIT_PREFIXES: { progression: string; leaderboards: string };
-export function kitOptions(): { progression: { typePrefix: string }; leaderboards: { typePrefix: string } };
+export function kitOptions(): {
+  progression: { typePrefix: string };
+  leaderboards: { typePrefix: string };
+};
 export const MODEL_NAMES: {
   programType: string;
   worldStateType: string;

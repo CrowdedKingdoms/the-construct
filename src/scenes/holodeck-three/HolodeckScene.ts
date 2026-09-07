@@ -46,7 +46,10 @@ export class HolodeckScene implements GameScene {
 
   mount(context: SceneContext, size: SceneSize): void {
     this.context = context;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+    });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(size.width, size.height);
     renderer.domElement.className = 'scene-canvas';

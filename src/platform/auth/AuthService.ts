@@ -96,7 +96,9 @@ export class AuthService {
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw) as Partial<GuestCredentials>;
-      return parsed.email && parsed.password ? { email: parsed.email, password: parsed.password } : null;
+      return parsed.email && parsed.password
+        ? { email: parsed.email, password: parsed.password }
+        : null;
     } catch {
       return null;
     }

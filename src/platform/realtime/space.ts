@@ -40,7 +40,9 @@ export function chunkInput(chunk: ChunkCoord | ChunkCoordinatesInput): ChunkCoor
   return { x: String(chunk.x), y: String(chunk.y), z: String(chunk.z) };
 }
 
-export function chunkFromInput(chunk: ChunkCoordinatesInput | { x: unknown; y: unknown; z: unknown }): ChunkCoord {
+export function chunkFromInput(
+  chunk: ChunkCoordinatesInput | { x: unknown; y: unknown; z: unknown },
+): ChunkCoord {
   return { x: Number(chunk.x), y: Number(chunk.y), z: Number(chunk.z) };
 }
 
@@ -48,7 +50,10 @@ export function chunkKey(chunk: ChunkCoord | ChunkCoordinatesInput): string {
   return `${chunk.x},${chunk.y},${chunk.z}`;
 }
 
-export function sameChunk(a: ChunkCoord | ChunkCoordinatesInput, b: ChunkCoord | ChunkCoordinatesInput): boolean {
+export function sameChunk(
+  a: ChunkCoord | ChunkCoordinatesInput,
+  b: ChunkCoord | ChunkCoordinatesInput,
+): boolean {
   return String(a.x) === String(b.x) && String(a.y) === String(b.y) && String(a.z) === String(b.z);
 }
 

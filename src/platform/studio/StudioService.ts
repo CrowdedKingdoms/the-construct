@@ -168,7 +168,8 @@ export class StudioService {
       return;
     }
     const chunk = worldToChunk(position);
-    let grid = this.currentGrid && chunkKey(chunk) === this.lastGridChunkKey ? this.currentGrid : null;
+    let grid =
+      this.currentGrid && chunkKey(chunk) === this.lastGridChunkKey ? this.currentGrid : null;
     if (!grid) {
       grid = await this.grids.lookup(chunk);
       this.adoptGrid(grid, chunk);
@@ -216,7 +217,9 @@ export class StudioService {
       targetPermissions: {
         SERVER: grid.permissions.server,
         // Keys say what you MAY do; isolation says what the browser CAN do.
-        CLIENT: clientOk ? grid.permissions.client : { canWrite: grid.permissions.client.canWrite, canRun: false },
+        CLIENT: clientOk
+          ? grid.permissions.client
+          : { canWrite: grid.permissions.client.canWrite, canRun: false },
       },
       permissionsNote: clientOk
         ? 'Authoritative effective grid keys'
@@ -241,13 +244,33 @@ export class StudioService {
         const rows: Array<Record<string, unknown>> = [];
         const world = this.session.world;
         const selfChunk = world.self.chunk;
-        if (selfChunk && BigInt(selfChunk.x) === x && BigInt(selfChunk.y) === y && BigInt(selfChunk.z) === z) {
+        if (
+          selfChunk &&
+          BigInt(selfChunk.x) === x &&
+          BigInt(selfChunk.y) === y &&
+          BigInt(selfChunk.z) === z
+        ) {
           const s = world.self.state;
-          rows.push({ uuid: world.self.uuid, self: true, name: s.name, x: s.x, y: s.y, z: s.z, program: s.program });
+          rows.push({
+            uuid: world.self.uuid,
+            self: true,
+            name: s.name,
+            x: s.x,
+            y: s.y,
+            z: s.z,
+            program: s.program,
+          });
         }
         for (const p of this.session.players()) {
           if (BigInt(p.chunk.x) === x && BigInt(p.chunk.y) === y && BigInt(p.chunk.z) === z) {
-            rows.push({ uuid: p.uuid, name: p.pose.name, x: p.pose.x, y: p.pose.y, z: p.pose.z, program: p.pose.program });
+            rows.push({
+              uuid: p.uuid,
+              name: p.pose.name,
+              x: p.pose.x,
+              y: p.pose.y,
+              z: p.pose.z,
+              program: p.pose.program,
+            });
           }
         }
         return rows;
@@ -366,7 +389,10 @@ export class StudioService {
       }
       for (const mod of mods) {
         if (!this.lifecycle.isCurrent(scope)) return;
-        if ((mod.callerTrustsAuthor || mod.callerConsented) && !this.lifecycle.has(mod.attachmentId)) {
+        if (
+          (mod.callerTrustsAuthor || mod.callerConsented) &&
+          !this.lifecycle.has(mod.attachmentId)
+        ) {
           await this.runGridMod(mod, grid, scope);
         }
       }
@@ -380,7 +406,12 @@ export class StudioService {
   }
 
   private async runGridMod(
-    mod: { attachmentId: string; clientArtifactHash: string; capabilityHash: string; listingName?: string | null },
+    mod: {
+      attachmentId: string;
+      clientArtifactHash: string;
+      capabilityHash: string;
+      listingName?: string | null;
+    },
     grid: GridSnapshot,
     scope: ClientModScope,
   ): Promise<void> {
@@ -411,8 +442,16 @@ export class StudioService {
   }
 }
 
-function descriptorOf(mod: { attachmentId: string; clientArtifactHash: string; capabilityHash: string }) {
-  return { attachmentId: mod.attachmentId, artifactHash: mod.clientArtifactHash, capabilityHash: mod.capabilityHash };
+function descriptorOf(mod: {
+  attachmentId: string;
+  clientArtifactHash: string;
+  capabilityHash: string;
+}) {
+  return {
+    attachmentId: mod.attachmentId,
+    artifactHash: mod.clientArtifactHash,
+    capabilityHash: mod.capabilityHash,
+  };
 }
 
 function prettyCapabilities(json: string | null | undefined): string {

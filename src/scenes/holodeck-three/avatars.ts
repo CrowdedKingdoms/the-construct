@@ -62,7 +62,12 @@ export class AvatarPool {
     const color = tintColor(pose.tint);
     const body = new THREE.Mesh(
       BODY_GEOMETRY,
-      new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.25, roughness: 0.4 }),
+      new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 0.25,
+        roughness: 0.4,
+      }),
     );
     body.position.y = 0.8;
     const marker = new THREE.Mesh(

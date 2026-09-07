@@ -51,7 +51,10 @@ export function ensureEnvScope(storage: Storage | undefined = globalThis.localSt
   }
 }
 
-export function readScoped(base: string, storage: Storage | undefined = globalThis.localStorage): string | null {
+export function readScoped(
+  base: string,
+  storage: Storage | undefined = globalThis.localStorage,
+): string | null {
   try {
     return storage?.getItem(envScopedKey(base)) ?? null;
   } catch {

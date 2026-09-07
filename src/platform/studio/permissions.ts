@@ -37,10 +37,10 @@ function isPlayerCodeKey(value: string): value is PlayerCodePermissionKey {
   return (PLAYER_CODE_PERMISSION_KEYS as readonly string[]).includes(value);
 }
 
-export function studioPermissions(effectiveKeys: readonly unknown[] | null | undefined): StudioPermissions {
-  const keys = new Set(
-    (effectiveKeys ?? []).map(String).filter(isPlayerCodeKey),
-  );
+export function studioPermissions(
+  effectiveKeys: readonly unknown[] | null | undefined,
+): StudioPermissions {
+  const keys = new Set((effectiveKeys ?? []).map(String).filter(isPlayerCodeKey));
   return {
     effectiveKeys: PLAYER_CODE_PERMISSION_KEYS.filter((key) => keys.has(key)),
     server: { canWrite: keys.has('write_server_code'), canRun: keys.has('run_server_code') },
@@ -51,10 +51,10 @@ export function studioPermissions(effectiveKeys: readonly unknown[] | null | und
 export function hasAnyStudioPermission(permissions: StudioPermissions | null | undefined): boolean {
   return Boolean(
     permissions &&
-      (permissions.server.canWrite ||
-        permissions.server.canRun ||
-        permissions.client.canWrite ||
-        permissions.client.canRun),
+    (permissions.server.canWrite ||
+      permissions.server.canRun ||
+      permissions.client.canWrite ||
+      permissions.client.canRun),
   );
 }
 
@@ -85,11 +85,16 @@ export function gridBoundsFrom(low: unknown, high: unknown): GridBounds | null {
   const l = parseCorner(low);
   const h = parseCorner(high);
   if (!l || !h) return null;
-  if (BigInt(l.x) > BigInt(h.x) || BigInt(l.y) > BigInt(h.y) || BigInt(l.z) > BigInt(h.z)) return null;
+  if (BigInt(l.x) > BigInt(h.x) || BigInt(l.y) > BigInt(h.y) || BigInt(l.z) > BigInt(h.z))
+    return null;
   return { low: l, high: h };
 }
 
-export function singleChunkBounds(chunk: { x: number | string; y: number | string; z: number | string }): GridBounds {
+export function singleChunkBounds(chunk: {
+  x: number | string;
+  y: number | string;
+  z: number | string;
+}): GridBounds {
   const corner = { x: String(chunk.x), y: String(chunk.y), z: String(chunk.z) };
   return { low: corner, high: { ...corner } };
 }

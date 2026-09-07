@@ -53,7 +53,11 @@ export function showSetupWizard(
 
     const existing = el('select');
     existing.appendChild(el('option', { value: '', text: 'Loading your apps…' }));
-    const manualId = el('input', { type: 'text', inputmode: 'numeric', placeholder: 'or paste an app id' });
+    const manualId = el('input', {
+      type: 'text',
+      inputmode: 'numeric',
+      placeholder: 'or paste an app id',
+    });
     if (options.currentAppId) manualId.value = options.currentAppId;
 
     const error = el('p', { class: 'error-text' });
@@ -65,7 +69,10 @@ export function showSetupWizard(
 
     const stepItems = new Map<string, HTMLElement>();
     for (const step of STEP_LABELS) {
-      const item = el('li', { 'data-status': 'pending' }, [el('span', { class: 'dot' }), el('span', { text: step.label })]);
+      const item = el('li', { 'data-status': 'pending' }, [
+        el('span', { class: 'dot' }),
+        el('span', { text: step.label }),
+      ]);
       stepItems.set(step.id, item);
       steps.appendChild(item);
     }
@@ -106,8 +113,14 @@ export function showSetupWizard(
           },
         });
         card.setStatus(`App ${report.appId} is ready`);
-        appendLog(`Done. App id ${report.appId}. Add VITE_APP_ID=${report.appId} to .env.local to pin it.`);
-        const play = el('button', { class: 'primary', type: 'button', text: 'Enter The Construct' });
+        appendLog(
+          `Done. App id ${report.appId}. Add VITE_APP_ID=${report.appId} to .env.local to pin it.`,
+        );
+        const play = el('button', {
+          class: 'primary',
+          type: 'button',
+          text: 'Enter The Construct',
+        });
         play.addEventListener('click', () => resolve({ appId: report.appId }));
         actions.replaceChildren(play);
       } catch (err) {
@@ -145,7 +158,11 @@ export function showSetupWizard(
         if (!app) throw new Error(`App ${appId} not found or not visible to you`);
         const orgs = await network.identity.organizations.mine();
         const org = orgs.find((o) => String(o.org.orgId) === String(app.orgId));
-        await run({ orgName: org?.org.name ?? defaultOrg, appName: app.name, appSlug: app.slug ?? slugify(app.name) });
+        await run({
+          orgName: org?.org.name ?? defaultOrg,
+          appName: app.name,
+          appSlug: app.slug ?? slugify(app.name),
+        });
       } catch (err) {
         error.textContent = messageOf(err);
         busy(false);
@@ -182,14 +199,20 @@ export function showSetupWizard(
     void network.identity.apps
       .myApps()
       .then((apps) => {
-        existing.replaceChildren(el('option', { value: '', text: apps.length ? 'Choose an app…' : 'No apps yet' }));
+        existing.replaceChildren(
+          el('option', { value: '', text: apps.length ? 'Choose an app…' : 'No apps yet' }),
+        );
         for (const app of apps) {
-          existing.appendChild(el('option', { value: String(app.appId), text: `${app.name} (${app.appId})` }));
+          existing.appendChild(
+            el('option', { value: String(app.appId), text: `${app.name} (${app.appId})` }),
+          );
         }
         if (options.currentAppId) existing.value = options.currentAppId;
       })
       .catch((err) => {
-        existing.replaceChildren(el('option', { value: '', text: `Could not list apps: ${messageOf(err)}` }));
+        existing.replaceChildren(
+          el('option', { value: '', text: `Could not list apps: ${messageOf(err)}` }),
+        );
       });
   });
 }

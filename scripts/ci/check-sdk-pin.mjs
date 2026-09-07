@@ -25,22 +25,35 @@ const lock = JSON.parse(readFileSync(path.join(root, 'package-lock.json'), 'utf8
 const NAME = '@crowdedkingdoms/crowdyjs';
 const declared = pkg.dependencies?.[NAME];
 const locked = lock.packages?.[`node_modules/${NAME}`]?.version;
-const branch = (process.env.GITHUB_BASE_REF || process.env.GITHUB_REF_NAME || process.argv[2] || '').trim();
+const branch = (
+  process.env.GITHUB_BASE_REF ||
+  process.env.GITHUB_REF_NAME ||
+  process.argv[2] ||
+  ''
+).trim();
 const tier = ['dev', 'test', 'prod'].includes(branch) ? branch : null;
 
 const problems = [];
 if (!declared) problems.push(`${NAME} is not a dependency`);
 else {
   if (!/^\d+\.\d+\.\d+(-[a-z]+\.\d+)?$/.test(declared)) {
-    problems.push(`pin "${declared}" is not exact (no ^ ~ or ranges; a caret cannot match a prerelease)`);
+    problems.push(
+      `pin "${declared}" is not exact (no ^ ~ or ranges; a caret cannot match a prerelease)`,
+    );
   }
-  if (locked && locked !== declared) problems.push(`package-lock resolves ${locked} but package.json pins ${declared}`);
-  if (tier === 'dev' && !/-dev\.\d+$/.test(declared)) problems.push(`branch dev must pin an -dev.N prerelease, got ${declared}`);
-  if (tier === 'test' && !/-test\.\d+$/.test(declared)) problems.push(`branch test must pin a -test.N prerelease, got ${declared}`);
-  if (tier === 'prod' && /-/.test(declared)) problems.push(`branch prod must pin a plain release, got ${declared}`);
+  if (locked && locked !== declared)
+    problems.push(`package-lock resolves ${locked} but package.json pins ${declared}`);
+  if (tier === 'dev' && !/-dev\.\d+$/.test(declared))
+    problems.push(`branch dev must pin an -dev.N prerelease, got ${declared}`);
+  if (tier === 'test' && !/-test\.\d+$/.test(declared))
+    problems.push(`branch test must pin a -test.N prerelease, got ${declared}`);
+  if (tier === 'prod' && /-/.test(declared))
+    problems.push(`branch prod must pin a plain release, got ${declared}`);
 }
 
-console.log(`${NAME}: package.json ${declared ?? '(none)'} · lock ${locked ?? '(none)'} · tier ${tier ?? 'n/a (feature branch)'}`);
+console.log(
+  `${NAME}: package.json ${declared ?? '(none)'} · lock ${locked ?? '(none)'} · tier ${tier ?? 'n/a (feature branch)'}`,
+);
 if (problems.length) {
   for (const problem of problems) console.error(`  ✗ ${problem}`);
   process.exit(1);

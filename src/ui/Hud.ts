@@ -38,11 +38,20 @@ export class Hud implements SceneHud {
       this.bannerDismissed = true;
       this.banner.classList.add('hidden');
     });
-    this.banner = el('div', { class: 'panel banner hidden', role: 'note' }, [this.bannerText, dismiss]);
+    this.banner = el('div', { class: 'panel banner hidden', role: 'note' }, [
+      this.bannerText,
+      dismiss,
+    ]);
 
-    const studio = el('button', { text: 'Crowdy Studio (M)', title: 'Open Crowdy Studio on the grid you stand on' });
+    const studio = el('button', {
+      text: 'Crowdy Studio (M)',
+      title: 'Open Crowdy Studio on the grid you stand on',
+    });
     studio.addEventListener('click', actions.openStudio);
-    const setup = el('button', { text: 'Setup', title: 'Create or switch apps; re-run the model seed' });
+    const setup = el('button', {
+      text: 'Setup',
+      title: 'Create or switch apps; re-run the model seed',
+    });
     setup.addEventListener('click', actions.openSetup);
     const signOut = el('button', { class: 'ghost', text: 'Sign out' });
     signOut.addEventListener('click', actions.signOut);
@@ -79,7 +88,10 @@ export class Hud implements SceneHud {
     if (extras.model) this.lastModel = extras.model;
     const model = this.lastModel;
     this.identity.replaceChildren(
-      el('div', { class: 'row' }, [el('strong', { text: session.displayName }), el('span', { class: 'muted', text: user?.email ?? '' })]),
+      el('div', { class: 'row' }, [
+        el('strong', { text: session.displayName }),
+        el('span', { class: 'muted', text: user?.email ?? '' }),
+      ]),
       el('div', { class: 'row muted' }, [
         `app ${session.network.appId ?? '—'}`,
         `· ${extras.sceneId}`,
@@ -89,9 +101,11 @@ export class Hud implements SceneHud {
     const worldRows: Node[] = [];
     if (!model) worldRows.push(el('div', { class: 'muted', text: 'reading the game model…' }));
     else {
-      if (model.pulses !== undefined) worldRows.push(el('div', { text: `world pulses ${model.pulses}` }));
+      if (model.pulses !== undefined)
+        worldRows.push(el('div', { text: `world pulses ${model.pulses}` }));
       if (model.level !== undefined) worldRows.push(el('div', { text: `level ${model.level}` }));
-      if (worldRows.length === 0) worldRows.push(el('div', { class: 'muted', text: 'model not seeded — run Setup' }));
+      if (worldRows.length === 0)
+        worldRows.push(el('div', { class: 'muted', text: 'model not seeded — run Setup' }));
     }
     this.world.replaceChildren(...worldRows);
   }
@@ -107,7 +121,10 @@ export class Hud implements SceneHud {
       ? `client mods on${state.clientModsRunning ? ` · ${state.clientModsRunning} running` : ''}`
       : 'client mods off';
     this.studioChip.replaceChildren(
-      el('div', { class: 'row' }, [el('strong', { text: state.open ? 'Studio open' : 'Studio' }), el('span', { class: 'muted', text: grid })]),
+      el('div', { class: 'row' }, [
+        el('strong', { text: state.open ? 'Studio open' : 'Studio' }),
+        el('span', { class: 'muted', text: grid }),
+      ]),
       el('div', { class: 'row muted' }, [perms ? `${perms} · ` : '', mods]),
     );
     if (state.clientModsReason && !this.bannerDismissed) {

@@ -25,12 +25,17 @@ function envFlag(name: string, fallback: boolean): boolean {
  * The API root the bundle dials. Explicit override first; otherwise the origin
  * the SDK was published with. Never a hostname written into this repository.
  */
-export const API_HTTP_URL: string = (envString('VITE_CROWDY_HTTP_URL') ?? CROWDY_DEFAULT_HTTP_ORIGIN)
+export const API_HTTP_URL: string = (
+  envString('VITE_CROWDY_HTTP_URL') ?? CROWDY_DEFAULT_HTTP_ORIGIN
+)
   .replace(/\/graphql\/?$/, '')
   .replace(/\/$/, '');
 
 /** The same host over WebSocket. */
-export const API_WS_URL: string = API_HTTP_URL.replace(/^http(s?):/, (_m, secure: string) => `ws${secure}:`);
+export const API_WS_URL: string = API_HTTP_URL.replace(
+  /^http(s?):/,
+  (_m, secure: string) => `ws${secure}:`,
+);
 
 /** Which tier the SDK build targets; informational (shown in the boot card). */
 export const API_TIER: string = envString('VITE_CROWDY_HTTP_URL') ? 'custom' : CROWDY_DEFAULT_TIER;
@@ -69,8 +74,7 @@ export interface AppIdSources {
 }
 
 export type AppIdResolution =
-  | { appId: string; source: 'query' | 'storage' | 'env' }
-  | { appId: null; source: 'none' };
+  { appId: string; source: 'query' | 'storage' | 'env' } | { appId: null; source: 'none' };
 
 const APP_ID_PATTERN = /^\d{1,20}$/;
 

@@ -5,12 +5,18 @@
  *
  *   CONSTRUCT_EMAIL=... CONSTRUCT_PASSWORD=... APP_ID=<id> npm run seed
  */
-import { deployModel, ensureSelfClaimPolicy, publishStarterFiles } from '../src/platform/onboarding/steps.mjs';
+import {
+  deployModel,
+  ensureSelfClaimPolicy,
+  publishStarterFiles,
+} from '../src/platform/onboarding/steps.mjs';
 import { enterApp, loadDotEnv, messageOf, requireEnv, signIn } from './lib/cli.mjs';
 
 loadDotEnv();
 const log = (line) => console.log(`  ${line}`);
-const appId = process.env.APP_ID?.trim() || requireEnv('VITE_APP_ID', 'Set APP_ID (or VITE_APP_ID in .env.local).');
+const appId =
+  process.env.APP_ID?.trim() ||
+  requireEnv('VITE_APP_ID', 'Set APP_ID (or VITE_APP_ID in .env.local).');
 
 try {
   const { identity } = await signIn(log);

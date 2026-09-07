@@ -39,7 +39,7 @@ export class ChatService {
       const self = n.uuid === session.self.uuid;
       const name = self
         ? session.self.state.name || 'you'
-        : (remotePlayers().find((p) => p.uuid === n.uuid)?.pose.name || shortUuid(n.uuid));
+        : remotePlayers().find((p) => p.uuid === n.uuid)?.pose.name || shortUuid(n.uuid);
       this.push({ uuid: n.uuid, name, text: n.text, self });
     });
   }

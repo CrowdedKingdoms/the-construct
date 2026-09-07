@@ -77,11 +77,26 @@ export function constructWorldBlueprint() {
       { containerTypeName: 'Claim', key: 'cy', valueType: 'int', defaultValueJson: '0' },
       { containerTypeName: 'Claim', key: 'cz', valueType: 'int', defaultValueJson: '0' },
       { containerTypeName: 'Claim', key: 'owner_user_id', valueType: 'int', defaultValueJson: '0' },
-      { containerTypeName: 'Claim', key: 'owner_name', valueType: 'string', defaultValueJson: '""' },
+      {
+        containerTypeName: 'Claim',
+        key: 'owner_name',
+        valueType: 'string',
+        defaultValueJson: '""',
+      },
       { containerTypeName: 'Program', key: 'program_id', valueType: 'int', defaultValueJson: '0' },
-      { containerTypeName: 'Program', key: 'scene_id', valueType: 'string', defaultValueJson: '""' },
+      {
+        containerTypeName: 'Program',
+        key: 'scene_id',
+        valueType: 'string',
+        defaultValueJson: '""',
+      },
       { containerTypeName: 'Program', key: 'name', valueType: 'string', defaultValueJson: '""' },
-      { containerTypeName: 'Program', key: 'description', valueType: 'string', defaultValueJson: '""' },
+      {
+        containerTypeName: 'Program',
+        key: 'description',
+        valueType: 'string',
+        defaultValueJson: '""',
+      },
       {
         containerTypeName: 'WorldState',
         key: 'pulses',
@@ -117,7 +132,11 @@ export function constructWorldBlueprint() {
           { key: 'program_id', valueType: 'int', valueJson: String(program.programId) },
           { key: 'scene_id', valueType: 'string', valueJson: JSON.stringify(program.sceneId) },
           { key: 'name', valueType: 'string', valueJson: JSON.stringify(program.name) },
-          { key: 'description', valueType: 'string', valueJson: JSON.stringify(program.description) },
+          {
+            key: 'description',
+            valueType: 'string',
+            valueJson: JSON.stringify(program.description),
+          },
         ],
       })),
       {
