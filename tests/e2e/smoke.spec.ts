@@ -15,7 +15,16 @@ test('boots cross-origin isolated with the security headers and shows sign-in', 
   // CLIENT mods depend on this being true; a host that drops COOP/COEP fails here.
   await expect.poll(() => page.evaluate(() => crossOriginIsolated)).toBe(true);
   await expect(page.getByRole('heading', { name: 'The Construct' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Continue as guest' })).toBeVisible();
+  // No app pinned in the cold test build: the no-app card, and NO login form --
+  // a game on its own domain never collects a password (hosted sign-in only).
+  await expect(page.getByRole('button', { name: 'Use this app' })).toBeVisible();
+  await expect(page.getByPlaceholder('••••••••')).toHaveCount(0);
+});
+
+test('with an app id, the only sign-in is the hosted one', async ({ page }) => {
+  await page.goto('/?app=1');
+  await expect(page.getByRole('button', { name: 'Sign in with Crowded Kingdoms' })).toBeVisible();
+  await expect(page.getByPlaceholder('you@example.com')).toHaveCount(0);
 });
 
 test('sign in, enter the app, join the holodeck, open Crowdy Studio on a claimed chunk', async ({
@@ -27,10 +36,23 @@ test('sign in, enter the app, join the holodeck, open Crowdy Studio on a claimed
   );
   page.on('dialog', (dialog) => void dialog.accept());
   await page.goto(`/?app=${appId}`);
-  await page.getByRole('tab', { name: 'Sign in' }).click();
-  await page.getByPlaceholder('you@example.com').fill(email!);
-  await page.getByPlaceholder('••••••••').fill(password!);
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  // Hosted sign-in: the button leaves for Studio's /authorize, which bounces
+  // to Studio's /login (email-first, then password), then back here with a
+  // code. The credentials are typed into STUDIO, never into this page.
+  await page.getByRole('button', { name: 'Sign in with Crowded Kingdoms' }).click();
+  await page.waitForURL(/\/login/, { timeout: 30_000 });
+  await page.getByLabel(/email address/i).fill(email!);
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.getByLabel(/^password$/i).fill(password!);
+  await page.getByRole('button', { name: /^sign in$/i }).click();
+  // Untrusted app: Studio shows the consent card once per account. A trusted or
+  // already-consented app skips it and bounces straight back, so a missing card
+  // is not a failure.
+  const consent = page.getByRole('button', { name: /continue to/i });
+  await consent
+    .waitFor({ state: 'visible', timeout: 20_000 })
+    .then(() => consent.click())
+    .catch(() => undefined);
 
   await expect(page.getByRole('button', { name: 'Crowdy Studio (M)' })).toBeVisible({
     timeout: 90_000,

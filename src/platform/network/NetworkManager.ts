@@ -1,19 +1,26 @@
 /**
  * The one place this game talks to Crowded Kingdoms.
  *
- * Two clients, two tokens, one endpoint:
+ * ONE token, held by two clients, one sign-in that never touches this page:
  *
- *  - the **identity** client holds the player's session token. It signs in,
- *    creates orgs and apps (the Setup wizard), mints app tokens, and never
- *    touches gameplay.
- *  - the **game** client holds a short-lived **app-scoped** token for ONE app
- *    and is pointed at that app's own datacenter (`mintAppToken` returns the
- *    endpoint). Everything realtime, model, Studio and persistence runs on it.
+ *  - the **platform** client dials the public API origin. It sends the player
+ *    to Crowded Kingdoms' HOSTED sign-in (Studio's /authorize, PKCE) and
+ *    receives back a short-lived **app-scoped** token for THIS app. It never
+ *    sees a password, and it never holds an identity session: a browser game on
+ *    its own domain cannot (the direct sign-in mutations answer
+ *    HOSTED_SIGN_IN_REQUIRED from any non-first-party origin, ck-api v1.88.0).
+ *  - the **game** client holds that same app token and is pointed at the app's
+ *    own datacenter (the token response carries the endpoint). Everything
+ *    realtime, model, Studio and persistence runs on it.
+ *
+ * Because the page never holds a session, everything that needs one -- creating
+ * the org and the app, seeding the model, registering this origin as a redirect
+ * URI -- happens in `npm run setup` (a Node script, no Origin header) or in
+ * Studio. The browser knows its app id from `VITE_APP_ID`, `?app=`, or storage.
  *
  * Scenes and services never import the SDK client directly; they read
  * `NetworkManager.instance.game`. That keeps "which token, which endpoint" a
- * single decision made here, and lets the wizard rebuild the game client when
- * the player switches apps.
+ * single decision made here.
  */
 import {
   BrowserLocalStorageTokenStore,
@@ -31,7 +38,7 @@ import {
   APP_TOKEN_REFRESH_MS,
   APP_TOKEN_REFRESH_RETRY_MS,
 } from '@/platform/config';
-import { envScopedKey } from '@/platform/envScope';
+import { envScopedKey, readScoped, writeScoped } from '@/platform/envScope';
 import { Emitter } from '@/platform/util/Emitter';
 
 export interface SessionUser {
@@ -47,6 +54,12 @@ export interface AppRoute {
   discoveryUrl: string | null;
   expiresAt: string;
 }
+
+/** Where the entered app's route is remembered across a reload (env-scoped). */
+export const APP_ROUTE_STORAGE_KEY = 'construct:app-route';
+
+/** The token store key for the app token (env-scoped). One app at a time. */
+const APP_TOKEN_STORE_KEY = 'construct:app-token';
 
 export interface BootstrapInfo {
   minimumClientVersion?: string;
@@ -89,8 +102,11 @@ export class NetworkManager {
 
   readonly events = new Emitter<NetworkEvents>();
 
-  /** Identity session client (login, orgs, apps, minting). Always present. */
-  readonly identity: CrowdyClient;
+  /**
+   * The client on the public API origin. Holds the app token the hosted
+   * sign-in returned (or nothing). Not an identity session; see the header.
+   */
+  readonly platform: CrowdyClient;
 
   private gameClient: CrowdyClient | null = null;
   private route: AppRoute | null = null;
@@ -102,98 +118,121 @@ export class NetworkManager {
   private readonly udpHandlers = new Map<UdpHandlerKind, Set<UdpHandler>>();
 
   private constructor() {
-    this.identity = createCrowdyClient({
+    this.platform = createCrowdyClient({
       httpUrl: API_HTTP_URL,
       wsUrl: API_WS_URL,
-      tokenStore: new BrowserLocalStorageTokenStore(
-        envScopedKey(BrowserLocalStorageTokenStore.SESSION_KEY),
-      ),
+      tokenStore: new BrowserLocalStorageTokenStore(envScopedKey(APP_TOKEN_STORE_KEY)),
     });
   }
 
   // ---------------------------------------------------------------------------
-  // Identity
+  // Sign-in (hosted) and the player's identity
   // ---------------------------------------------------------------------------
 
   get user(): SessionUser | null {
     return this.userValue;
   }
 
+  /** Holding an app token (possibly expired; `restore` finds out). */
   get isSignedIn(): boolean {
-    return Boolean(this.identity.session.getToken());
-  }
-
-  /** Restore a stored session; returns the user or null when sign-in is needed. */
-  async restoreIdentity(): Promise<SessionUser | null> {
-    await this.identity.session.restore();
-    if (!this.identity.session.getToken()) return null;
-    return this.hydrateUser();
+    return Boolean(this.platform.session.getToken());
   }
 
   /**
-   * Finish a magic-link (`?token=`) callback if the URL carries one. Returns
-   * true when a sign-in completed. The query is stripped either way.
+   * Send the player to Crowded Kingdoms' hosted sign-in for `appId`. The page
+   * navigates away; on return, `completeHostedSignInIfPresent()` finishes the
+   * job. The return address is this page itself, so no extra route is needed
+   * on whatever static host serves the game -- but its ORIGIN must be one of
+   * the app's registered redirect URIs (`npm run setup` registers the dev
+   * server's; Studio > Apps > Settings adds the production one).
    */
-  async completeMagicLinkIfPresent(): Promise<boolean> {
-    if (typeof window === 'undefined') return false;
+  async signInHosted(appId: string): Promise<void> {
+    if (typeof window === 'undefined') throw new Error('Hosted sign-in needs a browser');
+    this.log(`Redirecting to hosted sign-in for app ${appId}`);
+    await this.platform.portal.signIn({
+      appId,
+      redirectUri: window.location.origin + window.location.pathname,
+    });
+  }
+
+  /**
+   * Finish a hosted sign-in if the URL carries its `?code=`. Returns the
+   * entered app's route, or null when there is nothing to finish. The SDK
+   * strips `code`/`state` from the address bar so a reload does not replay.
+   * An `?error=access_denied` (the player pressed Cancel on the consent
+   * screen) is reported and cleared.
+   */
+  async completeHostedSignInIfPresent(): Promise<AppRoute | null> {
+    if (typeof window === 'undefined') return null;
     const url = new URL(window.location.href);
-    const token = url.searchParams.get('token');
-    if (!token) return false;
-    url.searchParams.delete('token');
-    window.history.replaceState({}, '', url.toString());
+    const denied = url.searchParams.get('error');
+    if (denied) {
+      url.searchParams.delete('error');
+      url.searchParams.delete('state');
+      window.history.replaceState({}, '', url.toString());
+      this.log(`Hosted sign-in did not complete: ${denied}`);
+      return null;
+    }
+    if (!url.searchParams.has('code')) return null;
     try {
-      await this.identity.auth.completeLoginLink(token);
+      const minted = await this.platform.portal.handleSignInCallback();
+      if (!minted) return null;
+      const route = this.routeFrom(minted, minted.appId);
+      writeScoped(APP_ROUTE_STORAGE_KEY, JSON.stringify(route));
       await this.hydrateUser();
-      return true;
+      this.log(`Hosted sign-in complete for app ${route.appId}`);
+      return route;
     } catch (error) {
-      this.log(`Magic link sign-in failed: ${messageOf(error)}`);
-      return false;
+      this.log(`Hosted sign-in failed: ${messageOf(error)}`);
+      return null;
     }
   }
 
-  async login(email: string, password: string): Promise<SessionUser> {
-    await this.identity.auth.login({ email: email.trim().toLowerCase(), password });
-    return this.requireUser();
-  }
-
-  async register(email: string, password: string, gamertag?: string): Promise<SessionUser> {
-    await this.identity.auth.register({
-      email: email.trim().toLowerCase(),
-      password,
-      ...(gamertag?.trim() ? { gamertag: gamertag.trim() } : {}),
-    });
-    return this.requireUser();
-  }
-
-  async requestMagicLink(email: string): Promise<void> {
-    const redirectUri =
-      typeof window === 'undefined' ? undefined : window.location.origin + window.location.pathname;
-    await this.identity.auth.requestLoginLink({
-      email: email.trim().toLowerCase(),
-      ...(redirectUri ? { redirectUri } : {}),
-    });
+  /**
+   * Restore a stored app token + route from a previous visit. Returns the route
+   * when the token still authenticates, else null (and forgets both).
+   */
+  async restore(): Promise<AppRoute | null> {
+    await this.platform.session.restore();
+    if (!this.platform.session.getToken()) return null;
+    const raw = readScoped(APP_ROUTE_STORAGE_KEY);
+    let route: AppRoute | null;
+    try {
+      route = raw ? (JSON.parse(raw) as AppRoute) : null;
+    } catch {
+      route = null;
+    }
+    if (!route?.appId) {
+      this.forgetCredentials();
+      return null;
+    }
+    const user = await this.hydrateUser();
+    if (!user) return null;
+    return route;
   }
 
   async signOut(): Promise<void> {
     this.leaveApp();
     try {
-      await this.identity.auth.logout();
+      // An app token may end its own session.
+      await this.platform.auth.logout();
     } catch {
-      this.identity.session.setToken(null);
+      // Already invalid; forgetting it locally is the whole point.
     }
+    this.forgetCredentials();
     this.userValue = null;
     this.events.emit('auth', null);
   }
 
-  private async requireUser(): Promise<SessionUser> {
-    const user = await this.hydrateUser();
-    if (!user) throw new Error('Signed in, but the session could not be read back');
-    return user;
+  private forgetCredentials(): void {
+    this.platform.session.setToken(null);
+    writeScoped(APP_ROUTE_STORAGE_KEY, null);
   }
 
   private async hydrateUser(): Promise<SessionUser | null> {
     try {
-      const me = await this.identity.users.me();
+      // `me` is one of the few management reads an app token may make.
+      const me = await this.platform.users.me();
       if (!me) throw new Error('me() returned null');
       this.userValue = {
         userId: String(me.userId),
@@ -203,12 +242,31 @@ export class NetworkManager {
       this.events.emit('auth', this.userValue);
       return this.userValue;
     } catch (error) {
-      this.log(`Stored session is not valid: ${messageOf(error)}`);
-      this.identity.session.setToken(null);
+      this.log(`Stored token is not valid: ${messageOf(error)}`);
+      this.forgetCredentials();
       this.userValue = null;
       this.events.emit('auth', null);
       return null;
     }
+  }
+
+  private routeFrom(
+    minted: {
+      appId?: string | null;
+      gameApiUrl?: string | null;
+      gameApiWsUrl?: string | null;
+      discoveryUrl?: string | null;
+      expiresAt: string;
+    },
+    fallbackAppId: string,
+  ): AppRoute {
+    return {
+      appId: String(minted.appId ?? fallbackAppId),
+      gameApiUrl: minted.gameApiUrl ?? null,
+      gameApiWsUrl: minted.gameApiWsUrl ?? null,
+      discoveryUrl: minted.discoveryUrl ?? null,
+      expiresAt: minted.expiresAt,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -234,21 +292,15 @@ export class NetworkManager {
   }
 
   /**
-   * Mint an app-scoped token and build the game client on the app's own
-   * endpoint. Idempotent for the same app; switches cleanly for another.
+   * Build the game client on the app's own endpoint with the app token the
+   * platform client holds. Idempotent for the same app; switches cleanly for
+   * another. The route comes from the hosted sign-in (or storage): the token
+   * response names the datacenter endpoint and the discovery URL.
    */
-  async enterApp(appId: string): Promise<AppRoute> {
-    if (!this.isSignedIn) throw new Error('Sign in before entering an app');
-    if (this.route && this.route.appId !== appId) this.leaveApp();
-
-    const minted = await this.identity.portal.mintAppToken(appId);
-    const route: AppRoute = {
-      appId: String(minted.appId ?? appId),
-      gameApiUrl: minted.gameApiUrl ?? null,
-      gameApiWsUrl: minted.gameApiWsUrl ?? null,
-      discoveryUrl: minted.discoveryUrl ?? null,
-      expiresAt: minted.expiresAt,
-    };
+  async enterApp(route: AppRoute): Promise<AppRoute> {
+    const token = this.platform.session.getToken();
+    if (!token) throw new Error('Sign in before entering an app');
+    if (this.route && this.route.appId !== route.appId) this.leaveApp();
 
     const httpUrl = route.gameApiUrl ?? API_HTTP_URL;
     const wsUrl = route.gameApiWsUrl ?? wsTwin(httpUrl);
@@ -275,8 +327,9 @@ export class NetworkManager {
         this.events.emit('realtime', status),
       );
     }
-    this.gameClient.setToken(minted.token);
+    this.gameClient.setToken(token);
     this.route = route;
+    writeScoped(APP_ROUTE_STORAGE_KEY, JSON.stringify(route));
     this.refreshFailures = 0;
     this.scheduleRefresh(APP_TOKEN_REFRESH_MS);
     this.log(`Entered app ${route.appId} via ${httpUrl}`);
@@ -333,34 +386,31 @@ export class NetworkManager {
 
   /**
    * Rotate the app token while gameplay is live. The SDK disconnects the
-   * old-token UDP proxy, refreshes, and reconnects with handlers intact. If the
-   * refresh path itself fails twice, fall back to re-minting from the identity
-   * session (which the SDK cannot do on its own — it only has the app token).
+   * old-token UDP proxy, refreshes, and reconnects with handlers intact. The
+   * rotated token is mirrored onto the platform client so a reload restores
+   * the fresh one. There is no session to re-mint from: after two failures the
+   * player is sent back through hosted sign-in, which is one silent bounce
+   * while their Studio session lasts.
    */
   private async rotateAppToken(): Promise<void> {
     if (!this.gameClient || !this.route) return;
     try {
       const refreshed = await this.gameClient.refreshGameplayToken();
+      this.platform.session.setToken(refreshed.token);
       this.route = { ...this.route, expiresAt: refreshed.expiresAt };
+      writeScoped(APP_ROUTE_STORAGE_KEY, JSON.stringify(this.route));
       this.refreshFailures = 0;
       this.log('App token rotated');
       this.scheduleRefresh(APP_TOKEN_REFRESH_MS);
     } catch (error) {
       this.refreshFailures += 1;
       this.log(`App token rotation failed (${this.refreshFailures}): ${messageOf(error)}`);
-      if (this.refreshFailures >= 2 && this.isSignedIn) {
-        try {
-          const minted = await this.identity.portal.mintAppToken(this.route.appId);
-          this.gameClient.setToken(minted.token);
-          this.route = { ...this.route, expiresAt: minted.expiresAt };
-          this.refreshFailures = 0;
-          await this.gameClient.udp.connect().catch(() => undefined);
-          this.log('App token re-minted from the identity session');
-          this.scheduleRefresh(APP_TOKEN_REFRESH_MS);
-          return;
-        } catch (mintError) {
-          this.log(`Re-mint failed: ${messageOf(mintError)}`);
-        }
+      if (this.refreshFailures >= 2) {
+        const appId = this.route.appId;
+        this.forgetCredentials();
+        this.events.emit('auth', null);
+        void this.signInHosted(appId);
+        return;
       }
       this.scheduleRefresh(APP_TOKEN_REFRESH_RETRY_MS);
     }
@@ -439,7 +489,7 @@ export class NetworkManager {
   close(): void {
     this.clearRefresh();
     this.disposeGameClient();
-    this.identity.close();
+    this.platform.close();
   }
 }
 

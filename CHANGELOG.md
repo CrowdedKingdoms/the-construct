@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.0 — 2026-09-08
+
+Hosted sign-in (ck-api `v1.88.0`, CrowdyJS `15.6.0`). The browser never holds
+an identity session any more, and cannot: the direct sign-in mutations are
+served only to Crowded Kingdoms' own pages, so a game on its own domain gets
+`HOSTED_SIGN_IN_REQUIRED` from them.
+
+- `NetworkManager`: one `platform` client holding an app-scoped token obtained
+  through `portal.signIn` → Studio `/authorize` → `portal.handleSignInCallback`;
+  the route (datacenter endpoint) is remembered across reloads; rotation
+  mirrors the fresh token; after two failed rotations the player is bounced
+  through hosted sign-in again. `enterApp(route)` replaces `enterApp(appId)`.
+- `AuthService` is `signIn(appId)` / `completeIfReturning()` / `restore()` /
+  `signOut()`. The login form, magic link and guest account are gone;
+  `ui/LoginForm.ts` is one button.
+- The in-browser Setup wizard is gone (it needed a session). `npm run setup`
+  is the door, and it now registers `http://localhost:5175` and every
+  `--origin` as a redirect URI (`ensureRedirectUris`), because that list is
+  both where sign-in returns the player and the app's CORS allow-list. A
+  checkout with no app id shows `ui/NoAppCard.ts` instead.
+- HUD: "Setup" is "Switch app" (a fresh hosted sign-in for another id).
+- Docs: README (ten minutes), PLATFORM-MAP, ARCHITECTURE, HOSTING, AGENTS,
+  `.env.example`.
+
 ## 0.2.0 — 2026-09-08
 
 CrowdyJS `15.5.0` (dev build `15.5.0-dev.1`): webcam video and the actor-left

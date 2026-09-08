@@ -53,8 +53,8 @@ export class Hud implements SceneHud {
     });
     studio.addEventListener('click', actions.openStudio);
     const setup = el('button', {
-      text: 'Setup',
-      title: 'Create or switch apps; re-run the model seed',
+      text: 'Switch app',
+      title: 'Play a different app (a fresh sign-in for it)',
     });
     setup.addEventListener('click', actions.openSetup);
     const camera = el('button', {
@@ -139,7 +139,7 @@ export class Hud implements SceneHud {
         worldRows.push(el('div', { text: `world pulses ${model.pulses}` }));
       if (model.level !== undefined) worldRows.push(el('div', { text: `level ${model.level}` }));
       if (worldRows.length === 0)
-        worldRows.push(el('div', { class: 'muted', text: 'model not seeded — run Setup' }));
+        worldRows.push(el('div', { class: 'muted', text: 'model not seeded — run npm run setup' }));
     }
     this.world.replaceChildren(...worldRows);
   }
