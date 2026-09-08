@@ -5,7 +5,7 @@ version: 2
 target-branch: dev
 updates:
   - package-ecosystem: npm
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
       day: monday
@@ -16,10 +16,10 @@ updates:
     # SDK pins are tier-aligned (dev -> X.Y.Z-dev.N, ...) and promoted by hand;
     # a bot bump would cross tiers. Every other dependency is fair game.
     ignore:
-      - dependency-name: "@crowdedkingdoms/*"
-      - dependency-name: "@cks/*"
+      - dependency-name: '@crowdedkingdoms/*'
+      - dependency-name: '@cks/*'
   - package-ecosystem: github-actions
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
       day: monday
