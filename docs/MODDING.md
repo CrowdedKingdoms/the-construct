@@ -74,7 +74,7 @@ invoke with the count. See the platform docs:
 ## Templates
 
 `mods/templates/index.mjs` holds the starters as plain strings so the browser
-wizard and `npm run seed` publish the same bytes. Add a template there and
+`npm run setup` and `npm run seed` publish the same bytes. Add a template there and
 re-run `npm run seed`; publishing is idempotent by content.
 
 ## Security posture

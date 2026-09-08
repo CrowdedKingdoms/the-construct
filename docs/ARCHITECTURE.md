@@ -12,7 +12,7 @@ the game model deployed to it.
 | --- | --- | --- |
 | **Scenes** (`src/scenes/*`) | Rendering, camera, input handling, the local player's position, pads and pickups | Talk to the network, hold a token, decide permissions |
 | **Engine** (`src/engine/`) | The frame loop, the scene router, keyboard/pointer state, feeding the local pose to replication | Know which renderer a scene uses |
-| **Platform** (`src/platform/`) | Sign-in, app entry, tokens, presence, chunks, save, chat, webcam (`media/WebcamService`: capture → `sendVideoFrame`; `video` notifications → per-uuid bitmaps; ended on `actorLeft`), model reads, Studio, onboarding | Render (a bitmap is handed to the scene, which owns drawing and disposal) |
+| **Platform** (`src/platform/`) | Hosted sign-in, app entry, tokens, presence, chunks, save, chat, webcam (`media/WebcamService`: capture → `sendVideoFrame`; `video` notifications → per-uuid bitmaps; ended on `actorLeft`), model reads, Studio, onboarding | Render (a bitmap is handed to the scene, which owns drawing and disposal) |
 | **CrowdyJS** | GraphQL + realtime transport, World Stores, Game Kit, Crowdy Studio chrome, the mod sandbox broker | — |
 | **Crowded Kingdoms** | Authorization, grids and claims, the game model, compile + admission of player code, presence, persistence | — |
 
@@ -23,14 +23,19 @@ the game model deployed to it.
 1. `ensureEnvScope()` — every browser-storage key this game writes is
    namespaced by the API origin, so two tiers in one browser never share a
    session or an app id.
-2. `completeMagicLinkIfPresent()` then `restoreIdentity()` — a stored session
-   is verified with `users.me()`. If there is none, the sign-in form.
-3. `resolveAppId()` — `?app=` in the URL, then the id the wizard remembered,
-   then `VITE_APP_ID`, else the **Setup wizard** (see below).
-4. `network.enterApp(appId)` — `portal.mintAppToken` returns a short-lived
-   app-scoped token AND the app's own endpoint (`gameApiUrl`). The game client
-   is built on that endpoint; `discoveryUrl` stays on the shared origin so a
-   dead instance can be left. `bootstrap()` reads version floors and UDP status.
+2. `completeHostedSignInIfPresent()` — returning from Crowded Kingdoms' sign-in
+   page with `?code=`? The SDK exchanges it for an app-scoped token and the
+   app's route. Else `restore()` — a stored token is verified with `users.me()`.
+3. `resolveAppId()` — `?app=` in the URL, then the id this browser remembered,
+   then `VITE_APP_ID`. With none, the **no-app card**: Setup runs from a shell
+   (`npm run setup`), because creating an app needs an identity session and a
+   game on its own domain never holds one. With an id and no token, the
+   **sign-in card**: one button, `portal.signIn`, and the browser leaves for
+   Studio's `/authorize`.
+4. `network.enterApp(route)` — the token response already named the app's own
+   endpoint (`gameApiUrl`). The game client is built on that endpoint with the
+   same token; `discoveryUrl` stays on the shared origin so a dead instance can
+   be left. `bootstrap()` reads version floors and UDP status.
 5. `GameSession` — the facade scenes receive. `loadSave()` hydrates the typed
    save blob; `join(position)` announces presence (World Stores `self.join`)
    and starts chat.
@@ -62,7 +67,7 @@ out within `REPLICATION_DISTANCE` chunks. Proximity chat rides the same path.
 
 ## The game model
 
-`model/blueprints.mjs` is the single definition, deployed by the wizard and by
+`model/blueprints.mjs` is the single definition, deployed by `npm run setup` and
 `npm run seed` through `client.kit(appId).deploy(...)`:
 
 - `progressionBlueprint` (XP/levels/skills, trusted grants only) and
@@ -97,7 +102,7 @@ which is why `security-headers.mjs` exists.
 
 Keep (or adapt) for any game: everything under `src/platform/`, `src/engine/`,
 `security-headers.mjs`, `scripts/`, `model/blueprints.mjs` as a pattern, the
-Studio integration, the Setup wizard.
+Studio integration, the shell Setup.
 
 Replace with your game: `src/scenes/*` (the holodeck and Paint), `src/platform/programs.ts`
 (the pad list), the hand-authored part of the model, `mods/templates/` (your

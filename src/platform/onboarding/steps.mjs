@@ -106,6 +106,40 @@ export async function ensureApp(identity, { orgId, orgSlug, name, slug, datacent
  * app was created with (access/teleport/voxels/voice), so they can play and
  * paint but not deploy code on grids they do not own.
  */
+/**
+ * Register the origins this game is served from as the app's redirect URIs.
+ *
+ * Since ck-api v1.88.0 this list is load-bearing twice over: it is where the
+ * hosted sign-in may send a player back, AND it is the API's CORS allow-list
+ * for the app. A game on an origin that is not here gets `HOSTED_SIGN_IN_REQUIRED`
+ * on the return leg and no CORS headers on anything else. Idempotent: existing
+ * entries are kept, the given ones added; origin-matched by the server, so the
+ * path does not matter but `/` keeps the list readable.
+ */
+export async function ensureRedirectUris(identity, { appId, origins }, log = noop) {
+  const app = await identity.apps.app(appId);
+  const existing = Array.isArray(app?.redirectUris) ? app.redirectUris : [];
+  const have = new Set(existing.map((u) => originOf(u)).filter(Boolean));
+  const wanted = origins.map((o) => originOf(o)).filter(Boolean);
+  const missing = [...new Set(wanted)].filter((o) => !have.has(o));
+  if (missing.length === 0) {
+    log(`Redirect URIs already cover ${wanted.join(', ')}`);
+    return { redirectUris: existing, added: [] };
+  }
+  const redirectUris = [...existing, ...missing.map((o) => `${o}/`)];
+  await identity.portal.setAppClientSettings({ appId, redirectUris });
+  log(`Registered redirect origin(s) ${missing.join(', ')}`);
+  return { redirectUris, added: missing };
+}
+
+function originOf(value) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
 export async function ensureConstructorTier(identity, { appId, userId }, log = noop) {
   const tiers = await identity.appAccess.tiers(appId);
 
@@ -269,6 +303,7 @@ export async function runOnboarding(options) {
     appName,
     appSlug,
     datacenter,
+    redirectOrigins = [],
     log = noop,
     onStep = noop,
   } = options;
@@ -307,6 +342,11 @@ export async function runOnboarding(options) {
   await step('tier', 'Constructor access tier', () =>
     ensureConstructorTier(identity, { appId, userId }, log),
   );
+  if (redirectOrigins.length > 0) {
+    await step('redirects', 'Sign-in redirect URIs', () =>
+      ensureRedirectUris(identity, { appId, origins: redirectOrigins }, log),
+    );
+  }
   const game = await step('enter', 'App token', () => enterApp(appId));
   await step('claims', 'Grid claim policy', () => ensureSelfClaimPolicy(game, { appId }, log));
   await step('model', 'Game model', () => deployModel(game, { appId }, log));
