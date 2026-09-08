@@ -39,7 +39,7 @@ try {
     const have = new Set((constructor.permissionKeys ?? []).map(String));
     check(
       CONSTRUCTOR_TIER_KEYS.every((k) => have.has(k)),
-      'Constructor tier carries the four code keys',
+      'Constructor tier carries the four code keys and use_video_chat',
     );
   }
   const access = await identity.appAccess.myAccess(appId).catch(() => null);

@@ -23,7 +23,9 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 | CLIENT mods for visitors | `marketplace.gridClientMods` → `trustGridAuthor` → `clientArtifactBytes` → `PlayerCodeBroker` | `platform/studio/clientModHost.ts` |
 | Starter mod files | `crowdyStudioCommonPublish` (common-file catalog) | `mods/templates/`, `steps.mjs#publishStarterFiles` |
 | Progression, leaderboards | `kit.progression`, `kit.leaderboards` | `ModelService#progress` |
-| Voice | `udp.sendAudioPacket` / `audio` notifications | not wired; see BWF's `VoiceChat` pattern in the docs |
+| Webcam | `udp.sendVideoFrame` (fragments a JPEG into `sendVideoPacket`s) / `video` notifications + `VideoFrameAssembler`; `use_video_chat` | `platform/media/WebcamService.ts`; holodeck draws the face plane (`avatars.ts#setFace`), Paint shows a camera-on ring — a 2D game decides whether to draw video |
+| Player left | `actorLeft` notification (Buddy says an actor is gone, ~5 s after its last update) | `WorldStores` lane drops the actor; `WebcamService` ends the stream; scenes free per-uuid objects at once instead of after the 12 s reaper |
+| Voice | `udp.sendAudioPacket` / `audio` notifications | not wired; see BWF's `VoiceChat` pattern in the docs (`WebcamService` is the same shape for video) |
 | Teams, guilds | `teams.*`, `guildBlueprint` → `kit.social` | not wired |
 | Cross-game lobby | Overworld PKCE portal (`portal.beginEntry` / `completeEntry`) | not wired; this game owns its login |
 
