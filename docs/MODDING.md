@@ -106,6 +106,12 @@ and the SERVER-only path are here so it can be a deliberate one.
 
 ## Not wired (and where it lives)
 
+- **The camera, for mods.** Webcam video is a host-side feature
+  (`WebcamService`, `Permissions-Policy: camera=(self)`); there is no host call
+  that exposes frames or the capture to a CLIENT mod, on purpose. A mod that
+  wants to react to "camera on" would need a new allowlisted call in
+  `clientModHost.ts`, which is your decision to make, not this starter's.
+
 - **The Studio agent dock** (Ask/Build/Play) needs a platform-level policy an
   operator arms and a `playerHost` adapter the game implements. This starter
   omits `crowdyStudioAgent`, so the dock stays hidden and fail-closed.

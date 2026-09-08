@@ -1,8 +1,8 @@
 /**
  * The engine-agnostic facade scenes receive. One instance per entered app.
  *
- * It wraps the World Stores session (presence, chunks, save), chat, and the
- * player's identity as a small, stable surface. Scenes read `players()` to
+ * It wraps the World Stores session (presence, chunks, save), chat, webcam,
+ * and the player's identity as a small, stable surface. Scenes read `players()` to
  * render others and never touch the SDK; the loop calls `feedPose` / `moveTo`
  * with what the active scene reports.
  */
@@ -18,6 +18,7 @@ import {
   type RemotePlayer,
   type SaveState,
 } from '@/platform/realtime/WorldStores';
+import { WebcamService } from '@/platform/media/WebcamService';
 import { ModelService } from '@/platform/model/ModelService';
 import { ChatService } from '@/platform/social/ChatService';
 import { StudioService } from '@/platform/studio/StudioService';
@@ -33,6 +34,8 @@ export const TINT_COUNT = 8;
 export class GameSession {
   readonly events = new Emitter<GameSessionEvents>();
   readonly chat: ChatService;
+  /** Proximity webcam: `toggle()` to send; scenes listen for `frame`/`ended`. */
+  readonly webcam: WebcamService;
   readonly studio: StudioService;
   readonly model: ModelService;
   /** Flipped by the Studio service so other players see the "coding" marker. */
@@ -44,6 +47,21 @@ export class GameSession {
 
   constructor(readonly network: NetworkManager = NetworkManager.instance) {
     this.chat = new ChatService(network);
+    this.webcam = new WebcamService({
+      onVideo: (handler) => network.on('video', handler),
+      onActorLeft: (handler) => network.on('actorLeft', handler),
+      onLaneLeave: (handler) =>
+        this.world.actors.lane('players').onLeave((actor) => handler(actor.uuid)),
+      selfUuid: () => (this.joinedFlag ? this.world.self.uuid : null),
+      selfChunk: () => {
+        if (!this.joinedFlag) return null;
+        const chunk = this.world.self.chunk;
+        return chunk ? { x: String(chunk.x), y: String(chunk.y), z: String(chunk.z) } : null;
+      },
+      appId: () => this.appId,
+      sendVideoFrame: (input) => network.game.udp.sendVideoFrame(input),
+      log: (message) => network.log(message),
+    });
     this.studio = new StudioService(this);
     this.model = new ModelService(this);
   }
@@ -118,6 +136,7 @@ export class GameSession {
     });
     this.joinedFlag = true;
     this.chat.start();
+    this.webcam.listen();
     this.world.save.patch({ visits: (this.save.visits ?? 0) + 1 });
     this.events.emit('joined', {
       chunk: { x: Number(chunk.x), y: Number(chunk.y), z: Number(chunk.z) },
@@ -173,6 +192,7 @@ export class GameSession {
     if (!this.joinedFlag) return;
     this.joinedFlag = false;
     this.chat.stop();
+    this.webcam.dispose();
     this.studio.close();
     await this.flushSave();
     disposeWorldSession();

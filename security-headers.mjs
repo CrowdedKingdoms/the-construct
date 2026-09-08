@@ -98,6 +98,9 @@ export function buildCsp({ apiOrigins = [], extraConnectSrc = [] } = {}) {
   ].join('; ');
 }
 
+/** Which powerful features the page (and only the page) may use. */
+export const PERMISSIONS_POLICY = 'camera=(self), microphone=()';
+
 /**
  * The full header set. Apply to every response of the site (HTML, JS, worker
  * scripts, wasm), not just index.html — a worker fetched without COEP breaks
@@ -112,6 +115,11 @@ export function securityHeaders(options = {}) {
     'Cross-Origin-Embedder-Policy': 'credentialless',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Content-Security-Policy': buildCsp(options),
+    // The page may use the camera (proximity webcam, WebcamService); nothing
+    // embedded may, and the microphone is not asked for (voice is not wired —
+    // change to `microphone=(self)` when it is). An explicit policy also stops
+    // a hosting default from silently denying the camera.
+    'Permissions-Policy': PERMISSIONS_POLICY,
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
   };

@@ -406,6 +406,12 @@ export class NetworkManager {
       voxelUpdate: dispatch('voxelUpdate'),
       text: dispatch('text'),
       audio: dispatch('audio'),
+      video: dispatch('video'),
+      // The server's "this actor is gone" notice (CrowdyJS 15.5 / Buddy
+      // v0.25): the World Stores lane removes the actor on it, and services
+      // holding per-uuid resources (webcam textures) release them at once
+      // instead of waiting out the 12 s stale reaper.
+      actorLeft: dispatch('actorLeft'),
       clientEvent: dispatch('clientEvent'),
       serverEvent: dispatch('serverEvent'),
       singleActorMessage: dispatch('singleActorMessage'),

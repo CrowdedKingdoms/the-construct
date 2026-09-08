@@ -22,12 +22,13 @@ import { STARTER_TEMPLATES, commonFilesFor } from '../../../mods/templates/index
 
 export const CONSTRUCTOR_TIER_NAME = 'Constructor';
 
-/** Default free-tier keys plus the four Crowdy Studio code keys. */
+/** Default free-tier keys, the webcam key, and the four Crowdy Studio code keys. */
 export const CONSTRUCTOR_TIER_KEYS = [
   'access',
   'teleport',
   'update_voxel_data',
   'use_voice_chat',
+  'use_video_chat',
   'write_server_code',
   'run_server_code',
   'write_client_code',

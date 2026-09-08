@@ -12,7 +12,7 @@ the game model deployed to it.
 | --- | --- | --- |
 | **Scenes** (`src/scenes/*`) | Rendering, camera, input handling, the local player's position, pads and pickups | Talk to the network, hold a token, decide permissions |
 | **Engine** (`src/engine/`) | The frame loop, the scene router, keyboard/pointer state, feeding the local pose to replication | Know which renderer a scene uses |
-| **Platform** (`src/platform/`) | Sign-in, app entry, tokens, presence, chunks, save, chat, model reads, Studio, onboarding | Render |
+| **Platform** (`src/platform/`) | Sign-in, app entry, tokens, presence, chunks, save, chat, webcam (`media/WebcamService`: capture → `sendVideoFrame`; `video` notifications → per-uuid bitmaps; ended on `actorLeft`), model reads, Studio, onboarding | Render (a bitmap is handed to the scene, which owns drawing and disposal) |
 | **CrowdyJS** | GraphQL + realtime transport, World Stores, Game Kit, Crowdy Studio chrome, the mod sandbox broker | — |
 | **Crowded Kingdoms** | Authorization, grids and claims, the game model, compile + admission of player code, presence, persistence | — |
 
