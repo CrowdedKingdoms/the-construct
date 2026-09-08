@@ -274,6 +274,25 @@ label {
   gap: 8px;
 }
 
+.hud-top-right button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The local webcam self-preview, bottom-right while the camera is live. */
+.camera-preview {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 128px;
+  height: 96px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: #000;
+  object-fit: cover;
+  transform: scaleX(-1); /* mirrored, like a mirror; others see it unmirrored */
+}
+
 .chip {
   padding: 8px 12px;
   font-size: 12.5px;

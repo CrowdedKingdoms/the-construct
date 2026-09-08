@@ -62,6 +62,9 @@ A checklist, in the order that keeps everything working at every step.
       `crossOriginIsolated` on the live URL.
 - [ ] Keep the CrowdyJS pin exact and on `latest` for production
       (`npm run check:pin`). Read the SDK's `MIGRATION.md` before a major bump.
+      A pin bump that brings a new realtime feature (15.5 brought webcam
+      video and the actor-left notice) lands here as platform code plus a
+      `NetworkManager.on(kind)` slot — mirror it in your scenes or hide it.
 - [ ] Watch the presence rule in your automations: nothing ticks while nobody
       plays.
 
@@ -70,3 +73,5 @@ A checklist, in the order that keeps everything working at every step.
 - Voice chat (`udp.sendAudioPacket`), teams/guilds, channels, the Overworld
   PKCE lobby, marketplace listings, the Studio agent dock, native clients.
   Each has a platform surface; see [PLATFORM-MAP.md](PLATFORM-MAP.md).
+  (Webcam video is wired — `WebcamService` — so voice is the one media lane
+  left; it is the same shape with `sendAudioPacket`.)

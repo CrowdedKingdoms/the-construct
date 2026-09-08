@@ -1,7 +1,9 @@
 /**
  * Remote players in the holodeck: a capsule per uuid, tinted by their `tint`,
- * a nameplate above, and a small spinning marker when they have Crowdy Studio
- * open. Objects are pooled by uuid and removed when the store reaps them.
+ * a nameplate above, a small spinning marker when they have Crowdy Studio
+ * open, and a "face" plane at eye height that shows their webcam while frames
+ * arrive (`setFace` / `clearFace`, fed by `WebcamService`). Objects are pooled
+ * by uuid and removed when the store reaps them or the server says they left.
  */
 import * as THREE from 'three';
 
@@ -15,12 +17,18 @@ interface AvatarEntry {
   body: THREE.Mesh;
   marker: THREE.Mesh;
   plate: THREE.Sprite;
+  face: THREE.Mesh;
+  faceTexture: THREE.Texture | null;
+  faceBitmap: ImageBitmap | null;
   name: string;
   tint: number;
 }
 
 const BODY_GEOMETRY = new THREE.CapsuleGeometry(0.35, 0.9, 6, 12);
 const MARKER_GEOMETRY = new THREE.OctahedronGeometry(0.18);
+/** 4:3 like the 128×96 capture; sits just in front of the capsule at eye height. */
+const FACE_GEOMETRY = new THREE.PlaneGeometry(0.48, 0.36);
+const FACE_EYE_HEIGHT = 1.6;
 
 export class AvatarPool {
   private readonly entries = new Map<string, AvatarEntry>();
@@ -42,6 +50,13 @@ export class AvatarPool {
       }
       entry.group.position.set(pose.x, pose.y, pose.z);
       entry.body.rotation.y = pose.yaw;
+      // The face turns with the body so it faces where the player looks.
+      entry.face.rotation.y = pose.yaw;
+      entry.face.position.set(
+        Math.sin(pose.yaw) * 0.37,
+        FACE_EYE_HEIGHT,
+        Math.cos(pose.yaw) * 0.37,
+      );
       entry.marker.visible = (pose.flags & FLAG_STUDIO_OPEN) !== 0;
       entry.marker.rotation.y = nowMs / 400;
       entry.marker.position.y = 2.15 + Math.sin(nowMs / 300) * 0.05;
@@ -77,10 +92,73 @@ export class AvatarPool {
     marker.visible = false;
     const plate = makeNameplate(pose.name || 'player', color);
     plate.position.y = 1.9;
+    const face = new THREE.Mesh(
+      FACE_GEOMETRY,
+      new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, toneMapped: false }),
+    );
+    face.position.y = FACE_EYE_HEIGHT;
+    face.visible = false;
     const group = new THREE.Group();
-    group.add(body, marker, plate);
+    group.add(body, marker, plate, face);
     this.scene.add(group);
-    return { group, body, marker, plate, name: pose.name, tint: pose.tint };
+    return {
+      group,
+      body,
+      marker,
+      plate,
+      face,
+      faceTexture: null,
+      faceBitmap: null,
+      name: pose.name,
+      tint: pose.tint,
+    };
+  }
+
+  /**
+   * Show a webcam frame on a player's face. Takes ownership of the bitmap
+   * (closes the previous one). A uuid not yet in the pool is ignored; the
+   * next frame after `sync` creates them will land.
+   */
+  setFace(uuid: string, bitmap: ImageBitmap): void {
+    const entry = this.entries.get(uuid);
+    if (!entry) {
+      bitmap.close();
+      return;
+    }
+    entry.faceBitmap?.close();
+    entry.faceBitmap = bitmap;
+    if (!entry.faceTexture) {
+      // A plain Texture over the bitmap (CanvasTexture is typed for canvases);
+      // each new frame swaps the image and flags the upload.
+      const texture = new THREE.Texture(bitmap);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.generateMipmaps = false;
+      texture.minFilter = THREE.LinearFilter;
+      texture.needsUpdate = true;
+      entry.faceTexture = texture;
+      (entry.face.material as THREE.MeshBasicMaterial).map = texture;
+      (entry.face.material as THREE.MeshBasicMaterial).needsUpdate = true;
+    } else {
+      entry.faceTexture.image = bitmap;
+      entry.faceTexture.needsUpdate = true;
+    }
+    entry.face.visible = true;
+  }
+
+  /** The player's stream ended (they left or stopped): hide and free the face. */
+  clearFace(uuid: string): void {
+    const entry = this.entries.get(uuid);
+    if (!entry) return;
+    this.disposeFace(entry);
+  }
+
+  private disposeFace(entry: AvatarEntry): void {
+    entry.face.visible = false;
+    entry.faceTexture?.dispose();
+    entry.faceTexture = null;
+    (entry.face.material as THREE.MeshBasicMaterial).map = null;
+    entry.faceBitmap?.close();
+    entry.faceBitmap = null;
   }
 
   private restyle(entry: AvatarEntry, pose: Pose): void {
@@ -99,8 +177,10 @@ export class AvatarPool {
 
   private dispose(entry: AvatarEntry): void {
     this.scene.remove(entry.group);
+    this.disposeFace(entry);
     (entry.body.material as THREE.Material).dispose();
     (entry.marker.material as THREE.Material).dispose();
+    (entry.face.material as THREE.Material).dispose();
     disposeNameplate(entry.plate);
   }
 }

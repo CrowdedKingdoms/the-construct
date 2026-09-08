@@ -58,6 +58,13 @@ There is no deploy workflow, deliberately: hosting is the developer's.
 - The trust/artifact gates check presence written by Buddy on chunk entry;
   asking in the first seconds after entering a grid races it. `GRID_SETTLE_MS`.
 - `PlayerCodeBroker` ticks a client mod only when `tickIntervalMs` is set.
+- `marketplace.claimGridChunk` on a chunk the caller already owns is refused
+  (`GRID_ALREADY_CLAIMED`); it returns the effective keys only on the first
+  claim. `GridService` remembers them in localStorage; a fresh browser sees
+  the claim through the game's registry without keys (open item).
+- `use_video_chat` is opt-in on a tier (never in an app's default keys); the
+  default world grid and a self-claimed chunk carry it only when the tier does
+  (ck-api ≥ v1.87.3 for the claimed chunk).
 - The API refuses an empty `voxelState`; `ChunkStore.setVoxel` sends `''`
   without a `state`. Paint sends one byte.
 - Realtime voxel updates are live-only; durability is the chunk store's
