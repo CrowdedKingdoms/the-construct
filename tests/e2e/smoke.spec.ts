@@ -45,9 +45,14 @@ test('sign in, enter the app, join the holodeck, open Crowdy Studio on a claimed
   await page.getByRole('button', { name: /^continue$/i }).click();
   await page.getByLabel(/^password$/i).fill(password!);
   await page.getByRole('button', { name: /^sign in$/i }).click();
-  // Untrusted app: Studio shows the consent card once per account.
+  // Untrusted app: Studio shows the consent card once per account. A trusted or
+  // already-consented app skips it and bounces straight back, so a missing card
+  // is not a failure.
   const consent = page.getByRole('button', { name: /continue to/i });
-  if (await consent.isVisible({ timeout: 15_000 }).catch(() => false)) await consent.click();
+  await consent
+    .waitFor({ state: 'visible', timeout: 20_000 })
+    .then(() => consent.click())
+    .catch(() => undefined);
 
   await expect(page.getByRole('button', { name: 'Crowdy Studio (M)' })).toBeVisible({
     timeout: 90_000,
