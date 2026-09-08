@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.0 — 2026-09-08
+
+CrowdyJS `15.5.0` (dev build `15.5.0-dev.1`): webcam video and the actor-left
+notice, both wired as platform code.
+
+- `src/platform/media/WebcamService.ts`: proximity webcam. 128×96 JPEG at
+  10 fps through the SDK's `sendVideoFrame` (fragmented into `sendVideoPacket`s,
+  `distance` 1); receive through `VideoFrameAssembler` to per-uuid
+  `ImageBitmap`s (`frame` / `ended` events). Needs `use_video_chat`, which
+  Setup now grants on the Constructor tier; a refusal is reported once and
+  capture stops.
+- Player-left: `NetworkManager.on('actorLeft')` (and the World Stores lane's
+  `onLeave` as fallback) end a sender's stream and free its texture at once
+  rather than after the 12 s stale reaper.
+- Holodeck: a face plane at eye height on each remote capsule shows their
+  camera while frames arrive; disposed with the avatar. HUD: `Camera (B)`
+  toggle and a mirrored self-preview. Paint: a ring on the disc while a
+  player's camera is on (no video in the 2D program by design).
+- `Permissions-Policy: camera=(self), microphone=()` joins the header set, in
+  Vite and every HOSTING recipe; `security-headers.test.mjs` asserts it.
+- Tests: `videoFrames.test.ts` (receive path over the real SDK fragmenter);
+  Playwright runs with Chromium's fake camera and the live smoke toggles it.
+- Docs: PLATFORM-MAP (webcam and player-left rows), ARCHITECTURE,
+  NEW-GAME-CHECKLIST, MODDING (no camera for mods), HOSTING, README.
+
 ## 0.1.0 — 2026-09-07
 
 First release of the starter.

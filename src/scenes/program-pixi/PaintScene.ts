@@ -6,8 +6,10 @@
  * each cell is a voxel in chunk layer y=0, `setVoxel` applies optimistically
  * and replicates, remote edits merge into the cache and repaint, and the
  * result is persisted, so a canvas painted today is there tomorrow for
- * everyone. Players in the program see each other as tinted discs; players in
- * the holodeck are not drawn here (different `program` byte).
+ * everyone. Players in the program see each other as tinted discs, ringed
+ * while their camera is on (the 2D program draws no video; whether a 2D game
+ * wants any is the game's call); players in the holodeck are not drawn here
+ * (different `program` byte).
  */
 // The page's Content-Security-Policy has no 'unsafe-eval' (it runs untrusted
 // player mods, so it must not). pixi.js's default shader generator uses
@@ -32,6 +34,8 @@ const PAINT_STATE = 'AA==';
 interface PlayerSprite {
   container: Container;
   disc: Graphics;
+  /** A ring around the disc while the player's camera is on (no video in 2D). */
+  cameraRing: Graphics;
   label: Text;
   tint: number;
   name: string;
@@ -324,6 +328,7 @@ export class PaintScene implements GameScene {
         this.restyle(sprite, pose.name || 'player', pose.tint);
       }
       sprite.container.position.set(pose.x * CELL_PX, pose.z * CELL_PX);
+      sprite.cameraRing.visible = context.session.webcam.isLive(player.uuid);
     }
     for (const [uuid, sprite] of this.players) {
       if (seen.has(uuid)) continue;
@@ -346,8 +351,12 @@ export class PaintScene implements GameScene {
     });
     label.anchor.set(0.5, 1);
     label.position.set(0, -CELL_PX * 0.55);
-    container.addChild(disc, label);
-    const sprite: PlayerSprite = { container, disc, label, tint, name };
+    const cameraRing = new Graphics()
+      .circle(0, 0, CELL_PX * 0.55)
+      .stroke({ color: 0xffd166, width: 2 });
+    cameraRing.visible = false;
+    container.addChild(cameraRing, disc, label);
+    const sprite: PlayerSprite = { container, disc, cameraRing, label, tint, name };
     this.restyle(sprite, name, tint);
     return sprite;
   }

@@ -406,6 +406,12 @@ export class NetworkManager {
       voxelUpdate: dispatch('voxelUpdate'),
       text: dispatch('text'),
       audio: dispatch('audio'),
+      video: dispatch('video'),
+      // The server's "this actor is gone" notice (CrowdyJS 15.5 / Buddy
+      // v0.25): the World Stores lane removes the actor on it, and services
+      // holding per-uuid resources (webcam textures) release them at once
+      // instead of waiting out the 12 s stale reaper.
+      actorLeft: dispatch('actorLeft'),
       clientEvent: dispatch('clientEvent'),
       serverEvent: dispatch('serverEvent'),
       singleActorMessage: dispatch('singleActorMessage'),
@@ -419,7 +425,13 @@ export class NetworkManager {
 
   // ---------------------------------------------------------------------------
 
+  /** The last 100 log lines, newest last — for the HUD and for debugging. */
+  readonly recentLogs: string[] = [];
+
   log(message: string): void {
+    const line = `${new Date().toISOString().slice(11, 19)} ${message}`;
+    this.recentLogs.push(line);
+    if (this.recentLogs.length > 100) this.recentLogs.shift();
     this.events.emit('log', message);
     if (import.meta.env.DEV) console.debug(`[network] ${message}`);
   }

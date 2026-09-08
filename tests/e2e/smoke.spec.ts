@@ -38,7 +38,47 @@ test('sign in, enter the app, join the holodeck, open Crowdy Studio on a claimed
   await expect(page.locator('.hud-hint')).toContainText(/WASD|Press E/);
   await expect(page.locator('canvas.scene-canvas')).toHaveCount(1);
 
-  // Walk to the claim pad and claim it (idempotent: an owned chunk stays owned).
+  // Camera on (Chromium's fake device, see playwright.config.ts): the toggle
+  // reads "on", the self-preview appears, and frames leave over the SDK and
+  // are accepted — which is the Constructor tier's use_video_chat doing its
+  // job. Then off again, releasing the camera. Before the Studio step so it
+  // does not depend on a claim's state.
+  await page.keyboard.press('KeyB');
+  await expect(page.getByRole('button', { name: 'Camera on (B)' })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.locator('.camera-preview')).toBeVisible();
+  await page.waitForTimeout(1_500);
+  const cameraState = await page.evaluate(() => {
+    const g = (
+      window as unknown as {
+        __construct?: {
+          session: {
+            webcam: { isTransmitting: boolean; error: string | null; framesSent: number };
+          };
+        };
+      }
+    ).__construct;
+    return g
+      ? {
+          live: g.session.webcam.isTransmitting,
+          error: g.session.webcam.error,
+          sent: g.session.webcam.framesSent,
+        }
+      : null;
+  });
+  expect(cameraState).toMatchObject({ live: true, error: null });
+  expect(cameraState!.sent).toBeGreaterThan(0);
+  await page.keyboard.press('KeyB');
+  await expect(page.getByRole('button', { name: 'Camera (B)' })).toBeVisible();
+  await expect(page.locator('.camera-preview')).toBeHidden();
+
+  // Walk to the claim pad and claim it. NOT idempotent across browser
+  // contexts (measured 2026-09-08, dev): a second claim of a chunk this user
+  // already owns is refused with GRID_ALREADY_CLAIMED, and the registry path
+  // knows the owner but not the keys, so on a re-run against the same app the
+  // Studio does not open here. Use a fresh app (npm run setup) or keep the
+  // browser profile; the camera step above does not depend on it.
   await page.evaluate(async () => {
     const g = (
       window as unknown as {
