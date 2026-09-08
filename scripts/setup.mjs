@@ -1,9 +1,19 @@
 #!/usr/bin/env node
 /**
- * Headless Setup: the same onboarding the in-game wizard runs, from a shell.
+ * Setup, from a shell -- the ONLY place it can run.
  *
  *   CONSTRUCT_EMAIL=you@example.com CONSTRUCT_PASSWORD=... \
- *     npm run setup -- --org "My studio" --app "The Construct" [--slug the-construct] [--datacenter or]
+ *     npm run setup -- --org "My studio" --app "The Construct" [--slug the-construct] \
+ *       [--datacenter or] [--origin https://play.example.com]
+ *
+ * Creating the org and the app, seeding the model and registering redirect URIs
+ * all need an identity session, and a browser game on its own domain cannot
+ * hold one (ck-api v1.88.0 serves the direct sign-in mutations only to
+ * first-party origins and to non-browser callers like this script). So the
+ * in-game wizard is gone and this is the door. It registers the Vite dev
+ * server (http://localhost:5175) and every `--origin` as a redirect URI: that
+ * list is where hosted sign-in may return the player AND the API's CORS
+ * allow-list for the app.
  *
  * Prints the app id at the end; put it in `.env.local` as VITE_APP_ID to pin
  * the checkout to that app. Idempotent: re-running finds instead of creating.
@@ -27,6 +37,14 @@ try {
     appName,
     appSlug: args.slug ?? slugify(appName),
     datacenter: args.datacenter,
+    redirectOrigins: [
+      'http://localhost:5175',
+      ...[]
+        .concat(args.origin ?? [])
+        .flatMap((o) => String(o).split(','))
+        .map((o) => o.trim())
+        .filter(Boolean),
+    ],
     log,
     onStep: (event) => {
       if (event.status !== 'done')
@@ -35,6 +53,10 @@ try {
   });
   console.log(`\nAPP_ID=${report.appId}`);
   console.log(`Add to .env.local:  VITE_APP_ID=${report.appId}`);
+  console.log(
+    'Deploying somewhere other than http://localhost:5175? Re-run with --origin <https://your.host> ' +
+      'or add it in Studio > Apps > Settings > Sign-in & redirect URIs.',
+  );
   identity.close();
   process.exit(0);
 } catch (error) {

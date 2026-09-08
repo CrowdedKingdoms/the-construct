@@ -135,5 +135,12 @@ app and API origin, not per path, so two games on one origin do not collide.
 ## Pinning the app
 
 A hosted build usually serves one app: set `VITE_APP_ID` at build time so
-players skip Setup. Leave it unset for a "bring your own app" deployment;
-players can still pass `?app=<id>`.
+players go straight to sign-in. Leave it unset for a "bring your own app"
+deployment; players can still pass `?app=<id>`.
+
+**Register the origin.** Hosted sign-in returns the player to the page that
+started it, and the API accepts that return -- and any CORS request from the
+page -- only if the page's origin is one of the app's redirect URIs. Add your
+production origin once: `npm run setup -- --origin https://play.example.com`,
+or Studio > Apps > Settings > Sign-in & redirect URIs. `npm run setup` registers
+`http://localhost:5175` for the dev server automatically.
