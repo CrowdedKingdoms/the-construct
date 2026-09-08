@@ -14,8 +14,18 @@ package and the public API only.
   use `client.graphql.query` with a public root field (as
   `publishStarterFiles` does) and say so in a comment.
 - **A third party must be able to run it cold**: `git clone`, `npm install`,
-  `npm run dev`, create an account, Setup, play. Anything that needs an
-  operator or a CK-owned resource does not belong on the default path.
+  `npm run setup` (their own account), `npm run dev`, sign in through Crowded
+  Kingdoms, play. Anything that needs an operator or a CK-owned resource does
+  not belong on the default path.
+- **The browser never holds an identity session, and cannot.** Since ck-api
+  v1.88.0 the direct sign-in mutations (`auth.login` / `register` / magic link /
+  social) are served only to first-party origins and to non-browser callers;
+  from this game's page they answer `HOSTED_SIGN_IN_REQUIRED`. Players sign in
+  through `portal.signIn` → Studio `/authorize` → `portal.handleSignInCallback`
+  and the page holds an app-scoped token only. Everything that needs a session
+  (org, app, tier, seed, redirect URIs) lives in `scripts/` (Node, no Origin
+  header). Do not reintroduce a login form, a guest account or a browser
+  wizard; do not call `network.platform.auth.*` from `src/`.
 
 ## Branches and the SDK pin
 
@@ -42,8 +52,8 @@ There is no deploy workflow, deliberately: hosting is the developer's.
   npm run test:e2e` against `npm run dev` (the live test uses the dev-only
   `window.__construct` handle).
 - `model/blueprints.mjs`, `mods/templates/index.mjs` and
-  `src/platform/onboarding/steps.mjs` are plain ES modules on purpose: the
-  browser wizard and the Node scripts import the same files. Keep them free of
+  `src/platform/onboarding/steps.mjs` are plain ES modules on purpose: the Node
+  scripts import them and the browser imports the first two. Keep them free of
   TypeScript and of browser-only globals; their `.d.mts` siblings carry types.
 - Seeding is idempotent only because `deployModel` skips containers that
   already exist — `gameModelSeed` creates instances on every call.
