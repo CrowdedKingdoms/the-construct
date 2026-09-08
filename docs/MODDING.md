@@ -98,15 +98,19 @@ re-run `npm run seed`; publishing is idempotent by content.
 
 ### Platform status note
 
-Crowded Kingdoms' player-compute program tracked CLIENT-mod rollout beyond its
-first-party pilot under a security gate (an external review of the sandbox
-bridge and money paths). The platform admits CLIENT modules for any app whose
-tiers grant the keys — there is no first-party allowlist — and this starter
-demonstrates the full path with the mitigations above. Whether to enable CLIENT
-mods in *your* game is your call; the switch and the SERVER-only path are here
-so it can be a deliberate one.
+The platform admits CLIENT modules for any app whose tiers grant the keys —
+there is no first-party allowlist — and this starter ships them **on** by
+default, with the mitigations above, as the reference integration the public
+docs point at. Whether to keep them on in *your* game is your call; the switch
+and the SERVER-only path are here so it can be a deliberate one.
 
 ## Not wired (and where it lives)
+
+- **The camera, for mods.** Webcam video is a host-side feature
+  (`WebcamService`, `Permissions-Policy: camera=(self)`); there is no host call
+  that exposes frames or the capture to a CLIENT mod, on purpose. A mod that
+  wants to react to "camera on" would need a new allowlisted call in
+  `clientModHost.ts`, which is your decision to make, not this starter's.
 
 - **The Studio agent dock** (Ask/Build/Play) needs a platform-level policy an
   operator arms and a `playerHost` adapter the game implements. This starter

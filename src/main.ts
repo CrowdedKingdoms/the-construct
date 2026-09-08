@@ -117,6 +117,7 @@ async function startGame(): Promise<void> {
     openStudio: () => void toggleStudio(),
     openSetup: () => void switchApp(),
     signOut: () => void signOut(),
+    toggleCamera: () => void session.webcam.toggle(),
   });
   const chat = new ChatPanel(uiRoot!, session.chat, input);
   const loop = new GameLoop(gameRoot!, router, session);
@@ -139,6 +140,13 @@ async function startGame(): Promise<void> {
       void toggleStudio();
     }),
   );
+  game.disposers.push(session.webcam.events.on('local', (state) => hud.renderCamera(state)));
+  game.disposers.push(
+    input.onKey('KeyB', () => {
+      if (input.suppressed) return;
+      void session.webcam.toggle();
+    }),
+  );
   game.disposers.push(
     router.events.on('scene', (scene) => {
       const program = programById(scene.programId);
@@ -159,7 +167,7 @@ async function startGame(): Promise<void> {
   card.hide();
   hud.toast(`Welcome to ${GAME_NAME}`);
   session.chat.system(
-    'Proximity chat — only players within a few chunks hear you. Press T to type.',
+    'Proximity chat — only players within a few chunks hear you. Press T to type, B for your camera.',
   );
 
   const refreshHud = async () => {

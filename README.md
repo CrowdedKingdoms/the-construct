@@ -17,12 +17,12 @@ Clone it, run it, then replace the demo scenes with your game.
 | --- | --- | --- |
 | Holodeck | A three.js hub where players arrive, see each other, chat, and step on pads | `src/scenes/holodeck-three/` |
 | Paint | A pixi.js program: a shared canvas painted with persisted voxels | `src/scenes/program-pixi/` |
-| Platform layer | Sign-in, app entry, presence, chunks, save state, chat, model, Studio — engine-agnostic | `src/platform/` |
+| Platform layer | Sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B), model, Studio — engine-agnostic | `src/platform/` |
 | Adapter boundary | The small `GameScene` contract both renderers implement | `src/engine/`, [docs/RENDERER-ADAPTER.md](docs/RENDERER-ADAPTER.md) |
 | Crowdy Studio | The in-game IDE: players claim a chunk and write SERVER + CLIENT Rust mods | `src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
 | Game model | Kit blueprints (progression, leaderboards) + a hand-authored catalog, seeded idempotently | `model/blueprints.mjs` |
 | Setup wizard | Register → org → free app → access tier → seed → Studio starter files, in the browser or from a shell | `src/platform/onboarding/`, `scripts/setup.mjs` |
-| Security headers | COOP/COEP/CSP that make CLIENT mods possible, wired into Vite and documented per host | `security-headers.mjs`, [docs/HOSTING.md](docs/HOSTING.md) |
+| Security headers | COOP/COEP/CSP that make CLIENT mods possible, plus the Permissions-Policy the camera needs, wired into Vite and documented per host | `security-headers.mjs`, [docs/HOSTING.md](docs/HOSTING.md) |
 
 ## Ten minutes to a running game
 
