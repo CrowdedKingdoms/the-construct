@@ -12,6 +12,8 @@ export interface HudActions {
   openStudio(): void;
   openSetup(): void;
   signOut(): void;
+  /** Turn the local webcam on/off (also bound to B). */
+  toggleCamera(): void;
 }
 
 export class Hud implements SceneHud {
@@ -23,6 +25,8 @@ export class Hud implements SceneHud {
   private readonly toasts: HTMLElement;
   private readonly banner: HTMLElement;
   private readonly bannerText: HTMLElement;
+  private readonly cameraButton: HTMLButtonElement;
+  private readonly preview: HTMLVideoElement;
   private bannerDismissed = false;
   private lastModel: { pulses?: number; level?: number } | null = null;
 
@@ -53,17 +57,47 @@ export class Hud implements SceneHud {
       title: 'Create or switch apps; re-run the model seed',
     });
     setup.addEventListener('click', actions.openSetup);
+    const camera = el('button', {
+      text: 'Camera (B)',
+      title: 'Share your webcam with players nearby (needs use_video_chat)',
+    }) as HTMLButtonElement;
+    camera.addEventListener('click', actions.toggleCamera);
+    this.cameraButton = camera;
     const signOut = el('button', { class: 'ghost', text: 'Sign out' });
     signOut.addEventListener('click', actions.signOut);
+    // The local self-preview: shown while the camera is live, never on the
+    // player's own avatar (they cannot see it anyway).
+    this.preview = el('video', {
+      class: 'camera-preview hidden',
+      title: 'Your camera, as others see it',
+    }) as HTMLVideoElement;
+    this.preview.muted = true;
+    this.preview.autoplay = true;
+    this.preview.playsInline = true;
 
     this.root = el('div', {}, [
       el('div', { class: 'hud-top-left' }, [this.identity, this.world, this.studioChip]),
-      el('div', { class: 'hud-top-right' }, [studio, setup, signOut]),
+      el('div', { class: 'hud-top-right' }, [camera, studio, setup, signOut]),
       this.hint,
       this.toasts,
       this.banner,
+      this.preview,
     ]);
     parent.appendChild(this.root);
+  }
+
+  /** Reflect the local camera state on the button and the self-preview. */
+  renderCamera(state: { live: boolean; stream: MediaStream | null; error: string | null }): void {
+    this.cameraButton.textContent = state.live ? 'Camera on (B)' : 'Camera (B)';
+    this.cameraButton.classList.toggle('active', state.live);
+    if (state.live && state.stream) {
+      this.preview.srcObject = state.stream;
+      this.preview.classList.remove('hidden');
+    } else {
+      this.preview.srcObject = null;
+      this.preview.classList.add('hidden');
+    }
+    if (state.error) this.toast(state.error, 'warn');
   }
 
   setHint(text: string | null): void {

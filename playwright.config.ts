@@ -17,6 +17,12 @@ export default defineConfig({
     baseURL: process.env.CONSTRUCT_E2E_URL ?? 'http://127.0.0.1:4175',
     headless: true,
     viewport: { width: 1280, height: 800 },
+    // A synthetic camera so the live test can turn the webcam on without a
+    // device or a permission prompt (Chromium's test pattern, 128x96 capture).
+    launchOptions: {
+      args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+    },
+    permissions: ['camera'],
   },
   webServer: process.env.CONSTRUCT_E2E_URL
     ? undefined

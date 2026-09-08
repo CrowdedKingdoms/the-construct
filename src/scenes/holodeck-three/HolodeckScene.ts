@@ -1,6 +1,7 @@
 /**
- * The holodeck: a grid-lined void where players arrive, see each other, chat,
- * and step onto pads to load programs or claim a chunk for Crowdy Studio.
+ * The holodeck: a grid-lined void where players arrive, see each other (and
+ * each other's webcams, on the avatar's face), chat, and step onto pads to
+ * load programs or claim a chunk for Crowdy Studio.
  *
  * This file is the three.js adapter. Everything it knows about other players
  * comes from `context.session.players()`; everything it says about the local
@@ -80,6 +81,18 @@ export class HolodeckScene implements GameScene {
     this.disposables.push(() => renderer.domElement.removeEventListener('click', onClick));
     this.disposables.push(context.input.onKey('KeyE', () => this.activate()));
     this.disposables.push(context.input.onKey('Enter', () => this.activate()));
+    // Webcam frames land on the avatar's face; the server's actor-left notice
+    // (or the idle fallback) clears it. Players in another program are not in
+    // this pool, so their frames are closed unseen.
+    this.disposables.push(
+      context.session.webcam.events.on('frame', ({ uuid, bitmap }) => {
+        if (this.avatars) this.avatars.setFace(uuid, bitmap);
+        else bitmap.close();
+      }),
+    );
+    this.disposables.push(
+      context.session.webcam.events.on('ended', ({ uuid }) => this.avatars?.clearFace(uuid)),
+    );
 
     this.resize(size);
     context.hud.setHint('WASD to move · click to look · E on a pad');
