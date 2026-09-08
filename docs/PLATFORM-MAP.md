@@ -7,7 +7,7 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 
 | Game concept | Platform surface | In this repo |
 | --- | --- | --- |
-| Accounts, sign-in | `auth.login` / `auth.register`, magic link, social — identity session token | `platform/auth/AuthService.ts`, `ui/LoginForm.ts` |
+| Accounts, sign-in | **Hosted**: `portal.signIn` → Studio `/authorize` → `portal.handleSignInCallback` — an app-scoped token, never a session | `platform/auth/AuthService.ts`, `platform/network/NetworkManager.ts`, `ui/LoginForm.ts` |
 | Entering a game | `portal.mintAppToken(appId)` → app-scoped token + the app's endpoint | `platform/network/NetworkManager.ts#enterApp` |
 | Org / app creation, tiers | `organizations.create`, `apps.create`, `appAccess.createTier` / `grant` | `platform/onboarding/steps.mjs` |
 | Version floor, UDP status | `serverStatus.gameClientBootstrap(appId)` | `NetworkManager#bootstrap` |
@@ -27,15 +27,32 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 | Player left | `actorLeft` notification (Buddy says an actor is gone, ~5 s after its last update) | `WorldStores` lane drops the actor; `WebcamService` ends the stream; scenes free per-uuid objects at once instead of after the 12 s reaper |
 | Voice | `udp.sendAudioPacket` / `audio` notifications | not wired; see BWF's `VoiceChat` pattern in the docs (`WebcamService` is the same shape for video) |
 | Teams, guilds | `teams.*`, `guildBlueprint` → `kit.social` | not wired |
-| Cross-game lobby | Overworld PKCE portal (`portal.beginEntry` / `completeEntry`) | not wired; this game owns its login |
+| Cross-game lobby | The same hosted PKCE flow, for another app id | `main.ts` `switchApp` |
 
-## Two tokens, one endpoint
+## One token in the browser, two on the shell
 
-Sign-in yields an **identity session token**: account, org and app
-administration, minting. It is rejected for gameplay. `mintAppToken` yields a
-short-lived **app-scoped token** for one app and returns the endpoint of the
-datacenter that holds that app's data. The game client is built there. Keep
-them in two clients with two token stores — `NetworkManager` does.
+The browser holds only a short-lived **app-scoped token** for THIS app, obtained
+through hosted sign-in: `portal.signIn({ appId, redirectUri })` sends the
+player to Crowded Kingdoms' page (Studio `/authorize`) with a PKCE challenge,
+and `portal.handleSignInCallback()` exchanges the returned code. The token
+response names the endpoint of the datacenter that holds the app's data; the
+game client is built there. There is no identity session in the browser and
+cannot be: since ck-api v1.88.0 the direct sign-in mutations are served only to
+first-party origins (`HOSTED_SIGN_IN_REQUIRED` otherwise), so a game on its own
+domain never sees a password. The token rotates in place
+(`refreshGameplayToken`); after repeated failure the player is bounced through
+hosted sign-in again, which is silent while their Studio session lasts.
+
+The shell scripts (`npm run setup`, `seed`, `smoke`) run in Node, send no
+`Origin` header, and therefore CAN sign in directly with `auth.login` to hold an
+**identity session** -- which is what creating an org and app, seeding the model
+and registering redirect URIs need. That is why Setup lives there and not in
+the browser.
+
+The app's **redirect URIs** (Studio > Apps > Settings, or `npm run setup
+--origin`) are where hosted sign-in may return the player AND the API's CORS
+allow-list for the app, origin-matched. A game on an unregistered origin gets
+no CORS headers and a refused return leg; one fix.
 
 ## The presence rule
 

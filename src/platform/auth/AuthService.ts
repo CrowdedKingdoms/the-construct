@@ -1,106 +1,45 @@
 /**
- * Sign-in for a game that owns its own login screen.
+ * Sign-in for a game on its own domain: HOSTED, always.
  *
- * Three routes, all yielding the identity session the NetworkManager holds:
- *  - email + password (`register` on first visit, `login` afterwards),
- *  - a magic link emailed to the player (completes on the redirect back),
- *  - a **guest** account: random credentials generated here and remembered in
- *    this browser only. Convenient for trying the game; the README says out
- *    loud that clearing site data loses a guest account.
+ * The player is sent to Crowded Kingdoms' sign-in page (Studio's `/authorize`)
+ * with a PKCE challenge and comes back with a token confined to this app. This
+ * page never sees a password and never holds an identity session -- the direct
+ * sign-in mutations are refused from any browser origin that is not Crowded
+ * Kingdoms' own (`HOSTED_SIGN_IN_REQUIRED`, ck-api v1.88.0). The reason is the
+ * player's password: a form here that collected it would be indistinguishable,
+ * to the platform and to the player, from a phishing page.
  *
- * The Overworld PKCE portal (`portal.beginEntry` / `completeEntry`) is the
- * alternative used by first-party games behind a shared lobby; it is
- * documented in docs/PLATFORM-MAP.md and not wired here, because a third-party
- * game has no Overworld to hand off to.
+ * What this means for a third-party game:
+ *  - there is no login form, register form, magic link or guest account in the
+ *    browser. Account creation happens on Studio's page during the redirect.
+ *  - the app id must be known BEFORE sign-in (the redirect names it). It comes
+ *    from `VITE_APP_ID`, `?app=`, or this browser's storage; `npm run setup`
+ *    creates the app and prints the id.
+ *  - this page's origin must be one of the app's registered redirect URIs.
+ *    `npm run setup` registers the dev server's; add the production origin in
+ *    Studio > Apps > Settings > Sign-in & redirect URIs.
  */
-import { isAlreadyRegisteredError } from '@crowdedkingdoms/crowdyjs';
-
-import { readScoped, writeScoped } from '@/platform/envScope';
-import { NetworkManager, messageOf, type SessionUser } from '@/platform/network/NetworkManager';
-
-const GUEST_KEY = 'construct:guest-credentials';
-const REMEMBERED_EMAIL_KEY = 'construct:remembered-email';
-
-interface GuestCredentials {
-  email: string;
-  password: string;
-}
-
-function randomHex(length: number): string {
-  const bytes = new Uint8Array(Math.ceil(length / 2));
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
-    .join('')
-    .slice(0, length);
-}
+import { NetworkManager, type AppRoute } from '@/platform/network/NetworkManager';
 
 export class AuthService {
   constructor(private readonly network: NetworkManager = NetworkManager.instance) {}
 
-  rememberedEmail(): string | null {
-    return readScoped(REMEMBERED_EMAIL_KEY);
+  /** Leave for Crowded Kingdoms' sign-in page; the browser navigates away. */
+  async signIn(appId: string): Promise<void> {
+    await this.network.signInHosted(appId);
   }
 
-  hasGuest(): boolean {
-    return readScoped(GUEST_KEY) !== null;
+  /** Finish a sign-in this page is returning from, if any. */
+  async completeIfReturning(): Promise<AppRoute | null> {
+    return this.network.completeHostedSignInIfPresent();
   }
 
-  /** Sign in; on "unknown account" offer nothing clever — the UI shows register. */
-  async signIn(email: string, password: string): Promise<SessionUser> {
-    const user = await this.network.login(email, password);
-    writeScoped(REMEMBERED_EMAIL_KEY, email.trim().toLowerCase());
-    return user;
-  }
-
-  /** Register, falling back to login when the address already has an account. */
-  async register(email: string, password: string, gamertag?: string): Promise<SessionUser> {
-    try {
-      const user = await this.network.register(email, password, gamertag);
-      writeScoped(REMEMBERED_EMAIL_KEY, email.trim().toLowerCase());
-      return user;
-    } catch (error) {
-      if (isAlreadyRegisteredError(error)) return this.signIn(email, password);
-      throw error;
-    }
-  }
-
-  async requestMagicLink(email: string): Promise<void> {
-    await this.network.requestMagicLink(email);
-    writeScoped(REMEMBERED_EMAIL_KEY, email.trim().toLowerCase());
-  }
-
-  /** A throwaway account for this browser; persists until site data is cleared. */
-  async continueAsGuest(): Promise<SessionUser> {
-    let creds = this.loadGuest();
-    if (!creds) {
-      creds = {
-        email: `guest-${randomHex(10)}@construct.invalid`,
-        password: `Guest-${randomHex(20)}!`,
-      };
-      writeScoped(GUEST_KEY, JSON.stringify(creds));
-    }
-    try {
-      return await this.network.register(creds.email, creds.password, `guest-${randomHex(4)}`);
-    } catch (error) {
-      if (isAlreadyRegisteredError(error)) return this.network.login(creds.email, creds.password);
-      throw new Error(`Guest sign-in failed: ${messageOf(error)}`, { cause: error });
-    }
+  /** A previous visit's token and route, if they still work. */
+  async restore(): Promise<AppRoute | null> {
+    return this.network.restore();
   }
 
   async signOut(): Promise<void> {
     await this.network.signOut();
-  }
-
-  private loadGuest(): GuestCredentials | null {
-    const raw = readScoped(GUEST_KEY);
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw) as Partial<GuestCredentials>;
-      return parsed.email && parsed.password
-        ? { email: parsed.email, password: parsed.password }
-        : null;
-    } catch {
-      return null;
-    }
   }
 }

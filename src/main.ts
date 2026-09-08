@@ -1,7 +1,13 @@
 /**
- * Boot: sign in -> resolve an app (or run Setup) -> enter it -> join the world
- * -> load the holodeck. Read top to bottom; every step is a platform call and
- * a UI reaction, and the scenes only start once the world session is live.
+ * Boot: finish a hosted sign-in we may be returning from -> resolve the app id
+ * -> restore or start a sign-in -> enter the app -> join the world -> load the
+ * holodeck. Read top to bottom; every step is a platform call and a UI
+ * reaction, and the scenes only start once the world session is live.
+ *
+ * The app id comes BEFORE sign-in, because the hosted sign-in redirect names
+ * the app the token is for. There is no in-browser Setup any more: creating an
+ * org and app needs an identity session, which a game on its own domain never
+ * holds (see platform/auth/AuthService.ts). `npm run setup` does it.
  */
 import '@/style.css';
 
@@ -12,15 +18,15 @@ import { AuthService } from '@/platform/auth/AuthService';
 import { APP_ID_STORAGE_KEY, BUILD_APP_ID, GAME_NAME, resolveAppId } from '@/platform/config';
 import { ensureEnvScope, readScoped, writeScoped } from '@/platform/envScope';
 import { GameSession } from '@/platform/GameSession';
-import { NetworkManager, messageOf } from '@/platform/network/NetworkManager';
+import { NetworkManager, messageOf, type AppRoute } from '@/platform/network/NetworkManager';
 import { HOLODECK_SCENE_ID, HOLODECK_SPAWN, programById } from '@/platform/programs';
 import { HolodeckScene } from '@/scenes/holodeck-three/HolodeckScene';
 import { PaintScene } from '@/scenes/program-pixi/PaintScene';
 import { BootCard } from '@/ui/BootCard';
 import { ChatPanel } from '@/ui/ChatPanel';
 import { Hud } from '@/ui/Hud';
-import { showLoginForm } from '@/ui/LoginForm';
-import { showSetupWizard } from '@/ui/SetupWizard';
+import { showSignIn } from '@/ui/LoginForm';
+import { showNoApp } from '@/ui/NoAppCard';
 
 const gameRoot = document.getElementById('game-root');
 const uiRoot = document.getElementById('ui-root');
@@ -53,48 +59,67 @@ async function boot(): Promise<void> {
   try {
     card.setStatus('Restoring your session…');
     card.show([]);
-    await network.completeMagicLinkIfPresent();
-    let user = await network.restoreIdentity();
-    if (!user) user = await showLoginForm(card, auth);
-    card.setStatus(`Signed in as ${user.gamertag ?? user.email ?? user.userId}`);
 
+    // 1. Returning from Crowded Kingdoms' sign-in page? Finish it: the SDK
+    //    exchanges the code for an app token and tells us the app's endpoint.
+    const returned = await auth.completeIfReturning();
+    if (returned) {
+      writeScoped(APP_ID_STORAGE_KEY, returned.appId);
+      await enterAndPlay(returned);
+      return;
+    }
+
+    // 2. A previous visit's token, still valid? Straight in.
+    const restored = await auth.restore();
+    if (restored) {
+      await enterAndPlay(restored);
+      return;
+    }
+
+    // 3. Otherwise we need to know WHICH app before we can sign in.
     const resolved = resolveAppId({
       search: window.location.search,
       stored: readScoped(APP_ID_STORAGE_KEY),
       env: BUILD_APP_ID,
     });
-    if (resolved.appId) {
-      await enterAndPlay(resolved.appId, `Entering app ${resolved.appId} (${resolved.source})…`);
-    } else {
-      await runSetupThenPlay();
+    if (!resolved.appId) {
+      showNoApp(card, (appId) => {
+        writeScoped(APP_ID_STORAGE_KEY, appId);
+        void boot();
+      });
+      return;
     }
+    writeScoped(APP_ID_STORAGE_KEY, resolved.appId);
+    showSignIn(card, auth, resolved.appId);
   } catch (error) {
     card.showError('Could not start', messageOf(error), () => void boot());
   }
 }
 
-async function runSetupThenPlay(reason?: string): Promise<void> {
-  const current = readScoped(APP_ID_STORAGE_KEY);
-  const { appId } = await showSetupWizard(card, network, { reason, currentAppId: current });
-  await enterAndPlay(appId, `Entering app ${appId}…`);
-}
-
-async function enterAndPlay(appId: string, status: string): Promise<void> {
-  card.setStatus(status);
+async function enterAndPlay(route: AppRoute): Promise<void> {
+  card.setStatus(`Entering app ${route.appId}…`);
   card.show([]);
   try {
-    await network.enterApp(appId);
+    await network.enterApp(route);
     const boot = await network.bootstrap();
     if (boot.udpConnected === false)
       network.log('UDP proxy not yet connected; the SDK will connect on subscribe');
   } catch (error) {
-    // The pinned/remembered app may be gone, or not ours: fall back to Setup
-    // with the reason on screen rather than a dead end.
+    // The token may have died, or the app may be gone: forget the pin and let
+    // the player choose / sign in again, with the reason on screen.
+    await network.signOut();
     writeScoped(APP_ID_STORAGE_KEY, null);
-    await runSetupThenPlay(`App ${appId} could not be entered: ${messageOf(error)}`);
+    showNoApp(
+      card,
+      (appId) => {
+        writeScoped(APP_ID_STORAGE_KEY, appId);
+        void boot();
+      },
+      `App ${route.appId} could not be entered: ${messageOf(error)}`,
+    );
     return;
   }
-  writeScoped(APP_ID_STORAGE_KEY, appId);
+  writeScoped(APP_ID_STORAGE_KEY, route.appId);
   const url = new URL(window.location.href);
   if (url.searchParams.has('app')) {
     url.searchParams.delete('app');
@@ -217,18 +242,24 @@ async function toggleStudio(): Promise<void> {
   }
 }
 
+/**
+ * Switch to another app: the token we hold is confined to this one, so it is
+ * a fresh hosted sign-in for the other (one silent bounce while the player's
+ * Studio session lasts).
+ */
 async function switchApp(): Promise<void> {
   await stopGame();
-  card.setStatus('Setup');
-  await runSetupThenPlay('Create another app, switch apps, or re-run the seed on this one.').catch(
-    (error) => card.showError('Setup failed', messageOf(error), () => void boot()),
-  );
+  await network.signOut();
+  writeScoped(APP_ID_STORAGE_KEY, null);
+  showNoApp(card, (appId) => {
+    writeScoped(APP_ID_STORAGE_KEY, appId);
+    void boot();
+  });
 }
 
 async function signOut(): Promise<void> {
   await stopGame();
   await auth.signOut();
-  writeScoped(APP_ID_STORAGE_KEY, null);
   void boot();
 }
 

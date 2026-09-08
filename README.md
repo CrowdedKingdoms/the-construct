@@ -6,8 +6,10 @@ with the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) SDK.
 The SDK gives you the platform. This repo gives you the rest of a game: an
 engine-agnostic platform layer, two renderers driven by the same session, a
 server-authoritative game model, an in-game Crowdy Studio IDE where players
-write and run their own mods, and a Setup wizard that creates your org and app
-on Crowded Kingdoms from inside the game — no card, no operator, no infra.
+write and run their own mods, hosted sign-in (your players sign in on Crowded
+Kingdoms and come back holding a token for your game -- your page never sees a
+password), and a one-command Setup that creates your org and app on Crowded
+Kingdoms — no card, no operator, no infra.
 
 Clone it, run it, then replace the demo scenes with your game.
 
@@ -17,11 +19,11 @@ Clone it, run it, then replace the demo scenes with your game.
 | --- | --- | --- |
 | Holodeck | A three.js hub where players arrive, see each other, chat, and step on pads | `src/scenes/holodeck-three/` |
 | Paint | A pixi.js program: a shared canvas painted with persisted voxels | `src/scenes/program-pixi/` |
-| Platform layer | Sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B), model, Studio — engine-agnostic | `src/platform/` |
+| Platform layer | Hosted sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B), model, Studio — engine-agnostic | `src/platform/` |
 | Adapter boundary | The small `GameScene` contract both renderers implement | `src/engine/`, [docs/RENDERER-ADAPTER.md](docs/RENDERER-ADAPTER.md) |
 | Crowdy Studio | The in-game IDE: players claim a chunk and write SERVER + CLIENT Rust mods | `src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
 | Game model | Kit blueprints (progression, leaderboards) + a hand-authored catalog, seeded idempotently | `model/blueprints.mjs` |
-| Setup wizard | Register → org → free app → access tier → seed → Studio starter files, in the browser or from a shell | `src/platform/onboarding/`, `scripts/setup.mjs` |
+| Setup | org → free app → access tier → redirect URIs → seed → Studio starter files, from a shell (`npm run setup`) | `src/platform/onboarding/`, `scripts/setup.mjs` |
 | Security headers | COOP/COEP/CSP that make CLIENT mods possible, plus the Permissions-Policy the camera needs, wired into Vite and documented per host | `security-headers.mjs`, [docs/HOSTING.md](docs/HOSTING.md) |
 
 ## Ten minutes to a running game
@@ -32,30 +34,46 @@ Prerequisites: Node 20+ and a modern browser. Nothing else.
 git clone https://github.com/CrowdedKingdoms/the-construct.git
 cd the-construct
 npm install
-npm run dev
 ```
 
-Open <http://localhost:5175>.
+1. **Create your app from a shell.** You need a Crowded Kingdoms account (sign
+   up at [studio.crowdedkingdoms.com](https://studio.crowdedkingdoms.com) if
+   you do not have one), then:
 
-1. **Create an account** (or continue as a guest). Accounts live on Crowded
-   Kingdoms; the game stores only a session token in your browser.
-2. **Setup** opens because this browser has no app yet. Keep the defaults and
-   press *Create my app*. Seven idempotent steps run: organization, free app on
-   shared hosting, a *Constructor* access tier with the Crowdy Studio code
-   keys, an app token, the self-claim grid policy, the game model, and the
-   Studio starter files. It prints an app id.
+   ```bash
+   CONSTRUCT_EMAIL=you@example.com CONSTRUCT_PASSWORD=... \
+     npm run setup -- --org "My studio" --app "The Construct"
+   ```
+
+   Eight idempotent steps run: organization, free app on shared hosting, a
+   *Constructor* access tier with the Crowdy Studio code keys, the dev server
+   registered as a **redirect URI**, an app token, the self-claim grid policy,
+   the game model, and the Studio starter files. It prints an app id; copy
+   `.env.example` to `.env.local` and set `VITE_APP_ID` to it.
+
+   Why a shell and not the browser: creating an app needs your account's
+   session, and a game on its own domain never holds one -- see step 2.
+2. `npm run dev`, open <http://localhost:5175>, press **Sign in with Crowded
+   Kingdoms**. You sign in (or create an account) *on Crowded Kingdoms* and come
+   straight back holding a token confined to your app. Your page never sees a
+   password: since ck-api v1.88.0 the direct sign-in calls are served only to
+   Crowded Kingdoms' own pages, so this hosted flow is the only one a game on
+   its own domain can use.
 3. **Enter The Construct.** You are in the holodeck. `WASD` moves, click to
-   look, `T` chats, `E` on a pad. Open a second browser (or a friend does) and
-   sign in with `?app=<your id>` — you see each other.
+   look, `T` chats, `E` on a pad. Open a second browser (or a friend does) at
+   the same URL — you see each other.
 4. Step on **Load: Paint** and press `E`: the pixi.js program. Click to paint;
    the cells replicate live and persist.
 5. Step on **Claim & Studio** and press `E`: you claim the chunk you stand on
    and Crowdy Studio opens beside the game. Follow [docs/MODDING.md](docs/MODDING.md)
    to deploy a mod that runs in the browser — yours and your visitors'.
 
-To pin this checkout to your app, copy `.env.example` to `.env.local` and set
-`VITE_APP_ID`. Everything else is optional: the installed SDK build already
-knows the API origin for its tier.
+Everything but `VITE_APP_ID` is optional: the installed SDK build already knows
+the API origin for its tier. When you deploy somewhere other than
+`http://localhost:5175`, register that origin too -- `npm run setup -- --origin
+https://play.example.com`, or Studio > Apps > Settings > Sign-in & redirect
+URIs. That list is both where sign-in may return your players and the API's
+CORS allow-list for your app.
 
 ## Command reference
 
@@ -66,7 +84,7 @@ knows the API origin for its tier.
 | `npm test` | Unit tests (vitest) + CSP builder tests (`node --test`) |
 | `npm run test:e2e` | Playwright: boots cross-origin isolated; with `CONSTRUCT_E2E=1` and credentials, signs in and opens Studio |
 | `npm run lint` / `npm run typecheck` / `npm run format:check` | Quality gates CI runs |
-| `npm run setup -- --org "…" --app "…"` | Headless Setup (same code as the wizard); needs `CONSTRUCT_EMAIL` / `CONSTRUCT_PASSWORD` |
+| `npm run setup -- --org "…" --app "…" [--origin https://…]` | Setup: org, app, tier, redirect URIs, seed; needs `CONSTRUCT_EMAIL` / `CONSTRUCT_PASSWORD` |
 | `npm run seed` | Re-deploy the model + Studio starter files to `APP_ID` after editing `model/` or `mods/` |
 | `npm run smoke` | Verify an app has everything Setup should have produced |
 | `npm run check:pin` | The CrowdyJS pin is exact and matches the branch tier |

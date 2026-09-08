@@ -23,6 +23,8 @@ export interface OnboardingReport {
 }
 
 export interface RunOnboardingOptions {
+  /** Origins to register as the app's redirect URIs (hosted sign-in + CORS). */
+  redirectOrigins?: string[];
   identity: CrowdyClient;
   userId: string;
   enterApp: (appId: string) => Promise<CrowdyClient>;
@@ -48,6 +50,11 @@ export function ensureApp(
   input: { orgId: string; orgSlug: string; name: string; slug: string; datacenter?: string },
   log?: Logger,
 ): Promise<{ app: { appId: string; name: string; slug: string }; created: boolean }>;
+export function ensureRedirectUris(
+  identity: CrowdyClient,
+  args: { appId: string; origins: string[] },
+  log?: Logger,
+): Promise<{ redirectUris: string[]; added: string[] }>;
 export function ensureConstructorTier(
   identity: CrowdyClient,
   input: { appId: string; userId: string },
