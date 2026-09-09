@@ -55,8 +55,10 @@ There is no deploy workflow, deliberately: hosting is the developer's.
   `src/platform/onboarding/steps.mjs` are plain ES modules on purpose: the Node
   scripts import them and the browser imports the first two. Keep them free of
   TypeScript and of browser-only globals; their `.d.mts` siblings carry types.
-- Seeding is idempotent only because `deployModel` skips containers that
-  already exist — `gameModelSeed` creates instances on every call.
+- Seeding is idempotent on the server since ck-api `v1.93.0`: `gameModelSeed`
+  upserts containers by `binding_key = seed:<tempId>` and skips existing
+  edges. `deployModel`'s client-side "already exists" filter is redundant,
+  not wrong — keep it.
 
 ## Platform facts this code depends on (measured 2026-09-07, dev tier)
 
