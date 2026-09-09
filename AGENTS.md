@@ -62,8 +62,10 @@ There is no deploy workflow, deliberately: hosting is the developer's.
 
 ## Platform facts this code depends on (measured 2026-09-07, dev tier)
 
-- `nearbyGridPermissions` requires `manage_apps`; players learn the grid under
-  them from the game's `Claim` containers.
+- `nearbyGridPermissions` still requires `manage_apps`. Players can call
+  `nearbyGrids` (ck-api `v1.93.0`: `gridId` + bounds, no `permissionKeys`).
+  This game still uses `Claim` containers; that workaround was not rewritten.
+- Model expressions have `now()` (int milliseconds, one instant per invoke).
 - A CLIENT mod runs for visitors only as the required companion of a live
   SERVER module (full-stack project), after the visitor trusts the author, and
   only if the **visitor's** tier holds `run_client_code`.
