@@ -55,13 +55,17 @@ There is no deploy workflow, deliberately: hosting is the developer's.
   `src/platform/onboarding/steps.mjs` are plain ES modules on purpose: the Node
   scripts import them and the browser imports the first two. Keep them free of
   TypeScript and of browser-only globals; their `.d.mts` siblings carry types.
-- Seeding is idempotent only because `deployModel` skips containers that
-  already exist — `gameModelSeed` creates instances on every call.
+- Seeding is idempotent on the server since ck-api `v1.93.0`: `gameModelSeed`
+  upserts containers by `binding_key = seed:<tempId>` and skips existing
+  edges. `deployModel`'s client-side "already exists" filter is redundant,
+  not wrong — keep it.
 
 ## Platform facts this code depends on (measured 2026-09-07, dev tier)
 
-- `nearbyGridPermissions` requires `manage_apps`; players learn the grid under
-  them from the game's `Claim` containers.
+- `nearbyGridPermissions` still requires `manage_apps`. Players can call
+  `nearbyGrids` (ck-api `v1.93.0`: `gridId` + bounds, no `permissionKeys`).
+  This game still uses `Claim` containers; that workaround was not rewritten.
+- Model expressions have `now()` (int milliseconds, one instant per invoke).
 - A CLIENT mod runs for visitors only as the required companion of a live
   SERVER module (full-stack project), after the visitor trusts the author, and
   only if the **visitor's** tier holds `run_client_code`.
