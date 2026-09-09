@@ -2,7 +2,7 @@
 # followed the `register` account-takeover (ck-api v1.87.2 / v1.88.0).
 #
 #   gitleaks    secrets in the working tree           BLOCKING
-#   npm audit   high/critical advisories              report-only until the baseline is clean
+#   npm audit   high/critical advisories              BLOCKING (baseline clean 2026-09-08)
 #   CodeQL      static analysis                     blocking on alerts in the Security tab
 #
 # Runs on every PR and push to the tier branches, and weekly so a new advisory
@@ -21,7 +21,7 @@ jobs:
     name: secrets (gitleaks, working tree)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: gitleaks
         # The WORKING TREE at this commit, not the history: a historical leak is
         # a rotation task for the operator, not a reason to block every PR. The
@@ -33,16 +33,16 @@ jobs:
   npm-audit:
     name: dependencies (npm audit, high+)
     runs-on: ubuntu-latest
-    # REPORT-ONLY for now: the job passes and annotates. Flip to blocking by
-    # removing the `|| echo` once the baseline is clean.
+    # BLOCKING since 2026-09-08: the baseline was clean at high+. A new advisory
+    # fails the run; fix it or `npm audit fix`, do not re-add a fallback echo.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - name: npm audit (/)
         working-directory: .
-        run: npm audit --audit-level=high || echo "::warning::npm audit found high/critical advisories in / (report-only until the baseline is clean)"
+        run: npm audit --audit-level=high
   codeql:
     name: SAST (CodeQL)
     runs-on: ubuntu-latest
@@ -50,7 +50,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: github/codeql-action/init@v3
         with:
           languages: javascript-typescript

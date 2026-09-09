@@ -77,14 +77,14 @@ out within `REPLICATION_DISTANCE` chunks. Proximity chat rides the same path.
   minute-interval automation, and `Claim` — the player-readable registry of
   which chunk became which grid.
 
-Re-seeding is safe: definitions upsert by name, and the seed step skips
-containers that already exist (the platform would otherwise create duplicates
-on every run). `ModelService` reads the model with a player token.
+Re-seeding is safe: definitions upsert by name, and since ck-api `v1.93.0`
+`gameModelSeed` upserts containers by `seed:<tempId>` (the client-side skip
+in `deployModel` is redundant, not wrong). `ModelService` reads the model
+with a player token.
 
 Two platform facts the model shows honestly: schedule automations run only
-while the app has a player (the presence rule), and model expressions have no
-clock — elapsed-time logic belongs in a compute module or a validated
-client-supplied timestamp.
+while the app has a player (the presence rule), and model expressions can
+read `now()` (int milliseconds, one instant per invoke).
 
 ## Crowdy Studio and player code
 
