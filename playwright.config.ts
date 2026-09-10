@@ -20,7 +20,16 @@ export default defineConfig({
     // A synthetic camera so the live test can turn the webcam on without a
     // device or a permission prompt (Chromium's test pattern, 128x96 capture).
     launchOptions: {
-      args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+      args: [
+        '--use-fake-device-for-media-stream',
+        '--use-fake-ui-for-media-stream',
+        // Public-IP HTTP is not a secure context; Chromium still refuses
+        // getUserMedia there. Treat the live origin as secure so the fake
+        // camera/mic the flags above install can actually start.
+        ...(process.env.CONSTRUCT_E2E_URL
+          ? [`--unsafely-treat-insecure-origin-as-secure=${process.env.CONSTRUCT_E2E_URL}`]
+          : []),
+      ],
     },
     permissions: ['camera', 'microphone'],
   },

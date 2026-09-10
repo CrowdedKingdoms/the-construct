@@ -21,15 +21,31 @@ function envFlag(name: string, fallback: boolean): boolean {
   return !['0', 'false', 'off', 'no'].includes(raw.toLowerCase());
 }
 
+function trimApiOrigin(url: string): string {
+  return url.replace(/\/graphql\/?$/, '').replace(/\/$/, '');
+}
+
 /**
  * The API root the bundle dials. Explicit override first; otherwise the origin
  * the SDK was published with. Never a hostname written into this repository.
+ *
+ * `same-origin` (or `/`) means "this page" — used when Vite proxies `/graphql`
+ * so the IDE browser on a public IP and Playwright on localhost share one build.
  */
-export const API_HTTP_URL: string = (
-  envString('VITE_CROWDY_HTTP_URL') ?? CROWDY_DEFAULT_HTTP_ORIGIN
-)
-  .replace(/\/graphql\/?$/, '')
-  .replace(/\/$/, '');
+export const API_HTTP_URL: string = trimApiOrigin(
+  (() => {
+    const raw = envString('VITE_CROWDY_HTTP_URL');
+    if (!raw) return CROWDY_DEFAULT_HTTP_ORIGIN;
+    if (
+      (raw === 'same-origin' || raw === '/') &&
+      typeof window !== 'undefined' &&
+      window.location?.origin
+    ) {
+      return window.location.origin;
+    }
+    return raw;
+  })(),
+);
 
 /** The same host over WebSocket. */
 export const API_WS_URL: string = API_HTTP_URL.replace(
@@ -39,6 +55,13 @@ export const API_WS_URL: string = API_HTTP_URL.replace(
 
 /** Which tier the SDK build targets; informational (shown in the boot card). */
 export const API_TIER: string = envString('VITE_CROWDY_HTTP_URL') ? 'custom' : CROWDY_DEFAULT_TIER;
+
+/**
+ * Hosted sign-in page (Studio `/authorize`). Required when `VITE_CROWDY_HTTP_URL`
+ * is not a CK tier host — CrowdyJS cannot derive Studio from a same-origin
+ * proxy or a raw IP. Leave unset to use the SDK's tier convention.
+ */
+export const AUTHORIZE_URL: string | undefined = envString('VITE_AUTHORIZE_URL');
 
 /** CLIENT-target Crowdy Studio mods (browser sandbox). A fork can turn these off. */
 export const CLIENT_MODS_ENABLED: boolean = envFlag('VITE_CONSTRUCT_CLIENT_MODS', true);

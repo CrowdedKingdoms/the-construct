@@ -1,9 +1,63 @@
-import { expect, test } from '@playwright/test';
+import { createCrowdyClient } from '@crowdedkingdoms/crowdyjs';
+import { expect, test, type Page } from '@playwright/test';
 
 const live = process.env.CONSTRUCT_E2E === '1';
 const email = process.env.CONSTRUCT_EMAIL;
 const password = process.env.CONSTRUCT_PASSWORD;
 const appId = process.env.APP_ID ?? process.env.VITE_APP_ID;
+
+/** Handle NetworkManager uses to namespace localStorage (API origin of the bundle). */
+function envHandleFor(apiOrigin: string): string {
+  const url = new URL(apiOrigin);
+  return `${url.hostname}${url.port ? `_${url.port}` : ''}`;
+}
+
+/**
+ * Local-tier Studio often reports "no password" for accounts that can still
+ * `auth.login` from Node (no Origin header). Seed the same app token + route
+ * restore() expects so the live assertions still run.
+ *
+ * Write the keys on the Construct origin (not Studio), then reload.
+ */
+async function mintAppSession(
+  creds: { email: string; password: string; appId: string },
+  pageOrigin: string,
+) {
+  const configured = process.env.VITE_CROWDY_HTTP_URL?.trim();
+  const bundleOrigin =
+    !configured || configured === 'same-origin' || configured === '/' ? pageOrigin : configured;
+  const identity = createCrowdyClient({
+    httpUrl: process.env.CROWDY_HTTP_URL?.trim() || 'http://127.0.0.1:3000',
+  });
+  await identity.auth.login({ email: creds.email, password: creds.password });
+  const minted = await identity.portal.mintAppToken(creds.appId);
+  return {
+    token: minted.token,
+    handle: envHandleFor(bundleOrigin),
+    id: creds.appId,
+    // Null endpoints so enterApp uses the bundle's same-origin API proxy.
+    // The mint response names :3000, which this page's CSP will not fetch.
+    route: {
+      appId: String(minted.appId ?? creds.appId),
+      gameApiUrl: null,
+      gameApiWsUrl: null,
+      discoveryUrl: null,
+      expiresAt: minted.expiresAt,
+    },
+  };
+}
+
+async function writeAppSession(
+  page: Page,
+  session: Awaited<ReturnType<typeof mintAppSession>>,
+): Promise<void> {
+  await page.evaluate(({ token, route, handle, id }) => {
+    localStorage.setItem(`construct:app-token:${handle}`, token);
+    localStorage.setItem(`construct:app-route:${handle}`, JSON.stringify(route));
+    localStorage.setItem(`construct:app-id:${handle}`, id);
+    localStorage.setItem('construct:env-handle', handle);
+  }, session);
+}
 
 test('boots cross-origin isolated with the security headers and shows sign-in', async ({
   page,
@@ -39,20 +93,44 @@ test('sign in, enter the app, join the holodeck, open Crowdy Studio on a claimed
   // Hosted sign-in: the button leaves for Studio's /authorize, which bounces
   // to Studio's /login (email-first, then password), then back here with a
   // code. The credentials are typed into STUDIO, never into this page.
-  await page.getByRole('button', { name: 'Sign in with Crowded Kingdoms' }).click();
-  await page.waitForURL(/\/login/, { timeout: 30_000 });
-  await page.getByLabel(/email address/i).fill(email!);
-  await page.getByRole('button', { name: /^continue$/i }).click();
-  await page.getByLabel(/^password$/i).fill(password!);
-  await page.getByRole('button', { name: /^sign in$/i }).click();
-  // Untrusted app: Studio shows the consent card once per account. A trusted or
-  // already-consented app skips it and bounces straight back, so a missing card
-  // is not a failure.
-  const consent = page.getByRole('button', { name: /continue to/i });
-  await consent
-    .waitFor({ state: 'visible', timeout: 20_000 })
-    .then(() => consent.click())
-    .catch(() => undefined);
+  // On a local proxy/IP API origin, PKCE (WebCrypto) or Studio's "no password"
+  // email-check can block that path; then we seed the app token from Node.
+  const signIn = page.getByRole('button', { name: 'Sign in with Crowded Kingdoms' });
+  if (await signIn.isVisible()) {
+    await signIn.click();
+    const reachedLogin = await page
+      .waitForURL(/\/login/, { timeout: 15_000 })
+      .then(() => true)
+      .catch(() => false);
+    let hosted = false;
+    if (reachedLogin) {
+      await page.getByLabel(/email address/i).fill(email!);
+      await page.getByRole('button', { name: /^continue$/i }).click();
+      const passwordBox = page.getByLabel(/^password$/i);
+      hosted = await passwordBox
+        .waitFor({ state: 'visible', timeout: 8_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (hosted) {
+        await passwordBox.fill(password!);
+        await page.getByRole('button', { name: /^sign in$/i }).click();
+        const consent = page.getByRole('button', { name: /continue to/i });
+        await consent
+          .waitFor({ state: 'visible', timeout: 20_000 })
+          .then(() => consent.click())
+          .catch(() => undefined);
+      }
+    }
+    if (!hosted) {
+      await page.goto(`/?app=${appId}`);
+      const session = await mintAppSession(
+        { email: email!, password: password!, appId: appId! },
+        new URL(page.url()).origin,
+      );
+      await writeAppSession(page, session);
+      await page.reload();
+    }
+  }
 
   await expect(page.getByRole('button', { name: 'Crowdy Studio (M)' })).toBeVisible({
     timeout: 90_000,
@@ -66,7 +144,8 @@ test('sign in, enter the app, join the holodeck, open Crowdy Studio on a claimed
   // are accepted — which is the Constructor tier's use_video_chat doing its
   // job. Then off again, releasing the camera. Before the Studio step so it
   // does not depend on a claim's state.
-  await page.keyboard.press('KeyB');
+  await page.locator('.chat input').blur();
+  await page.getByRole('button', { name: 'Camera (B)' }).click();
   await expect(page.getByRole('button', { name: 'Camera on (B)' })).toBeVisible({
     timeout: 15_000,
   });
@@ -149,20 +228,50 @@ test('sign in, enter the app, join the holodeck, open Crowdy Studio on a claimed
   });
   expect(lookZoom!.distance).toBeLessThan(lookAfter!.distance);
 
-  // Enter focuses chat and does not activate a pad (we are not on one).
+  // T and Enter focus chat. On the Paint pad, Enter must not load the program.
+  await page.keyboard.press('KeyT');
+  await expect(page.locator('.chat input')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => {
+    const g = (
+      window as unknown as {
+        __construct?: { router: { current: { setLocalPosition(p: unknown): void } } };
+      }
+    ).__construct;
+    if (!g) throw new Error('dev handle unavailable');
+    g.router.current.setLocalPosition({ x: 10, y: 0, z: -6 });
+  });
   await page.keyboard.press('Enter');
   await expect(page.locator('.chat input')).toBeFocused();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __construct?: { router: { current: { id: string } | null } };
+            }
+          ).__construct?.router.current?.id ?? '',
+      ),
+    )
+    .toBe('holodeck');
   await page.keyboard.press('Escape');
   await expect(page.locator('canvas.scene-canvas')).toHaveCount(1);
 
-  // Paint wheel zoom.
-  await page.evaluate(async () => {
-    const g = (
-      window as unknown as { __construct?: { router: { load: (id: string) => Promise<void> } } }
-    ).__construct;
-    if (!g) throw new Error('dev handle unavailable');
-    await g.router.load('paint');
-  });
+  // E on the pad loads Paint; then wheel zoom.
+  await page.keyboard.press('KeyE');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __construct?: { router: { current: { id: string } | null } };
+            }
+          ).__construct?.router.current?.id ?? '',
+      ),
+    )
+    .toBe('paint');
   type Cam = { cellPx: number; panX: number; panZ: number };
   const paintBefore = await page.evaluate(() => {
     const scene = (

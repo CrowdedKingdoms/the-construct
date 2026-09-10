@@ -75,7 +75,9 @@ the API origin for its tier. When you deploy somewhere other than
 `http://localhost:5175`, register that origin too -- `npm run setup -- --origin
 https://play.example.com`, or Studio > Apps > Settings > Sign-in & redirect
 URIs. That list is both where sign-in may return your players and the API's
-CORS allow-list for your app.
+CORS allow-list for your app. If `VITE_CROWDY_HTTP_URL` is a proxy or raw IP
+rather than a CK tier host, set `VITE_AUTHORIZE_URL` to Studio's `/authorize`
+(the SDK cannot derive it).
 
 ## Command reference
 

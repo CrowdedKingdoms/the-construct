@@ -37,6 +37,7 @@ import {
   API_WS_URL,
   APP_TOKEN_REFRESH_MS,
   APP_TOKEN_REFRESH_RETRY_MS,
+  AUTHORIZE_URL,
 } from '@/platform/config';
 import { envScopedKey, readScoped, writeScoped } from '@/platform/envScope';
 import { Emitter } from '@/platform/util/Emitter';
@@ -153,6 +154,7 @@ export class NetworkManager {
     await this.platform.portal.signIn({
       appId,
       redirectUri: window.location.origin + window.location.pathname,
+      ...(AUTHORIZE_URL ? { authorizeUrl: AUTHORIZE_URL } : {}),
     });
   }
 
