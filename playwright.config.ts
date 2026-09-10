@@ -22,7 +22,7 @@ export default defineConfig({
     launchOptions: {
       args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
     },
-    permissions: ['camera'],
+    permissions: ['camera', 'microphone'],
   },
   webServer: process.env.CONSTRUCT_E2E_URL
     ? undefined

@@ -57,7 +57,8 @@ test('sign in, enter the app, join the holodeck, open Crowdy Studio on a claimed
   await expect(page.getByRole('button', { name: 'Crowdy Studio (M)' })).toBeVisible({
     timeout: 90_000,
   });
-  await expect(page.locator('.hud-hint')).toContainText(/WASD|Press E/);
+  await expect(page.getByRole('button', { name: 'Mic (V)' })).toBeVisible();
+  await expect(page.locator('.hud-hint')).toContainText(/WASD|Press E|look/);
   await expect(page.locator('canvas.scene-canvas')).toHaveCount(1);
 
   // Camera on (Chromium's fake device, see playwright.config.ts): the toggle
@@ -94,6 +95,98 @@ test('sign in, enter the app, join the holodeck, open Crowdy Studio on a claimed
   await page.keyboard.press('KeyB');
   await expect(page.getByRole('button', { name: 'Camera (B)' })).toBeVisible();
   await expect(page.locator('.camera-preview')).toBeHidden();
+
+  // Mic (Chromium fake device): V toggles transmitting.
+  await page.keyboard.press('KeyV');
+  await expect(page.getByRole('button', { name: 'Mic on (V)' })).toBeVisible({
+    timeout: 15_000,
+  });
+  const voiceState = await page.evaluate(() => {
+    const g = (
+      window as unknown as {
+        __construct?: { session: { voice: { isTransmitting: boolean; error: string | null } } };
+      }
+    ).__construct;
+    return g ? { live: g.session.voice.isTransmitting, error: g.session.voice.error } : null;
+  });
+  expect(voiceState).toMatchObject({ live: true, error: null });
+  await page.keyboard.press('KeyV');
+  await expect(page.getByRole('button', { name: 'Mic (V)' })).toBeVisible();
+
+  // RMB-drag look (no pointer lock) and wheel zoom — the public-IP IDE path.
+  type Look = { yaw: number; pitch: number; distance: number };
+  const lookBefore = await page.evaluate(() => {
+    const scene = (
+      window as unknown as { __construct?: { router: { current: { lookDebug?: () => Look } } } }
+    ).__construct?.router.current;
+    return scene?.lookDebug?.() ?? null;
+  });
+  expect(lookBefore).not.toBeNull();
+  await page.evaluate(() => {
+    window.dispatchEvent(new PointerEvent('pointerdown', { button: 2, buttons: 2 }));
+    window.dispatchEvent(
+      new PointerEvent('pointermove', { buttons: 2, movementX: 80, movementY: 0 }),
+    );
+  });
+  await page.waitForTimeout(80);
+  const lookAfter = await page.evaluate(() => {
+    const scene = (
+      window as unknown as { __construct?: { router: { current: { lookDebug?: () => Look } } } }
+    ).__construct?.router.current;
+    return scene?.lookDebug?.() ?? null;
+  });
+  expect(lookAfter!.yaw).toBeLessThan(lookBefore!.yaw);
+  await page.evaluate(() => {
+    window.dispatchEvent(new PointerEvent('pointerup', { button: 2, buttons: 0 }));
+  });
+  await page.locator('canvas.scene-canvas').dispatchEvent('wheel', { deltaY: -400 });
+  await page.waitForTimeout(80);
+  const lookZoom = await page.evaluate(() => {
+    const scene = (
+      window as unknown as { __construct?: { router: { current: { lookDebug?: () => Look } } } }
+    ).__construct?.router.current;
+    return scene?.lookDebug?.() ?? null;
+  });
+  expect(lookZoom!.distance).toBeLessThan(lookAfter!.distance);
+
+  // Enter focuses chat and does not activate a pad (we are not on one).
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.chat input')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('canvas.scene-canvas')).toHaveCount(1);
+
+  // Paint wheel zoom.
+  await page.evaluate(async () => {
+    const g = (
+      window as unknown as { __construct?: { router: { load: (id: string) => Promise<void> } } }
+    ).__construct;
+    if (!g) throw new Error('dev handle unavailable');
+    await g.router.load('paint');
+  });
+  type Cam = { cellPx: number; panX: number; panZ: number };
+  const paintBefore = await page.evaluate(() => {
+    const scene = (
+      window as unknown as { __construct?: { router: { current: { cameraDebug?: () => Cam } } } }
+    ).__construct?.router.current;
+    return scene?.cameraDebug?.() ?? null;
+  });
+  expect(paintBefore).not.toBeNull();
+  await page.locator('canvas.scene-canvas').dispatchEvent('wheel', { deltaY: -400 });
+  await page.waitForTimeout(80);
+  const paintAfter = await page.evaluate(() => {
+    const scene = (
+      window as unknown as { __construct?: { router: { current: { cameraDebug?: () => Cam } } } }
+    ).__construct?.router.current;
+    return scene?.cameraDebug?.() ?? null;
+  });
+  expect(paintAfter!.cellPx).toBeGreaterThan(paintBefore!.cellPx);
+  await page.evaluate(async () => {
+    const g = (
+      window as unknown as { __construct?: { router: { load: (id: string) => Promise<void> } } }
+    ).__construct;
+    if (!g) throw new Error('dev handle unavailable');
+    await g.router.load('holodeck');
+  });
 
   // Walk to the claim pad and claim it. NOT idempotent across browser
   // contexts (measured 2026-09-08, dev): a second claim of a chunk this user

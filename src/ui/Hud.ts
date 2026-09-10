@@ -14,6 +14,8 @@ export interface HudActions {
   signOut(): void;
   /** Turn the local webcam on/off (also bound to B). */
   toggleCamera(): void;
+  /** Turn the local mic on/off (also bound to V). */
+  toggleVoice(): void;
 }
 
 export class Hud implements SceneHud {
@@ -26,7 +28,10 @@ export class Hud implements SceneHud {
   private readonly banner: HTMLElement;
   private readonly bannerText: HTMLElement;
   private readonly cameraButton: HTMLButtonElement;
+  private readonly voiceButton: HTMLButtonElement;
   private readonly preview: HTMLVideoElement;
+  private readonly help: HTMLElement;
+  private helpOpen = false;
   private bannerDismissed = false;
   private lastModel: { pulses?: number; level?: number } | null = null;
 
@@ -63,6 +68,12 @@ export class Hud implements SceneHud {
     }) as HTMLButtonElement;
     camera.addEventListener('click', actions.toggleCamera);
     this.cameraButton = camera;
+    const voice = el('button', {
+      text: 'Mic (V)',
+      title: 'Share your voice with players nearby (needs use_voice_chat)',
+    }) as HTMLButtonElement;
+    voice.addEventListener('click', actions.toggleVoice);
+    this.voiceButton = voice;
     const signOut = el('button', { class: 'ghost', text: 'Sign out' });
     signOut.addEventListener('click', actions.signOut);
     // The local self-preview: shown while the camera is live, never on the
@@ -75,10 +86,17 @@ export class Hud implements SceneHud {
     this.preview.autoplay = true;
     this.preview.playsInline = true;
 
+    this.help = el('div', {
+      class: 'panel hud-help hidden',
+      role: 'dialog',
+      'aria-label': 'Controls',
+    });
+
     this.root = el('div', {}, [
       el('div', { class: 'hud-top-left' }, [this.identity, this.world, this.studioChip]),
-      el('div', { class: 'hud-top-right' }, [camera, studio, setup, signOut]),
+      el('div', { class: 'hud-top-right' }, [voice, camera, studio, setup, signOut]),
       this.hint,
+      this.help,
       this.toasts,
       this.banner,
       this.preview,
@@ -98,6 +116,33 @@ export class Hud implements SceneHud {
       this.preview.classList.add('hidden');
     }
     if (state.error) this.toast(state.error, 'warn');
+  }
+
+  renderVoice(state: { live: boolean; error: string | null }): void {
+    this.voiceButton.textContent = state.live ? 'Mic on (V)' : 'Mic (V)';
+    this.voiceButton.classList.toggle('active', state.live);
+    if (state.error) this.toast(state.error, 'warn');
+  }
+
+  setHelpLines(lines: string[]): void {
+    this.help.replaceChildren(
+      el('strong', { text: 'Controls' }),
+      ...lines.map((line) => el('div', { text: line })),
+    );
+  }
+
+  setHelpOpen(open: boolean): void {
+    this.helpOpen = open;
+    this.help.classList.toggle('hidden', !open);
+  }
+
+  toggleHelp(): boolean {
+    this.setHelpOpen(!this.helpOpen);
+    return this.helpOpen;
+  }
+
+  get isHelpOpen(): boolean {
+    return this.helpOpen;
   }
 
   setHint(text: string | null): void {

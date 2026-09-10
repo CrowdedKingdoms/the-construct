@@ -1,7 +1,8 @@
 /**
- * Proximity chat panel. `T` or Enter focuses the box (gameplay keys are
+ * Proximity chat panel. T or Enter focuses the box (gameplay keys are
  * suppressed while typing); Escape blurs it.
  */
+import { Controls } from '@/engine/controls';
 import type { Input } from '@/engine/Input';
 import type { ChatMessage, ChatService } from '@/platform/social/ChatService';
 import { el } from '@/ui/dom';
@@ -17,7 +18,7 @@ export class ChatPanel {
     this.messages = el('div', { class: 'messages', role: 'log', 'aria-live': 'polite' });
     this.inputBox = el('input', {
       type: 'text',
-      placeholder: 'Say something nearby (T)',
+      placeholder: 'Say something nearby (T or Enter)',
       maxlength: '240',
       autocomplete: 'off',
     });
@@ -47,7 +48,7 @@ export class ChatPanel {
       event.stopPropagation();
     });
     this.disposers.push(
-      input.onKey('KeyT', (event) => {
+      input.onKeys(Controls.chat, (event) => {
         if (input.suppressed) return;
         event.preventDefault();
         this.inputBox.focus();

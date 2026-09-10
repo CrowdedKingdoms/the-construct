@@ -19,7 +19,7 @@ Clone it, run it, then replace the demo scenes with your game.
 | --- | --- | --- |
 | Holodeck | A three.js hub where players arrive, see each other, chat, and step on pads | `src/scenes/holodeck-three/` |
 | Paint | A pixi.js program: a shared canvas painted with persisted voxels | `src/scenes/program-pixi/` |
-| Platform layer | Hosted sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B), model, Studio — engine-agnostic | `src/platform/` |
+| Platform layer | Hosted sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B) and voice (V), model, Studio — engine-agnostic | `src/platform/` |
 | Adapter boundary | The small `GameScene` contract both renderers implement | `src/engine/`, [docs/RENDERER-ADAPTER.md](docs/RENDERER-ADAPTER.md) |
 | Crowdy Studio | The in-game IDE: players claim a chunk and write SERVER + CLIENT Rust mods | `src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
 | Game model | Kit blueprints (progression, leaderboards) + a hand-authored catalog, seeded idempotently | `model/blueprints.mjs` |
@@ -59,11 +59,13 @@ npm install
    password: since ck-api v1.88.0 the direct sign-in calls are served only to
    Crowded Kingdoms' own pages, so this hosted flow is the only one a game on
    its own domain can use.
-3. **Enter The Construct.** You are in the holodeck. `WASD` moves, click to
-   look, `T` chats, `E` on a pad. Open a second browser (or a friend does) at
-   the same URL — you see each other.
+3. **Enter The Construct.** You are in the holodeck. `WASD` moves, click the
+   canvas or hold right-mouse to look, scroll to zoom, `T` or Enter chats,
+   `B` camera, `V` voice, `E` on a pad, `F1` for the control list. Open a
+   second browser (or a friend does) at the same URL — you see each other.
 4. Step on **Load: Paint** and press `E`: the pixi.js program. Click to paint;
-   the cells replicate live and persist.
+   scroll to zoom; middle-drag or Alt+click to pan. The cells replicate live
+   and persist.
 5. Step on **Claim & Studio** and press `E`: you claim the chunk you stand on
    and Crowdy Studio opens beside the game. Follow [docs/MODDING.md](docs/MODDING.md)
    to deploy a mod that runs in the browser — yours and your visitors'.

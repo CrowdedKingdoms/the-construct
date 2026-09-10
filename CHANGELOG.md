@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 — 2026-09-10
+
+Controls, mouse look/camera, and proximity voice.
+
+- Single `Controls` map: E activates pads (Enter no longer does), T/Enter
+  focus chat, V toggles voice, F1/`?` opens the help overlay, Escape unlocks
+  look.
+- Holodeck mouse look actually works (pointer lock on the canvas, not only
+  `#game-root`) plus RMB-drag look for insecure HTTP and wheel zoom.
+- Paint: wheel zoom, middle-drag / Alt+LMB pan.
+- `VoiceService`: µ-law 8 kHz proximity voice; `microphone=(self)`.
+- Game client sets `realtime.binaryTransport: true`.
+
 ## 0.3.0 — 2026-09-08
 
 Hosted sign-in (ck-api `v1.88.0`, CrowdyJS `15.6.0`). The browser never holds

@@ -18,13 +18,14 @@ import 'pixi.js/unsafe-eval';
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 
 import type { GameScene, SceneContext, SceneSize } from '@/engine/GameScene';
+import { Controls, helpLines } from '@/engine/controls';
 import { CHUNK_SIZE } from '@/platform/config';
 import { HOLODECK_SCENE_ID, programBySceneId } from '@/platform/programs';
 import { NEUTRAL_POSE, type Pose } from '@/platform/realtime/actorCodec';
 import { chunkKey, worldToChunk, worldToVoxel, type ChunkCoord } from '@/platform/realtime/space';
+import { PAINT_CELL_DEFAULT, PAINT_CELL_MAX, PAINT_CELL_MIN, panOffset, zoomDistance } from '@/scenes/shared/cameraLook';
 import { displayPose, TINT_COLORS, tintColor } from '@/scenes/shared/interpolate';
 
-const CELL_PX = 28;
 const MOVE_SPEED = 9;
 const DRAW_RADIUS_CHUNKS = 2;
 const PALETTE = TINT_COLORS;
@@ -62,6 +63,9 @@ export class PaintScene implements GameScene {
   private lastPaintedKey: string | null = null;
   private size: SceneSize = { width: 1, height: 1, rightInset: 0 };
   private hintDirty = true;
+  private cellPx = PAINT_CELL_DEFAULT;
+  private panX = 0;
+  private panZ = 0;
 
   async mount(context: SceneContext, size: SceneSize): Promise<void> {
     this.context = context;
@@ -88,6 +92,7 @@ export class PaintScene implements GameScene {
 
     const onPointer = (event: PointerEvent) => {
       if (context.input.suppressed) return;
+      if (context.input.isPanning()) return;
       if (!(event.buttons & 3)) return;
       const erase = (event.buttons & 2) !== 0;
       this.paintAt(event.clientX, event.clientY, erase);
@@ -114,13 +119,14 @@ export class PaintScene implements GameScene {
       context.input.onKey('Digit0', () => ((this.paletteIndex = 0), (this.hintDirty = true))),
     );
     this.disposables.push(
-      context.input.onKey('KeyH', () => {
+      context.input.onKeys(Controls.holodeck, () => {
         if (context.input.suppressed) return;
         context.hud.toast('Returning to the holodeck…');
         void context.router.load(HOLODECK_SCENE_ID, this.holodeckReturnPoint());
       }),
     );
     this.resize(size);
+    context.hud.setHelpLines?.(helpLines('paint'));
   }
 
   unmount(): void {
@@ -157,6 +163,11 @@ export class PaintScene implements GameScene {
     this.velocity = { x: 0, z: 0 };
   }
 
+  /** Test/debug snapshot of the 2D camera. */
+  cameraDebug(): { cellPx: number; panX: number; panZ: number } {
+    return { cellPx: this.cellPx, panX: this.panX, panZ: this.panZ };
+  }
+
   localPose(): Pose {
     return {
       ...NEUTRAL_POSE,
@@ -181,22 +192,40 @@ export class PaintScene implements GameScene {
     this.position.x += this.velocity.x * dt;
     this.position.z += this.velocity.z * dt;
 
-    // Camera: keep the player centred in the visible (non-inset) area.
+    const wheel = context.input.takeWheel();
+    if (wheel !== 0) {
+      // Wheel up (negative deltaY) should zoom in — larger cells on screen.
+      const next = zoomDistance(this.cellPx, -wheel, PAINT_CELL_MIN, PAINT_CELL_MAX);
+      if (next !== this.cellPx) {
+        this.cellPx = next;
+        this.invalidateZoom();
+      }
+    }
+    if (context.input.isPanning()) {
+      const { dx, dy } = context.input.takePointerDelta();
+      const next = panOffset(this.panX, this.panZ, dx, dy, this.cellPx);
+      this.panX = next.x;
+      this.panZ = next.z;
+    } else {
+      context.input.takePointerDelta();
+    }
+
+    // Camera: player centred, plus extra pan, at the current zoom.
     this.world.position.set(
-      this.size.width / 2 - this.position.x * CELL_PX,
-      this.size.height / 2 - this.position.z * CELL_PX,
+      this.size.width / 2 - (this.position.x + this.panX) * this.cellPx,
+      this.size.height / 2 - (this.position.z + this.panZ) * this.cellPx,
     );
 
     this.syncChunks();
     this.syncPlayers(nowMs);
     if (this.local) {
-      this.local.container.position.set(this.position.x * CELL_PX, this.position.z * CELL_PX);
+      this.local.container.position.set(this.position.x * this.cellPx, this.position.z * this.cellPx);
     }
     if (this.hintDirty) {
       this.hintDirty = false;
       const colour = this.paletteIndex === 0 ? 'eraser' : `colour ${this.paletteIndex}`;
       context.hud.setHint(
-        `Paint — click/drag to paint (${colour}) · 1-8 colours, 0 eraser · WASD move · H back to holodeck`,
+        `Paint — click to paint (${colour}) · scroll zoom · MMB/Alt-drag pan · H holodeck · F1 help`,
       );
     }
     app.renderer.render(app.stage);
@@ -209,8 +238,8 @@ export class PaintScene implements GameScene {
     const app = this.app;
     if (!context || !app) return;
     const rect = app.canvas.getBoundingClientRect();
-    const worldX = (clientX - rect.left - this.world.position.x) / CELL_PX;
-    const worldZ = (clientY - rect.top - this.world.position.y) / CELL_PX;
+    const worldX = (clientX - rect.left - this.world.position.x) / this.cellPx;
+    const worldZ = (clientY - rect.top - this.world.position.y) / this.cellPx;
     const cell = { x: Math.floor(worldX), y: 0, z: Math.floor(worldZ) };
     const key = `${cell.x},${cell.z}`;
     if (key === this.lastPaintedKey) return;
@@ -256,13 +285,13 @@ export class PaintScene implements GameScene {
         let entry = this.chunkGraphics.get(key);
         if (!entry) {
           entry = { graphics: new Graphics(), revision: -1 };
-          entry.graphics.position.set(
-            coord.x * CHUNK_SIZE * CELL_PX,
-            coord.z * CHUNK_SIZE * CELL_PX,
-          );
           this.chunkLayer.addChild(entry.graphics);
           this.chunkGraphics.set(key, entry);
         }
+        entry.graphics.position.set(
+          coord.x * CHUNK_SIZE * this.cellPx,
+          coord.z * CHUNK_SIZE * this.cellPx,
+        );
         const revision = cached?.revision ?? 0;
         if (entry.revision !== revision) {
           entry.revision = revision;
@@ -280,14 +309,15 @@ export class PaintScene implements GameScene {
 
   private drawChunk(graphics: Graphics, voxels: Uint8Array | null): void {
     graphics.clear();
-    graphics.rect(0, 0, CHUNK_SIZE * CELL_PX, CHUNK_SIZE * CELL_PX).fill({ color: 0x10151f });
+    const cell = this.cellPx;
+    graphics.rect(0, 0, CHUNK_SIZE * cell, CHUNK_SIZE * cell).fill({ color: 0x10151f });
     if (!voxels) return;
     for (let z = 0; z < CHUNK_SIZE; z++) {
       for (let x = 0; x < CHUNK_SIZE; x++) {
         const type = voxels[x + z * 256] ?? 0; // y = 0 layer of the x + y*16 + z*256 layout
         if (type === 0) continue;
         graphics
-          .rect(x * CELL_PX + 1, z * CELL_PX + 1, CELL_PX - 2, CELL_PX - 2)
+          .rect(x * cell + 1, z * cell + 1, cell - 2, cell - 2)
           .fill({ color: PALETTE[(type - 1) % PALETTE.length] ?? 0xffffff });
       }
     }
@@ -303,11 +333,11 @@ export class PaintScene implements GameScene {
       const major = i % CHUNK_SIZE === 0;
       const color = major ? 0x2fd7ad : 0x1a2330;
       const alpha = major ? 0.6 : 0.5;
-      g.moveTo((originX + i) * CELL_PX, originZ * CELL_PX)
-        .lineTo((originX + i) * CELL_PX, (originZ + span) * CELL_PX)
+      g.moveTo((originX + i) * this.cellPx, originZ * this.cellPx)
+        .lineTo((originX + i) * this.cellPx, (originZ + span) * this.cellPx)
         .stroke({ color, alpha, width: major ? 2 : 1 });
-      g.moveTo(originX * CELL_PX, (originZ + i) * CELL_PX)
-        .lineTo((originX + span) * CELL_PX, (originZ + i) * CELL_PX)
+      g.moveTo(originX * this.cellPx, (originZ + i) * this.cellPx)
+        .lineTo((originX + span) * this.cellPx, (originZ + i) * this.cellPx)
         .stroke({ color, alpha, width: major ? 2 : 1 });
     }
   }
@@ -327,7 +357,7 @@ export class PaintScene implements GameScene {
       } else if (sprite.tint !== pose.tint || sprite.name !== pose.name) {
         this.restyle(sprite, pose.name || 'player', pose.tint);
       }
-      sprite.container.position.set(pose.x * CELL_PX, pose.z * CELL_PX);
+      sprite.container.position.set(pose.x * this.cellPx, pose.z * this.cellPx);
       sprite.cameraRing.visible = context.session.webcam.isLive(player.uuid);
     }
     for (const [uuid, sprite] of this.players) {
@@ -350,9 +380,9 @@ export class PaintScene implements GameScene {
       }),
     });
     label.anchor.set(0.5, 1);
-    label.position.set(0, -CELL_PX * 0.55);
+    label.position.set(0, -this.cellPx * 0.55);
     const cameraRing = new Graphics()
-      .circle(0, 0, CELL_PX * 0.55)
+      .circle(0, 0, this.cellPx * 0.55)
       .stroke({ color: 0xffd166, width: 2 });
     cameraRing.visible = false;
     container.addChild(cameraRing, disc, label);
@@ -367,9 +397,20 @@ export class PaintScene implements GameScene {
     sprite.label.text = name;
     sprite.disc
       .clear()
-      .circle(0, 0, CELL_PX * 0.42)
+      .circle(0, 0, this.cellPx * 0.42)
       .fill({ color: tintColor(tint) })
       .stroke({ color: 0x07090d, width: 2 });
+    sprite.cameraRing
+      .clear()
+      .circle(0, 0, this.cellPx * 0.55)
+      .stroke({ color: 0xffd166, width: 2 });
+    sprite.label.position.set(0, -this.cellPx * 0.55);
+  }
+
+  private invalidateZoom(): void {
+    for (const entry of this.chunkGraphics.values()) entry.revision = -1;
+    if (this.local) this.restyle(this.local, this.local.name, this.local.tint);
+    for (const sprite of this.players.values()) this.restyle(sprite, sprite.name, sprite.tint);
   }
 
   private holodeckReturnPoint(): { x: number; y: number; z: number; yaw: number } {

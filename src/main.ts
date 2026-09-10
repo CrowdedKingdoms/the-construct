@@ -11,6 +11,7 @@
  */
 import '@/style.css';
 
+import { Controls } from '@/engine/controls';
 import { GameLoop } from '@/engine/GameLoop';
 import { Input } from '@/engine/Input';
 import { SceneRouter } from '@/engine/SceneRouter';
@@ -143,6 +144,7 @@ async function startGame(): Promise<void> {
     openSetup: () => void switchApp(),
     signOut: () => void signOut(),
     toggleCamera: () => void session.webcam.toggle(),
+    toggleVoice: () => void session.voice.toggle(),
   });
   const chat = new ChatPanel(uiRoot!, session.chat, input);
   const loop = new GameLoop(gameRoot!, router, session);
@@ -160,16 +162,36 @@ async function startGame(): Promise<void> {
   game.disposers.push(session.studio.events.on('state', (state) => hud.renderStudio(state)));
   hud.renderStudio(session.studio.snapshot);
   game.disposers.push(
-    input.onKey('KeyM', () => {
+    input.onKeys(Controls.studio, () => {
       if (input.suppressed && !session.studio.isOpen) return;
       void toggleStudio();
     }),
   );
   game.disposers.push(session.webcam.events.on('local', (state) => hud.renderCamera(state)));
+  game.disposers.push(session.voice.events.on('local', (state) => hud.renderVoice(state)));
   game.disposers.push(
-    input.onKey('KeyB', () => {
+    input.onKeys(Controls.webcam, () => {
       if (input.suppressed) return;
       void session.webcam.toggle();
+    }),
+  );
+  game.disposers.push(
+    input.onKeys(Controls.voice, () => {
+      if (input.suppressed) return;
+      void session.voice.toggle();
+    }),
+  );
+  game.disposers.push(
+    input.onKeys(Controls.help, (event) => {
+      if (input.suppressed) return;
+      event.preventDefault();
+      hud.toggleHelp();
+    }),
+  );
+  game.disposers.push(
+    input.onKeys(Controls.escape, () => {
+      if (hud.isHelpOpen) hud.setHelpOpen(false);
+      input.exitLook();
     }),
   );
   game.disposers.push(
@@ -192,7 +214,7 @@ async function startGame(): Promise<void> {
   card.hide();
   hud.toast(`Welcome to ${GAME_NAME}`);
   session.chat.system(
-    'Proximity chat — only players within a few chunks hear you. Press T to type, B for your camera.',
+    'Proximity chat — nearby players hear you. T or Enter to type, B camera, V voice, F1 controls.',
   );
 
   const refreshHud = async () => {
