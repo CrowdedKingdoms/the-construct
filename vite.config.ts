@@ -10,28 +10,32 @@ import { dshSecurityHeaders, securityHeaders } from './security-headers.mjs';
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 function dshHeadersPlugin(dshHeaders: Record<string, string>) {
+  const attach = (server: any) => {
+    server.middlewares.use((req: any, res: any, next: any) => {
+      if (req.url && (req.url.startsWith('/dsh/') || req.url === '/dsh')) {
+        const origSetHeader = res.setHeader.bind(res);
+        res.setHeader = (name: string, value: any) => {
+          // Do not send Content-Encoding: gzip for the VFS image; the harness
+          // worker decompresses the archive itself with DecompressionStream.
+          if (name.toLowerCase() === 'content-encoding') {
+            return res;
+          }
+          if (Object.prototype.hasOwnProperty.call(dshHeaders, name)) {
+            return origSetHeader(name, dshHeaders[name]);
+          }
+          return origSetHeader(name, value);
+        };
+        for (const [name, value] of Object.entries(dshHeaders)) {
+          origSetHeader(name, value);
+        }
+      }
+      next();
+    });
+  };
   return {
     name: 'construct-dsh-headers',
-    configureServer(server: any) {
-      server.middlewares.use((req: any, res: any, next: any) => {
-        if (req.url && (req.url.startsWith('/dsh/') || req.url === '/dsh')) {
-          for (const [name, value] of Object.entries(dshHeaders)) {
-            res.setHeader(name, value);
-          }
-        }
-        next();
-      });
-    },
-    configurePreviewServer(server: any) {
-      server.middlewares.use((req: any, res: any, next: any) => {
-        if (req.url && (req.url.startsWith('/dsh/') || req.url === '/dsh')) {
-          for (const [name, value] of Object.entries(dshHeaders)) {
-            res.setHeader(name, value);
-          }
-        }
-        next();
-      });
-    },
+    configureServer: attach,
+    configurePreviewServer: attach,
   };
 }
 
