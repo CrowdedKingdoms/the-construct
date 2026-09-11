@@ -9,8 +9,11 @@
     "node": ">=20"
   },
   "scripts": {
+    "predev": "node scripts/copy-dsh-web.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-dsh-web.mjs",
     "build": "tsc -p tsconfig.json && vite build",
+    "dsh:copy": "node scripts/copy-dsh-web.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
@@ -31,6 +34,7 @@
     "three": "^0.185.1"
   },
   "devDependencies": {
+    "@crowdedkingdoms/crowdy-dsh": "0.2.0-dev.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^20.19.0",

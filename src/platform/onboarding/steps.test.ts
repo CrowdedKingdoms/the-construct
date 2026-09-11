@@ -315,7 +315,11 @@ describe('onboarding steps', () => {
         status: async () => ({ connected: false, owner: null, repo: null }),
       },
     };
-    const resUnconnected = await steps.checkGitHubIntegration(unconnectedGame as never, { appId: '77' }, (l) => lines.push(l));
+    const resUnconnected = await steps.checkGitHubIntegration(
+      unconnectedGame as never,
+      { appId: '77' },
+      (l) => lines.push(l),
+    );
     expect(resUnconnected.connected).toBe(false);
     expect(resUnconnected.skipped).toBe(true);
     expect(lines.some((l) => /Advisory: No GitHub repository bound/.test(l))).toBe(true);
@@ -325,7 +329,9 @@ describe('onboarding steps', () => {
         status: async () => ({ connected: true, owner: 'modder', repo: 'my-mod' }),
       },
     };
-    const resConnected = await steps.checkGitHubIntegration(connectedGame as never, { appId: '77' });
+    const resConnected = await steps.checkGitHubIntegration(connectedGame as never, {
+      appId: '77',
+    });
     expect(resConnected.connected).toBe(true);
     expect(resConnected.skipped).toBe(false);
     expect(resConnected.repo).toBe('modder/my-mod');

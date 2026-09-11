@@ -111,7 +111,7 @@ export function buildDshCsp({ apiOrigins = [], extraConnectSrc = [] } = {}) {
     .map((origin) => origin.replace(/^http(s?):/, (_, secure) => `ws${secure}:`));
   const connectSources = unique([
     "'self'",
-    "blob:",
+    'blob:',
     ...configured,
     ...wsTwins,
     ...tierZoneWildcards(configured),

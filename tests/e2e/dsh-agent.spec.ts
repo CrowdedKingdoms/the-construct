@@ -1,50 +1,54 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { createCrowdyClient } from '@crowdedkingdoms/crowdyjs';
 import { expect, test, type Page } from '@playwright/test';
 
-const envFile = resolve(process.env.HOME ?? '', '.local-tier/construct-player.env');
-const adminEnvFile = resolve(process.env.HOME ?? '', '.local-tier/local-admin.env');
-
-function readEnv(path: string): Record<string, string> {
-  try {
-    return Object.fromEntries(
-      readFileSync(path, 'utf8')
-        .split('\n')
-        .filter((l) => l.includes('='))
-        .map((l) => {
-          const i = l.indexOf('=');
-          return [l.slice(0, i), l.slice(i + 1)];
-        }),
-    );
-  } catch {
-    return {};
-  }
-}
-
-const playerEnv = readEnv(envFile);
-const adminEnv = readEnv(adminEnvFile);
-const appId = process.env.APP_ID ?? '89512017969152';
-const email = playerEnv.PLAYER_EMAIL;
-const password = playerEnv.PLAYER_PASSWORD;
-const graphqlEndpoint = 'http://127.0.0.1:3000/graphql';
+/**
+ * The Studio agent pane: the in-browser DeepSeek Harness boots inside Crowdy
+ * Studio, a screenshot reaches it, a prompt completes a turn through the
+ * metered model endpoint, and the pane reports who paid.
+ *
+ * Same conventions as smoke.spec.ts: everything comes from the environment,
+ * the account is an ordinary player on the app named by APP_ID, and nothing
+ * here touches an operator mutation or a database. Who pays (player wallet or
+ * org wallet) is the app's policy in Management; the test reads it back
+ * through `crowdyStudioModelUsage` and asserts the usage row agrees. Wallet
+ * debits and the org-pays path are covered by ck-api's own tests.
+ *
+ *   CONSTRUCT_E2E=1 CONSTRUCT_EMAIL CONSTRUCT_PASSWORD APP_ID   run it
+ *   CONSTRUCT_E2E_SEED_TOKEN=1 CROWDY_HTTP_URL                 local stack without hosted login
+ *   CONSTRUCT_E2E_GRID="x,z"                                    a chunk this player already owns
+ *                                                               (default: claim -10,0,-6 like smoke)
+ */
+const live = process.env.CONSTRUCT_E2E === '1';
+const email = process.env.CONSTRUCT_EMAIL;
+const password = process.env.CONSTRUCT_PASSWORD;
+const appId = process.env.APP_ID ?? process.env.VITE_APP_ID;
+const seedToken = process.env.CONSTRUCT_E2E_SEED_TOKEN === '1';
 
 function envHandleFor(apiOrigin: string): string {
   const url = new URL(apiOrigin);
   return `${url.hostname}${url.port ? `_${url.port}` : ''}`;
 }
 
-async function mintPlayerSession(pageOrigin: string) {
-  const identity = createCrowdyClient({ graphqlEndpoint });
+/** The API origin the page dials: an explicit override or the page itself (same-origin proxy). */
+function apiHttpUrl(pageOrigin: string): string {
+  const configured =
+    process.env.CROWDY_HTTP_URL?.trim() || process.env.VITE_CROWDY_HTTP_URL?.trim();
+  if (!configured || configured === 'same-origin' || configured === '/') return pageOrigin;
+  return configured;
+}
+
+async function mintAppSession(pageOrigin: string) {
+  const httpUrl = process.env.CROWDY_HTTP_URL?.trim();
+  if (!httpUrl) throw new Error('CONSTRUCT_E2E_SEED_TOKEN=1 requires CROWDY_HTTP_URL');
+  const identity = createCrowdyClient({ httpUrl });
   await identity.auth.login({ email: email!, password: password! });
-  const minted = await identity.portal.mintAppToken(appId);
-  const handle = envHandleFor(pageOrigin);
+  const minted = await identity.portal.mintAppToken(appId!);
   return {
     token: minted.token,
-    handle,
-    id: appId,
+    handle: envHandleFor(apiHttpUrl(pageOrigin)),
+    id: appId!,
     route: {
-      appId,
+      appId: String(minted.appId ?? appId),
       gameApiUrl: null,
       gameApiWsUrl: null,
       discoveryUrl: null,
@@ -53,243 +57,200 @@ async function mintPlayerSession(pageOrigin: string) {
   };
 }
 
-async function writeSession(page: Page, session: Awaited<ReturnType<typeof mintPlayerSession>>) {
+async function writeAppSession(page: Page, session: Awaited<ReturnType<typeof mintAppSession>>) {
   await page.evaluate(({ token, route, handle, id }) => {
     localStorage.setItem(`construct:app-token:${handle}`, token);
     localStorage.setItem(`construct:app-route:${handle}`, JSON.stringify(route));
     localStorage.setItem(`construct:app-id:${handle}`, id);
     localStorage.setItem('construct:env-handle', handle);
-    localStorage.setItem(`construct:owned-grids:${handle}`, JSON.stringify({
-      '-1,-1': {
-        gridId: '89534419714048',
-        bounds: {
-          low: { x: '-1', y: '0', z: '-1' },
-          high: { x: '-1', y: '0', z: '-1' },
-        },
-        effectiveKeys: ['write_server_code', 'write_client_code', 'run_server_code', 'run_client_code', 'use_studio_agent'],
-      },
-    }));
   }, session);
 }
 
-test.describe('In-browser DeepSeek Harness e2e flow in The Construct', () => {
-  test('Studio agent boots in-browser, edits project, takes screenshot, charges wallet, and honors org payer', async ({
-    page,
-  }) => {
-    test.skip(!email || !password, 'construct-player.env credentials required');
-
-    // 1. Seed player app session
-    await page.goto('/');
-    const session = await mintPlayerSession(new URL(page.url()).origin);
-    await writeSession(page, session);
-
-    // Ensure provider data consent for this app
-    const client = createCrowdyClient({ graphqlEndpoint });
-    client.setToken(session.token);
-    await client.graphql.query(
-      `mutation { crowdyStudioSetProviderConsent(input: { appId: "${appId}", consented: true }) { consented } }`,
-    ).catch(() => {});
-
-    // Ensure player wallet has positive balance ($5.00) and app policy is PLAYER payer
-    const adminSdk = createCrowdyClient({ graphqlEndpoint });
-    if (adminEnv.ADMIN_EMAIL && adminEnv.ADMIN_PASSWORD) {
-      await adminSdk.auth.login({ email: adminEnv.ADMIN_EMAIL, password: adminEnv.ADMIN_PASSWORD });
-      await adminSdk.graphql.query(
-        `mutation { cpSetCrowdyStudioAgentPlatformPolicy(input: { funding: { billingMode: "METERED", walletDebitEnabled: true }, idempotencyKey: "init-platform-${Date.now()}" }) { revision } }`,
-      ).catch(() => {});
-      await adminSdk.graphql.query(
-        `mutation { setCrowdyStudioAgentPolicy(input: { appId: "${appId}", funding: { payerKind: "PLAYER" }, idempotencyKey: "init-app-${Date.now()}" }) { revision } }`,
-      ).catch(() => {});
-      try {
-        const { execSync } = await import('node:child_process');
-        execSync(
-          `PGPASSWORD=ck_app_local psql -h 127.0.0.10 -p 5440 -U ck_app -d crowded_kingdoms -c "DELETE FROM crowdy_agent_app_policies WHERE app_id = ${appId}"`,
-          { stdio: 'ignore' },
-        );
-      } catch {}
+/** Sign in the way smoke.spec.ts does: hosted Studio login, seed only as an opt-in fallback. */
+async function signIn(page: Page): Promise<void> {
+  const signInButton = page.getByRole('button', { name: 'Sign in with Crowded Kingdoms' });
+  if (!(await signInButton.isVisible())) return;
+  await signInButton.click();
+  const reachedLogin = await page
+    .waitForURL(/\/login/, { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
+  let hosted = false;
+  if (reachedLogin) {
+    await page.getByLabel(/email address/i).fill(email!);
+    await page.getByRole('button', { name: /^continue$/i }).click();
+    const passwordBox = page.getByLabel(/^password$/i);
+    hosted = await passwordBox
+      .waitFor({ state: 'visible', timeout: 8_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (hosted) {
+      await passwordBox.fill(password!);
+      await page.getByRole('button', { name: /^sign in$/i }).click();
+      const consent = page.getByRole('button', { name: /continue to/i });
+      await consent
+        .waitFor({ state: 'visible', timeout: 20_000 })
+        .then(() => consent.click())
+        .catch(() => undefined);
     }
-
-    // 2. Open game
-    page.on('console', (m) => console.log('[page]', m.type(), m.text().slice(0, 300)));
-    page.on('pageerror', (e) => console.log('[pageerror]', e.message));
-    await page.goto(`/?app=${appId}`);
-
-    // Wait for canvas to load
-    await expect(page.locator('canvas.scene-canvas')).toBeVisible({ timeout: 45_000 });
-
-    // Teleport to the claim & studio pad
-    await page.evaluate(async () => {
-      const g = (window as unknown as { __construct?: { router: { current: { setLocalPosition(p: unknown): void } } } }).__construct;
-      if (g?.router?.current) {
-        g.router.current.setLocalPosition({ x: -10, y: 0, z: -6 });
-      }
-    });
-
-    // Open Studio on the claimed chunk
-    const openResult = await page.evaluate(async () => {
-      const g = (window as unknown as {
-        __construct?: {
-          session: {
-            studio: {
-              claimHereAndOpen(pos: unknown): Promise<unknown>;
-              toggle(pos: unknown): Promise<unknown>;
-            };
-          };
-          router: { current: { setLocalPosition(p: unknown): void } };
-        };
-      }).__construct;
-      if (!g) return 'dev handle unavailable';
-      g.router.current.setLocalPosition({ x: -10, y: 0, z: -6 });
-      try {
-        const res = await g.session.studio.claimHereAndOpen({ x: -10, y: 0, z: -6 });
-        return { claim: res };
-      } catch (err1) {
-        try {
-          const res2 = await g.session.studio.toggle({ x: -10, y: 0, z: -6 });
-          return { toggle: res2, err1: String(err1) };
-        } catch (err2) {
-          return { err1: String(err1), err2: String(err2) };
-        }
-      }
-    });
-    console.log('--- studio open result ---', JSON.stringify(openResult));
-
-    const shell = page.locator('#ck-crowdy-studio-embed-shell');
-    await expect(shell).toBeVisible({ timeout: 25_000 });
-
-    // 3. Verify Studio and DSH pane are mounted
-    const dshPane = page.locator('.ck-crowdy-studio-dsh');
-    await expect(dshPane).toBeVisible({ timeout: 20_000 });
-
-    // If notice is visible, click accept
-    const noticeBtn = dshPane.getByRole('button', { name: /start the agent/i });
-    if (await noticeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await noticeBtn.click();
-    }
-
-    // 4. Verify DSH iframe boots
-    const iframe = dshPane.locator('iframe.ck-crowdy-studio-dsh-frame');
-    await expect(iframe).toBeVisible({ timeout: 15_000 });
-    const frame = page.frameLocator('iframe.ck-crowdy-studio-dsh-frame');
-
-    // Dismiss testing notice if shown inside the iframe
-    const cont = frame.getByRole('button', { name: /continue/i });
-    if (await cont.waitFor({ state: 'visible', timeout: 25_000 }).then(() => true).catch(() => false)) {
-      await cont.click();
-      await frame.locator('[class*=_mask_]').waitFor({ state: 'detached', timeout: 8000 }).catch(() => {});
-    }
-    await page.waitForTimeout(500);
-
-    // Open existing session or create a new session
-    console.log('--- frame body text ---\n' + (await frame.locator('body').innerText().catch(() => 'frame body error')));
-    await page.screenshot({ path: '/tmp/dsh-journal/e2e-frame.png' });
-    const sessionItem = frame.locator('[class*=sidebar] [class*=session], [data-session-id], a[href*="session"]').first();
-    if (await sessionItem.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await sessionItem.click().catch(() => {});
-    } else {
-      const newSession = frame.getByRole('button', { name: /new session/i }).first();
-      if (await newSession.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await newSession.click().catch(() => {});
-      }
-    }
-    await page.waitForTimeout(1000);
-
-    // 5. Verify the chat composer is ready in the iframe
-    const composer = frame.locator('textarea, [contenteditable="true"]').first();
-    await expect(composer).toBeVisible({ timeout: 60_000 });
-
-    // 6. Test Screenshot button in pane header
-    const screenshotBtn = dshPane.locator('button.ck-crowdy-studio-dsh-capture');
-    await expect(screenshotBtn).toBeEnabled({ timeout: 10_000 });
-    await screenshotBtn.click();
-    await expect(dshPane.locator('.ck-crowdy-studio-dsh-message')).toContainText(/Shared capture-.*with the agent/i, {
-      timeout: 15_000,
-    });
-
-    // 7. Send a prompt to the agent (which calls POST /v1/model/chat/completions)
-    const prompt = 'Add a comment to server/src/lib.rs and run draft_test';
-    const dismissModal = frame.getByRole('button', { name: /continue/i });
-    if (await dismissModal.isVisible().catch(() => false)) {
-      await dismissModal.click();
-      await frame.locator('[class*=_mask_]').waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
-    }
-    await composer.click();
-    await composer.fill(prompt);
-    await page.keyboard.press('Enter');
-
-    // Wait for the agent to complete the turn
-    await expect(frame.locator('body')).toContainText(/Done\./, { timeout: 60_000 });
-
-    // 8. Verify the spend line shows PLAYER payer
-    const spendLine = dshPane.locator('.ck-crowdy-studio-dsh-spend');
-    await expect(spendLine).toBeVisible();
-    await expect(spendLine).toContainText(/paid by your wallet/i);
-
-    // 9. Verify model_endpoint_usage recorded the turn
-    const usageQuery = await client.graphql.query<{
-      crowdyStudioModelUsage: {
-        payerKind: string;
-        todayRequests: string;
-        todayChargeMicrousd: string;
-        recent: Array<{ payerKind: string; status: string; chargeMicrousd: string }>;
-      };
-    }>(`query { crowdyStudioModelUsage(appId: "${appId}", limit: 5) { payerKind todayRequests todayChargeMicrousd recent { payerKind status chargeMicrousd } } }`);
-    expect(usageQuery.crowdyStudioModelUsage.payerKind).toBe('PLAYER');
-    expect(Number(usageQuery.crowdyStudioModelUsage.todayRequests)).toBeGreaterThan(0);
-    expect(usageQuery.crowdyStudioModelUsage.recent[0]?.status).toBe('COMPLETED');
-    expect(usageQuery.crowdyStudioModelUsage.recent[0]?.payerKind).toBe('PLAYER');
-
-    // 10. Test org-pays toggle: fund org wallet and switch to ORG payer via mutation
-    try {
-      const { execSync } = await import('node:child_process');
-      execSync(
-        `PGPASSWORD=ck_app_local psql -h 127.0.0.10 -p 5440 -U ck_app -d crowded_kingdoms -c "INSERT INTO org_wallets (org_id, wallet_id, balance_cents, updated_at) VALUES (89512017788928, 900000000000002, 1000, now()) ON CONFLICT (org_id) DO UPDATE SET balance_cents = 1000"`,
-        { stdio: 'ignore' },
+  }
+  if (!hosted) {
+    if (!seedToken) {
+      throw new Error(
+        'Hosted sign-in did not complete. Set CONSTRUCT_E2E_SEED_TOKEN=1 and CROWDY_HTTP_URL only for a local stack that cannot show the password form.',
       );
-    } catch {}
+    }
+    await page.goto(`/?app=${appId}`);
+    await writeAppSession(page, await mintAppSession(new URL(page.url()).origin));
+    await page.reload();
+  }
+}
 
-    const adminAppPolicy = await adminSdk.graphql.query<{
-      setCrowdyStudioAgentPolicy: {
-        revision: string;
-        funding: { payerKind: string; billingMode: string };
-      };
-    }>(`mutation {
-      setCrowdyStudioAgentPolicy(input: { appId: "${appId}", funding: { payerKind: "ORG" }, idempotencyKey: "e2e-org-${Date.now()}" }) {
-        revision funding { payerKind billingMode }
-      }
-    }`);
-    expect(adminAppPolicy.setCrowdyStudioAgentPolicy.funding.payerKind).toBe('ORG');
-
-    // Invalidate the 60s replica cache so the next request pulls the fresh policy immediately
-    try {
-      const { execSync } = await import('node:child_process');
-      execSync(`PGPASSWORD=ck_app_local psql -h 127.0.0.10 -p 5440 -U ck_app -d crowded_kingdoms -c "DELETE FROM crowdy_agent_app_policies WHERE app_id = ${appId}"`, { stdio: 'ignore' });
-    } catch {}
-
-    // Trigger another turn from composer
-    const initialRequests = Number(usageQuery.crowdyStudioModelUsage.todayRequests);
-    await composer.click();
-    await composer.fill('Another quick turn for org payer test');
-    await page.keyboard.press('Enter');
-
-    // Wait until model_endpoint_usage records the second request
-    await expect.poll(async () => {
-      const res = await client.graphql.query<{
-        crowdyStudioModelUsage: {
-          todayRequests: string;
-          recent: Array<{ payerKind: string; status: string }>;
-        };
-      }>(`query { crowdyStudioModelUsage(appId: "${appId}", limit: 2) { todayRequests recent { payerKind status } } }`);
-      return Number(res.crowdyStudioModelUsage.todayRequests);
-    }, { timeout: 60_000, intervals: [1000] }).toBeGreaterThan(initialRequests);
-
-    // Verify latest usage row is recorded as ORG payer!
-    const orgUsageQuery = await client.graphql.query<{
-      crowdyStudioModelUsage: {
-        recent: Array<{ payerKind: string; status: string }>;
-      };
-    }>(`query { crowdyStudioModelUsage(appId: "${appId}", limit: 2) { recent { payerKind status } } }`);
-    expect(orgUsageQuery.crowdyStudioModelUsage.recent[0]?.payerKind).toBe('ORG');
-    expect(orgUsageQuery.crowdyStudioModelUsage.recent[0]?.status).toBe('COMPLETED');
+/** The page's own app token, for read-only usage queries from the test. */
+async function readAppToken(page: Page): Promise<string> {
+  const token = await page.evaluate(() => {
+    const handle = localStorage.getItem('construct:env-handle');
+    return handle ? localStorage.getItem(`construct:app-token:${handle}`) : null;
   });
+  if (!token) throw new Error('the page holds no app token after sign-in');
+  return token;
+}
+
+test('the Studio agent pane boots in the browser, sees a screenshot, completes a metered turn and names the payer', async ({
+  page,
+}) => {
+  test.skip(
+    !live || !email || !password || !appId,
+    'set CONSTRUCT_E2E=1 CONSTRUCT_EMAIL CONSTRUCT_PASSWORD APP_ID',
+  );
+  test.setTimeout(240_000);
+  page.on('dialog', (dialog) => void dialog.accept());
+  page.on('pageerror', (error) => console.log('[pageerror]', error.message));
+
+  await page.goto(`/?app=${appId}`);
+  await signIn(page);
+  await expect(page.getByRole('button', { name: 'Crowdy Studio (M)' })).toBeVisible({
+    timeout: 90_000,
+  });
+  await expect(page.locator('canvas.scene-canvas')).toHaveCount(1);
+
+  // The harness is served by this page under /dsh/ (copied from the
+  // @crowdedkingdoms/crowdy-dsh package by scripts/copy-dsh-web.mjs).
+  const stamp = await page.request.get('/dsh/BUILD.json');
+  expect(stamp.ok(), 'public/dsh carries the harness artifact and its BUILD.json').toBe(true);
+  const build = (await stamp.json()) as {
+    upstream?: { tag?: string };
+    crowdyjs?: { version?: string };
+  };
+  console.log(`[dsh] harness ${build.upstream?.tag} with CrowdyJS ${build.crowdyjs?.version}`);
+
+  // Stand on a chunk and open Studio there. CONSTRUCT_E2E_GRID names a chunk
+  // this player already owns; otherwise the claim pad from smoke.spec.ts is
+  // used and claimed (not idempotent across accounts, see that spec).
+  const [gx, gz] = (process.env.CONSTRUCT_E2E_GRID ?? '-10,-6').split(',').map(Number);
+  await page.evaluate(
+    ({ x, z }) => {
+      const g = (
+        window as unknown as {
+          __construct?: { router: { current: { setLocalPosition(p: unknown): void } } };
+        }
+      ).__construct;
+      if (!g) throw new Error('dev handle unavailable — run e2e against a dev-mode server');
+      g.router.current.setLocalPosition({ x, y: 0, z });
+    },
+    { x: gx, z: gz },
+  );
+  await page.keyboard.press('KeyE');
+  const shell = page.locator('#ck-crowdy-studio-embed-shell');
+  await expect(shell).toBeVisible({ timeout: 60_000 });
+
+  // The agent pane docks beside the editor; the first visit shows the
+  // provider-data notice, which records consent through the SDK.
+  const pane = page.locator('.ck-crowdy-studio-dsh');
+  await expect(pane).toBeVisible({ timeout: 20_000 });
+  const accept = pane.getByRole('button', { name: /start the agent/i });
+  if (await accept.isVisible({ timeout: 3_000 }).catch(() => false)) await accept.click();
+
+  // The iframe is same-origin, sandboxed as far as that allows, and boots the harness.
+  const frameElement = pane.locator('iframe.ck-crowdy-studio-dsh-frame');
+  await expect(frameElement).toBeVisible({ timeout: 15_000 });
+  expect(await frameElement.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin');
+  await expect(pane.locator('.ck-crowdy-studio-dsh-status')).toHaveText(/Ready/, {
+    timeout: 90_000,
+  });
+  const frame = page.frameLocator('iframe.ck-crowdy-studio-dsh-frame');
+  const dismiss = frame.getByRole('button', { name: /continue/i });
+  if (
+    await dismiss
+      .waitFor({ state: 'visible', timeout: 20_000 })
+      .then(() => true)
+      .catch(() => false)
+  ) {
+    await dismiss.click();
+  }
+  const composer = frame.locator('textarea, [contenteditable="true"]').first();
+  await expect(composer).toBeVisible({ timeout: 60_000 });
+
+  // The Screenshot button captures the WebGL frame and hands it to the agent.
+  const capture = pane.locator('button.ck-crowdy-studio-dsh-capture');
+  await expect(capture).toBeEnabled({ timeout: 10_000 });
+  await capture.click();
+  await expect(pane.locator('.ck-crowdy-studio-dsh-message')).toContainText(
+    /Shared capture-.*with the agent/i,
+    {
+      timeout: 15_000,
+    },
+  );
+
+  // One turn through POST /v1/model/chat/completions, with the player's token.
+  const token = await readAppToken(page);
+  const api = createCrowdyClient({ httpUrl: apiHttpUrl(new URL(page.url()).origin) });
+  api.setToken(token);
+  const usageQuery = `query($appId: BigInt!) { crowdyStudioModelUsage(appId: $appId, limit: 3) {
+    payerKind todayRequests todayChargeMicrousd recent { payerKind status chargeMicrousd }
+  } }`;
+  type Usage = {
+    crowdyStudioModelUsage: {
+      payerKind: 'PLAYER' | 'ORG' | 'PLATFORM';
+      todayRequests: string;
+      todayChargeMicrousd: string;
+      recent: Array<{ payerKind: string; status: string; chargeMicrousd: string }>;
+    };
+  };
+  const before = await api.graphql.query<Usage>(usageQuery, { appId });
+  const requestsBefore = Number(before.crowdyStudioModelUsage.todayRequests);
+
+  await composer.click();
+  await composer.fill(
+    'In one short sentence, what files does this project have? Do not edit anything.',
+  );
+  await page.keyboard.press('Enter');
+
+  await expect
+    .poll(
+      async () =>
+        Number(
+          (await api.graphql.query<Usage>(usageQuery, { appId })).crowdyStudioModelUsage
+            .todayRequests,
+        ),
+      { timeout: 90_000, intervals: [2_000] },
+    )
+    .toBeGreaterThan(requestsBefore);
+  const after = await api.graphql.query<Usage>(usageQuery, { appId });
+  const latest = after.crowdyStudioModelUsage.recent[0];
+  expect(latest?.status).toBe('COMPLETED');
+  // The row's payer is whatever the app's policy says; the pane must say the same.
+  expect(latest?.payerKind).toBe(after.crowdyStudioModelUsage.payerKind);
+  const paidBy =
+    after.crowdyStudioModelUsage.payerKind === 'PLAYER'
+      ? /paid by your wallet/i
+      : after.crowdyStudioModelUsage.payerKind === 'ORG'
+        ? /paid by the app's wallet/i
+        : /paid by the platform/i;
+  await expect(pane.locator('.ck-crowdy-studio-dsh-spend')).toContainText(paidBy, {
+    timeout: 45_000,
+  });
+
+  await page.keyboard.press('Escape');
+  await expect(shell).toBeHidden({ timeout: 10_000 });
 });

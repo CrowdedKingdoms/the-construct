@@ -10,7 +10,17 @@ export function slugify(value: string): string;
 export type Logger = (line: string) => void;
 
 export interface OnboardingStepEvent {
-  id: 'org' | 'app' | 'tier' | 'redirects' | 'enter' | 'claims' | 'model' | 'studio' | 'agent' | 'github';
+  id:
+    | 'org'
+    | 'app'
+    | 'tier'
+    | 'redirects'
+    | 'enter'
+    | 'claims'
+    | 'model'
+    | 'studio'
+    | 'agent'
+    | 'github';
   label: string;
   status: 'running' | 'done' | 'failed';
   value?: unknown;

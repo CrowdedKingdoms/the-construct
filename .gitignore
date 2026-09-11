@@ -5,6 +5,10 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# the Studio agent harness, copied from @crowdedkingdoms/crowdy-dsh by
+# scripts/copy-dsh-web.mjs before every dev/build (see docs/HOSTING.md)
+public/dsh/
+
 # local environment (never commit an app id or credentials)
 .env
 .env.local

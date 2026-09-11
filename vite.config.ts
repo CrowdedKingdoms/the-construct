@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { defineConfig, loadEnv } from 'vite';
+import type { OutgoingHttpHeader } from 'node:http';
+
+import { defineConfig, loadEnv, type Plugin, type PreviewServer, type ViteDevServer } from 'vite';
 
 import { constructDevServerOptions, envFlag } from './scripts/lib/dev-server-options.mjs';
 import { sdkDefaultHttpOrigin } from './scripts/lib/sdk-default-origin.mjs';
@@ -9,19 +11,27 @@ import { dshSecurityHeaders, securityHeaders } from './security-headers.mjs';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
-function dshHeadersPlugin(dshHeaders: Record<string, string>) {
-  const attach = (server: any) => {
-    server.middlewares.use((req: any, res: any, next: any) => {
+function dshHeadersPlugin(dshHeaders: Record<string, string>): Plugin {
+  const attach = (server: ViteDevServer | PreviewServer) => {
+    server.middlewares.use((req, res, next) => {
       if (req.url && (req.url.startsWith('/dsh/') || req.url === '/dsh')) {
+        // The packed VFS image is a .tar.gz the harness worker decompresses
+        // itself with DecompressionStream. Vite's static server sees the .gz
+        // suffix and adds `Content-Encoding: gzip`, so the browser would
+        // inflate it first and the worker would then fail on plain tar. Only
+        // that suffix is affected; every other /dsh/* response keeps whatever
+        // encoding the server negotiated (stripping it from a compressed JS
+        // response corrupts the body under `vite preview`).
+        const pathname = req.url.split('?')[0] ?? '';
+        const isGzipArchive = /\.gz$/i.test(pathname);
         const origSetHeader = res.setHeader.bind(res);
-        res.setHeader = (name: string, value: any) => {
-          // Do not send Content-Encoding: gzip for the VFS image; the harness
-          // worker decompresses the archive itself with DecompressionStream.
-          if (name.toLowerCase() === 'content-encoding') {
+        res.setHeader = (name: string, value: OutgoingHttpHeader) => {
+          if (isGzipArchive && name.toLowerCase() === 'content-encoding') {
             return res;
           }
-          if (Object.prototype.hasOwnProperty.call(dshHeaders, name)) {
-            return origSetHeader(name, dshHeaders[name]);
+          const pinned = dshHeaders[name];
+          if (pinned !== undefined) {
+            return origSetHeader(name, pinned);
           }
           return origSetHeader(name, value);
         };

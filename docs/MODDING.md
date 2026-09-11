@@ -46,7 +46,9 @@ walkthrough and the security story, in that order.
    or click **Fix with AI** on any compiler diagnostic in the Problems panel.
    Model usage is metered per request at the rate card and billed to your
    player wallet by default (or the app's org wallet). Use **Account > Wallet**
-   in Studio to manage funds.
+   in Studio to manage funds. The agent cannot move you or act in the world;
+   it only observes. When it wants to **deploy live**, the pane asks you first
+   and nothing ships until you click **Deploy live** there.
 6. **Run ▾ → Deploy live.** The SERVER module is now scheduled while your app
    has players, and its CLIENT companion is attached to your grid.
 7. Have someone else walk onto your chunk. They are asked once to trust your

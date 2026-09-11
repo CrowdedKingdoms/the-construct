@@ -23,7 +23,6 @@ import {
   CrowdyStudioEmbed,
   CrowdyStudioTextHud,
   type CrowdyStudioEmbedContext,
-  type CrowdyStudioEmbedHandle,
 } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
 import glueWorkerAssetUrl from '@crowdedkingdoms/crowdyjs/player-glue-worker?worker&url';
 
@@ -35,6 +34,7 @@ import { chunkKey, worldToChunk, type ChunkCoord, type Vec3 } from '@/platform/r
 import { AgentLocomotion } from '@/platform/studio/agentLocomotion';
 import { ClientModLifecycle, type ClientModScope } from '@/platform/studio/ClientModLifecycle';
 import { ConstructPlayerHostAdapter } from '@/platform/studio/ConstructPlayerHostAdapter';
+import { HumanInputMonitor } from './HumanInputMonitor';
 import {
   bytesToBase64,
   routeClientHostCall,
@@ -90,6 +90,7 @@ export class StudioService {
   private readonly declinedAuthors = new Set<string>();
   private readonly approvedAuthors = new Set<string>();
   private readonly agentHost: ConstructPlayerHostAdapter;
+  private readonly humanInput = new HumanInputMonitor();
   private gridEnteredAt = 0;
   private embed: CrowdyStudioEmbed | null = null;
   private hooks: StudioHooks | null = null;
@@ -242,6 +243,7 @@ export class StudioService {
     this.embed?.destroy();
     this.embed = null;
     this.locomotion.clear();
+    this.humanInput.dispose();
     this.hud.destroy();
   }
 
@@ -300,7 +302,7 @@ export class StudioService {
       pitch: pose?.pitch ?? 0,
       grid: this.currentGrid,
       nearbyActors: nearby,
-      humanInputActive: false,
+      humanInputActive: this.humanInput.active(),
       textInputFocused: isTextEntry(
         typeof document === 'undefined' ? null : document.activeElement,
       ),
