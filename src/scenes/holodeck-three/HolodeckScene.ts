@@ -21,6 +21,8 @@ import {
   HOLODECK_CAMERA_HEIGHT,
   HOLODECK_ZOOM_MAX,
   HOLODECK_ZOOM_MIN,
+  LOOK_PITCH_MAX,
+  LOOK_PITCH_MIN,
   LOOK_SENSITIVITY,
   applyLook,
   followCameraOffset,
@@ -191,8 +193,13 @@ export class HolodeckScene implements GameScene {
       );
     }
 
-    // Move relative to the camera yaw
-    const axes = input.suppressed ? { x: 0, y: 0 } : input.axes();
+    // Move relative to the camera yaw. Agent Play adds the same axes a human
+    // WASD would, plus LOOK deltas (degrees converted to radians upstream).
+    const agent = session.studio.locomotion.sample(nowMs);
+    this.yaw += agent.yaw;
+    this.pitch = Math.max(LOOK_PITCH_MIN, Math.min(LOOK_PITCH_MAX, this.pitch + agent.pitch));
+    const human = input.suppressed ? { x: 0, y: 0 } : input.axes();
+    const axes = { x: clampAxis(human.x + agent.x), y: clampAxis(human.y + agent.y) };
     const speed = input.isRun() ? RUN_SPEED : WALK_SPEED;
     const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const right = new THREE.Vector3(forward.z, 0, -forward.x);
@@ -297,6 +304,10 @@ export class HolodeckScene implements GameScene {
 
 function clamp(value: number): number {
   return Math.max(-ROOM_HALF + 1, Math.min(ROOM_HALF - 1, value));
+}
+
+function clampAxis(value: number): number {
+  return Math.max(-1, Math.min(1, value));
 }
 
 function messageOf(error: unknown): string {

@@ -79,6 +79,10 @@ There is no deploy workflow, deliberately: hosting is the developer's.
 - `use_video_chat` is opt-in on a tier (never in an app's default keys); the
   default world grid and a self-claimed chunk carry it only when the tier does
   (ck-api ≥ v1.87.3 for the claimed chunk).
+- `use_studio_agent` is also opt-in and belongs on the Constructor tier only,
+  never the default visitor tier. The dock stays fail-closed until platform
+  policy, app policy, and that key are all live. Agent tokens are
+  platform-funded; `OPENROUTER_API_KEY` lives only in ck-api, never here.
 - The API refuses an empty `voxelState`; `ChunkStore.setVoxel` sends `''`
   without a `state`. Paint sends one byte.
 - Realtime voxel updates are live-only; durability is the chunk store's

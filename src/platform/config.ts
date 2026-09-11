@@ -56,12 +56,97 @@ export const API_WS_URL: string = API_HTTP_URL.replace(
 /** Which tier the SDK build targets; informational (shown in the boot card). */
 export const API_TIER: string = envString('VITE_CROWDY_HTTP_URL') ? 'custom' : CROWDY_DEFAULT_TIER;
 
+function originOf(value: string): string | null {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.toLowerCase();
+  return (
+    normalized === 'localhost' ||
+    normalized === '127.0.0.1' ||
+    normalized === '::1' ||
+    normalized === '[::1]'
+  );
+}
+
+/**
+ * When the game is opened on a public IP (IDE browser) but Studio is
+ * configured as loopback, rewrite the hostname so navigation can actually
+ * reach it. Path, port, and query stay intact.
+ */
+function rewriteLoopbackToPageHost(
+  raw: string,
+  pageHostname?: string | null,
+): URL | null {
+  try {
+    const url = new URL(raw);
+    const pageHost = pageHostname?.trim();
+    if (pageHost && isLoopbackHost(url.hostname) && !isLoopbackHost(pageHost)) {
+      url.hostname = pageHost;
+    }
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hosted sign-in URL. Same loopback rewrite as Studio origin — otherwise
+ * `portal.signIn` sends the IDE browser to `127.0.0.1` and the tab goes blank.
+ */
+export function resolveAuthorizeUrl(input: {
+  authorizeUrl?: string | null;
+  pageHostname?: string | null;
+}): string | undefined {
+  const raw = input.authorizeUrl?.trim();
+  if (!raw) return undefined;
+  return rewriteLoopbackToPageHost(raw, input.pageHostname)?.toString() ?? raw;
+}
+
 /**
  * Hosted sign-in page (Studio `/authorize`). Required when `VITE_CROWDY_HTTP_URL`
  * is not a CK tier host — CrowdyJS cannot derive Studio from a same-origin
  * proxy or a raw IP. Leave unset to use the SDK's tier convention.
  */
-export const AUTHORIZE_URL: string | undefined = envString('VITE_AUTHORIZE_URL');
+export const AUTHORIZE_URL: string | undefined = resolveAuthorizeUrl({
+  authorizeUrl: envString('VITE_AUTHORIZE_URL'),
+  pageHostname: typeof window !== 'undefined' ? window.location.hostname : null,
+});
+
+/**
+ * Studio origin for in-game links. Explicit `VITE_STUDIO_URL` wins; otherwise
+ * the origin of the hosted-sign-in URL. When that URL is loopback and the
+ * page is not (public-IP IDE against a local stack), the page hostname is
+ * substituted so Wallet opens the Studio the player can actually reach.
+ * Never a hostname written into this repository.
+ */
+export function resolveStudioOrigin(input: {
+  authorizeUrl?: string | null;
+  studioUrl?: string | null;
+  pageHostname?: string | null;
+}): string | null {
+  const explicit = input.studioUrl?.trim();
+  if (explicit) return originOf(explicit);
+  const authorize = input.authorizeUrl?.trim();
+  if (!authorize) return null;
+  return rewriteLoopbackToPageHost(authorize, input.pageHostname)?.origin ?? null;
+}
+
+export const STUDIO_ORIGIN: string | null = resolveStudioOrigin({
+  authorizeUrl: envString('VITE_AUTHORIZE_URL'),
+  studioUrl: envString('VITE_STUDIO_URL'),
+  pageHostname: typeof window !== 'undefined' ? window.location.hostname : null,
+});
+
+/** Player wallet page in Studio. Null when we cannot derive Studio's origin. */
+export const STUDIO_WALLET_URL: string | null = STUDIO_ORIGIN
+  ? `${STUDIO_ORIGIN}/account/wallet`
+  : null;
 
 /** CLIENT-target Crowdy Studio mods (browser sandbox). A fork can turn these off. */
 export const CLIENT_MODS_ENABLED: boolean = envFlag('VITE_CONSTRUCT_CLIENT_MODS', true);

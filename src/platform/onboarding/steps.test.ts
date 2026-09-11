@@ -198,4 +198,110 @@ describe('onboarding steps', () => {
     const world = blueprints.find((b) => b.name === 'construct-world')!;
     expect(world.containers.map((c: Any) => c.typeName)).toEqual(['Program']);
   });
+
+  it('keeps use_studio_agent on Constructor and off the visitor default', () => {
+    expect(steps.CONSTRUCTOR_TIER_KEYS).toContain('use_studio_agent');
+    expect(steps.VISITOR_RUN_KEYS).not.toContain('use_studio_agent');
+  });
+
+  it('enables platform then app agent policy when the catalog is empty', async () => {
+    const query = vi.fn(async (document: string, _variables?: Any) => {
+      if (document.includes('ConstructSetAgentPlatform')) {
+        return {
+          cpSetCrowdyStudioAgentPlatformPolicy: {
+            enabled: true,
+            killSwitch: false,
+            allowedModelIds: [steps.STUDIO_AGENT_MODEL],
+            allowedModes: [...steps.STUDIO_AGENT_MODES],
+            revision: '1',
+          },
+        };
+      }
+      if (document.includes('ConstructSetAgentPolicy')) {
+        return {
+          setCrowdyStudioAgentPolicy: {
+            enabled: true,
+            killSwitch: false,
+            allowedModelIds: [steps.STUDIO_AGENT_MODEL],
+            allowedModes: [...steps.STUDIO_AGENT_MODES],
+            revision: '1',
+          },
+        };
+      }
+      if (document.includes('ConstructAgentPlatform')) {
+        return { cpCrowdyStudioAgentPlatformPolicy: { enabled: false, revision: '0' } };
+      }
+      return {
+        crowdyStudioAgentPolicy: { enabled: false, revision: '0' },
+        crowdyStudioAgentEffectivePolicy: { enabled: false, revision: '0' },
+      };
+    });
+    const identity = { graphql: { query } };
+    const result = await steps.ensureAgentPolicy(identity as never, { appId: '77' });
+    expect(result).toEqual({ enabled: true, skipped: false });
+    const platformInput = (
+      query.mock.calls.find((c: Any[]) => String(c[0]).includes('ConstructSetAgentPlatform'))?.[1] as
+        | { input: Any }
+        | undefined
+    )?.input;
+    expect(platformInput).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        killSwitch: false,
+        allowedModelIds: [steps.STUDIO_AGENT_MODEL],
+        allowedToolNames: [...steps.STUDIO_AGENT_TOOLS],
+        idempotencyKey: 'construct-agent-platform-v1',
+      }),
+    );
+    const appInput = (
+      query.mock.calls.find((c: Any[]) => String(c[0]).includes('ConstructSetAgentPolicy'))?.[1] as
+        | { input: Any }
+        | undefined
+    )?.input;
+    expect(appInput).toEqual(
+      expect.objectContaining({
+        appId: '77',
+        enabled: true,
+        allowedModelIds: [steps.STUDIO_AGENT_MODEL],
+        idempotencyKey: 'construct-agent-app-77-v1',
+      }),
+    );
+    expect(appInput?.allowedToolNames).toBeUndefined();
+  });
+
+  it('skips writes when effective policy already allows Ask/Build/Play', async () => {
+    const ready = {
+      enabled: true,
+      killSwitch: false,
+      allowedModelIds: [steps.STUDIO_AGENT_MODEL],
+      allowedModes: [...steps.STUDIO_AGENT_MODES],
+    };
+    const query = vi.fn(async (document: string, _variables?: Any) => {
+      if (document.includes('ConstructAgentPlatform')) {
+        return { cpCrowdyStudioAgentPlatformPolicy: ready };
+      }
+      return {
+        crowdyStudioAgentPolicy: ready,
+        crowdyStudioAgentEffectivePolicy: ready,
+      };
+    });
+    const result = await steps.ensureAgentPolicy({ graphql: { query } } as never, { appId: '77' });
+    expect(result).toEqual({ enabled: true, skipped: true });
+    expect(query.mock.calls.some((c) => String(c[0]).includes('mutation'))).toBe(false);
+  });
+
+  it('stays green when the caller cannot see operator policy', async () => {
+    const query = vi.fn(async (document: string, _variables?: Any) => {
+      if (document.includes('ConstructAgentPlatform')) {
+        throw new Error('FORBIDDEN');
+      }
+      throw new Error('manage_compute required');
+    });
+    const lines: string[] = [];
+    const result = await steps.ensureAgentPolicy({ graphql: { query } } as never, { appId: '77' }, (line) =>
+      lines.push(line),
+    );
+    expect(result).toEqual({ enabled: false, skipped: true });
+    expect(lines.some((line) => /Studio → your app → Agent/.test(line))).toBe(true);
+  });
 });

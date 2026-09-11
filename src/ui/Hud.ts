@@ -16,6 +16,8 @@ export interface HudActions {
   toggleCamera(): void;
   /** Turn the local mic on/off (also bound to V). */
   toggleVoice(): void;
+  /** Open Crowdy Studio's player wallet (grid/compute billing). */
+  openWallet?: () => void;
 }
 
 export class Hud implements SceneHud {
@@ -74,6 +76,14 @@ export class Hud implements SceneHud {
     }) as HTMLButtonElement;
     voice.addEventListener('click', actions.toggleVoice);
     this.voiceButton = voice;
+    const wallet = actions.openWallet
+      ? el('button', {
+          class: 'ghost',
+          text: 'Wallet',
+          title: 'Open your Crowded Kingdoms player wallet in Studio (grid / compute billing)',
+        })
+      : null;
+    if (wallet && actions.openWallet) wallet.addEventListener('click', actions.openWallet);
     const signOut = el('button', { class: 'ghost', text: 'Sign out' });
     signOut.addEventListener('click', actions.signOut);
     // The local self-preview: shown while the camera is live, never on the
@@ -94,7 +104,7 @@ export class Hud implements SceneHud {
 
     this.root = el('div', {}, [
       el('div', { class: 'hud-top-left' }, [this.identity, this.world, this.studioChip]),
-      el('div', { class: 'hud-top-right' }, [voice, camera, studio, setup, signOut]),
+      el('div', { class: 'hud-top-right' }, [voice, camera, studio, setup, wallet, signOut]),
       this.hint,
       this.help,
       this.toasts,
@@ -199,15 +209,21 @@ export class Hud implements SceneHud {
     const mods = state.clientModsAvailable
       ? `client mods on${state.clientModsRunning ? ` · ${state.clientModsRunning} running` : ''}`
       : 'client mods off';
+    const agent = state.agentReady
+      ? 'agent on'
+      : state.agentReason
+        ? 'agent off'
+        : 'agent';
     this.studioChip.replaceChildren(
       el('div', { class: 'row' }, [
         el('strong', { text: state.open ? 'Studio open' : 'Studio' }),
         el('span', { class: 'muted', text: grid }),
       ]),
-      el('div', { class: 'row muted' }, [perms ? `${perms} · ` : '', mods]),
+      el('div', { class: 'row muted' }, [perms ? `${perms} · ` : '', mods, ` · ${agent}`]),
     );
-    if (state.clientModsReason && !this.bannerDismissed) {
-      this.bannerText.textContent = state.clientModsReason;
+    const bannerText = state.clientModsReason ?? (state.agentReason && !state.open ? state.agentReason : null);
+    if (bannerText && !this.bannerDismissed) {
+      this.bannerText.textContent = bannerText;
       this.banner.classList.remove('hidden');
     } else {
       this.banner.classList.add('hidden');

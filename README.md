@@ -21,7 +21,7 @@ Clone it, run it, then replace the demo scenes with your game.
 | Paint | A pixi.js program: a shared canvas painted with persisted voxels | `src/scenes/program-pixi/` |
 | Platform layer | Hosted sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B) and voice (V), model, Studio — engine-agnostic | `src/platform/` |
 | Adapter boundary | The small `GameScene` contract both renderers implement | `src/engine/`, [docs/RENDERER-ADAPTER.md](docs/RENDERER-ADAPTER.md) |
-| Crowdy Studio | The in-game IDE: players claim a chunk and write SERVER + CLIENT Rust mods | `src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
+| Crowdy Studio | The in-game IDE: players claim a chunk, write SERVER + CLIENT Rust mods, and use the Ask/Build/Play agent | `src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
 | Game model | Kit blueprints (progression, leaderboards) + a hand-authored catalog, seeded idempotently | `model/blueprints.mjs` |
 | Setup | org → free app → access tier → redirect URIs → seed → Studio starter files, from a shell (`npm run setup`) | `src/platform/onboarding/`, `scripts/setup.mjs` |
 | Security headers | COOP/COEP/CSP that make CLIENT mods possible, plus the Permissions-Policy the camera needs, wired into Vite and documented per host | `security-headers.mjs`, [docs/HOSTING.md](docs/HOSTING.md) |
@@ -45,11 +45,13 @@ npm install
      npm run setup -- --org "My studio" --app "The Construct"
    ```
 
-   Eight idempotent steps run: organization, free app on shared hosting, a
-   *Constructor* access tier with the Crowdy Studio code keys, the dev server
-   registered as a **redirect URI**, an app token, the self-claim grid policy,
-   the game model, and the Studio starter files. It prints an app id; copy
-   `.env.example` to `.env.local` and set `VITE_APP_ID` to it.
+   Nine idempotent steps run: organization, free app on shared hosting, a
+   *Constructor* access tier with the Crowdy Studio code keys and
+   `use_studio_agent`, the dev server registered as a **redirect URI**, an app
+   token, the self-claim grid policy, the game model, the Studio starter files,
+   and the Studio Agent app policy (platform catalog too, when this account is
+   an operator). It prints an app id; copy `.env.example` to `.env.local` and
+   set `VITE_APP_ID` to it.
 
    Why a shell and not the browser: creating an app needs your account's
    session, and a game on its own domain never holds one -- see step 2.
@@ -67,8 +69,11 @@ npm install
    scroll to zoom; middle-drag or Alt+click to pan. The cells replicate live
    and persist.
 5. Step on **Claim & Studio** and press `E`: you claim the chunk you stand on
-   and Crowdy Studio opens beside the game. Follow [docs/MODDING.md](docs/MODDING.md)
-   to deploy a mod that runs in the browser — yours and your visitors'.
+   and Crowdy Studio opens beside the game. The Ask/Build/Play agent lives in
+   that dock (Constructor tier, platform-funded — no OpenRouter key in this
+   game). **Wallet** in the HUD opens Studio for grid / player-compute billing.
+   Follow [docs/MODDING.md](docs/MODDING.md) to deploy a mod that runs in the
+   browser — yours and your visitors'.
 
 Everything but `VITE_APP_ID` is optional: the installed SDK build already knows
 the API origin for its tier. When you deploy somewhere other than
@@ -147,7 +152,10 @@ A new organization gets free apps on shared hosting (three by default) with
 monthly allowances per app (egress, ingress, compute hours, storage). Nothing
 here asks for a card. Sustained usage above the allowances bills the org
 wallet; a player's mods have a free monthly compute trial before their own
-wallet is involved. Current figures: [Shared environment](https://docs.crowdedkingdoms.com/management-api/shared-environment)
+wallet is involved. Crowdy Agent tokens are **platform-funded** on Crowded
+Kingdoms (this game never asks for an OpenRouter key). The HUD Wallet link is
+for the player's grid / compute wallet, not the agent. Current figures:
+[Shared environment](https://docs.crowdedkingdoms.com/management-api/shared-environment)
 and [Player billing](https://docs.crowdedkingdoms.com/management-api/player-billing).
 
 ## Hosting is yours

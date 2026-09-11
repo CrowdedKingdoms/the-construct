@@ -39,7 +39,7 @@ export function helpLines(scene: HelpScene): string[] {
     'T or Enter — chat',
     'B — webcam',
     'V — voice',
-    'M — Crowdy Studio',
+    'M — Crowdy Studio (Ask / Build / Play agent in the dock)',
     'F1 or ? — this help',
     'Escape — close help, unlock look',
   ];

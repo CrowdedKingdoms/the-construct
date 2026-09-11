@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0 — 2026-09-10
+
+Agentic Crowdy Studio in the starter, plus a Studio wallet link.
+
+- `ConstructPlayerHostAdapter` implements `crowdy.player-host/1`: observe,
+  walk, look, stop, and proximity chat. Holodeck samples the same axes as WASD.
+- `StudioService` mounts the Ask/Build/Play dock when policy and
+  `use_studio_agent` are armed, with the Play safety banner outside the dock.
+- Setup grants `use_studio_agent` on the *Constructor* tier (never the default
+  visitor tier) and writes platform + app agent policy when the account can.
+  Agent tokens stay platform-funded; this game never holds an OpenRouter key.
+- HUD **Wallet** opens Studio `/account/wallet` for grid / player-compute
+  billing. First-join chat says the same. Studio origin and the hosted
+  sign-in URL are derived from `VITE_AUTHORIZE_URL` / `VITE_STUDIO_URL`,
+  rewriting loopback when the page is on a public IP so the IDE browser
+  does not navigate to `127.0.0.1` and sit on a blank tab.
+
 ## 0.4.0 — 2026-09-10
 
 Controls, mouse look/camera, and proximity voice.
