@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+GitHub as Crowdy Studio working tree is **not** wired here. Bind/put/layout
+need an identity session; the browser holds only a play token. Passing that
+token as `client.crowdyStudioGitHub` would `SCOPE_MISSING`. `StudioService`
+omits `github:` (same reason as omitting the agent before a host adapter
+exists). Documented in `docs/MODDING.md`. Construct PR #42 does not close
+this; Author Studio is out of scope. Mod Studio stays on `crowdyStudio`.
+
 ## 0.3.0 — 2026-09-08
 
 Hosted sign-in (ck-api `v1.88.0`, CrowdyJS `15.6.0`). The browser never holds

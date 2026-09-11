@@ -16,6 +16,31 @@ walkthrough and the security story, in that order.
 | Starter files | Published four common files (two templates × entrypoint + Cargo.toml) | Imported copy-by-value into your projects |
 | Cross-origin isolation | Vite sends COOP/COEP; production hosts must too ([HOSTING.md](HOSTING.md)) | The CLIENT sandbox bridge needs `SharedArrayBuffer` |
 
+## GitHub as the Studio working tree
+
+Crowdy Studio on first-party hosts (Studio, crowdy.games) persists a bound
+mod through `crowdyStudioGitHub*` — an **identity session**, not a play
+token. Play tokens receive `SCOPE_MISSING`. `CrowdyStudioEmbed` takes that
+transport as `github:`.
+
+This starter **cannot** wire that yet, and must not pass the play-token
+client as a fake:
+
+- The browser never holds an identity session (hosted sign-in → app token
+  only). `npm run setup` has identity in Node, which cannot be the in-game
+  Monaco persist path.
+- [PR #42](https://github.com/CrowdedKingdoms/the-construct/pull/42) adds the
+  agent dock still on the app token; it does not add identity.
+- Author Studio is out of scope. Do not add a third editor store or bind
+  Crowdy-Games.
+
+Until an identity-session path exists in this origin, Mod Studio omits
+`github:` so the GitHub card stays hidden and `crowdyStudio` +
+`playerCompute` keep working. When ck-api refuses unbound
+`crowdyStudioProjectCreate` (`GITHUB_REQUIRED`), New project will need that
+identity path (or authoring in CK Studio / git). Visitors still run the
+SHA-pinned WASM from CKS; they never receive a GitHub token.
+
 ## Walkthrough: a CLIENT mod your visitors see
 
 1. In the holodeck, walk onto **Claim & Studio** and press `E`. The chunk
