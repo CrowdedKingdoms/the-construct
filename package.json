@@ -18,7 +18,7 @@
     "format:check": "prettier --check .",
     "test": "npm run test:unit && npm run test:headers",
     "test:unit": "vitest run",
-    "test:headers": "node --test security-headers.test.mjs",
+    "test:headers": "node --test security-headers.test.mjs scripts/lib/dev-server-options.test.mjs",
     "test:e2e": "playwright test",
     "check:pin": "node scripts/ci/check-sdk-pin.mjs",
     "setup": "node scripts/setup.mjs",

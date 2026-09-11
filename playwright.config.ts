@@ -4,8 +4,9 @@ import { defineConfig } from '@playwright/test';
  * Browser smoke against `vite preview` (the production bundle with the real
  * security headers). Two tiers of assertions:
  *   - always: the page boots cross-origin isolated and shows sign-in;
- *   - with CONSTRUCT_E2E=1 + CONSTRUCT_EMAIL/PASSWORD/APP_ID: signs in, enters
- *     the app, joins the holodeck and opens Crowdy Studio on a claimed chunk.
+ *   - with CONSTRUCT_E2E=1 + CONSTRUCT_EMAIL/PASSWORD/APP_ID: hosted Studio
+ *     login / consent, then holodeck + Studio. Node token-seed is opt-in
+ *     (`CONSTRUCT_E2E_SEED_TOKEN=1` + `CROWDY_HTTP_URL`).
  * The live half needs a real account and app, so CI runs only the first tier.
  */
 export default defineConfig({

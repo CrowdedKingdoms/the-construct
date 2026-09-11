@@ -12,31 +12,32 @@ function envHandleFor(apiOrigin: string): string {
   return `${url.hostname}${url.port ? `_${url.port}` : ''}`;
 }
 
+const seedToken = process.env.CONSTRUCT_E2E_SEED_TOKEN === '1';
+
 /**
- * Local-tier Studio often reports "no password" for accounts that can still
- * `auth.login` from Node (no Origin header). Seed the same app token + route
- * restore() expects so the live assertions still run.
- *
- * Write the keys on the Construct origin (not Studio), then reload.
+ * Optional local-stack escape hatch. Hosted Studio login / consent is the
+ * path this repo exists to demonstrate; Node `auth.login` + localStorage
+ * seed is only for `CONSTRUCT_E2E_SEED_TOKEN=1` with an explicit
+ * `CROWDY_HTTP_URL` (never an implicit loopback).
  */
 async function mintAppSession(
   creds: { email: string; password: string; appId: string },
   pageOrigin: string,
 ) {
+  const httpUrl = process.env.CROWDY_HTTP_URL?.trim();
+  if (!httpUrl) {
+    throw new Error('CONSTRUCT_E2E_SEED_TOKEN=1 requires CROWDY_HTTP_URL');
+  }
   const configured = process.env.VITE_CROWDY_HTTP_URL?.trim();
   const bundleOrigin =
     !configured || configured === 'same-origin' || configured === '/' ? pageOrigin : configured;
-  const identity = createCrowdyClient({
-    httpUrl: process.env.CROWDY_HTTP_URL?.trim() || 'http://127.0.0.1:3000',
-  });
+  const identity = createCrowdyClient({ httpUrl });
   await identity.auth.login({ email: creds.email, password: creds.password });
   const minted = await identity.portal.mintAppToken(creds.appId);
   return {
     token: minted.token,
     handle: envHandleFor(bundleOrigin),
     id: creds.appId,
-    // Null endpoints so enterApp uses the bundle's same-origin API proxy.
-    // The mint response names :3000, which this page's CSP will not fetch.
     route: {
       appId: String(minted.appId ?? creds.appId),
       gameApiUrl: null,
@@ -69,9 +70,13 @@ test('boots cross-origin isolated with the security headers and shows sign-in', 
   // CLIENT mods depend on this being true; a host that drops COOP/COEP fails here.
   await expect.poll(() => page.evaluate(() => crossOriginIsolated)).toBe(true);
   await expect(page.getByRole('heading', { name: 'The Construct' })).toBeVisible();
-  // No app pinned in the cold test build: the no-app card, and NO login form --
-  // a game on its own domain never collects a password (hosted sign-in only).
-  await expect(page.getByRole('button', { name: 'Use this app' })).toBeVisible();
+  // CI has no VITE_APP_ID (no-app card). A local .env.local may pin an app
+  // (hosted sign-in). Neither path is a password form on this origin.
+  await expect(
+    page
+      .getByRole('button', { name: 'Use this app' })
+      .or(page.getByRole('button', { name: 'Sign in with Crowded Kingdoms' })),
+  ).toBeVisible();
   await expect(page.getByPlaceholder('••••••••')).toHaveCount(0);
 });
 
@@ -93,8 +98,6 @@ test('sign in, enter the app, join the holodeck, open Crowdy Studio on a claimed
   // Hosted sign-in: the button leaves for Studio's /authorize, which bounces
   // to Studio's /login (email-first, then password), then back here with a
   // code. The credentials are typed into STUDIO, never into this page.
-  // On a local proxy/IP API origin, PKCE (WebCrypto) or Studio's "no password"
-  // email-check can block that path; then we seed the app token from Node.
   const signIn = page.getByRole('button', { name: 'Sign in with Crowded Kingdoms' });
   if (await signIn.isVisible()) {
     await signIn.click();
@@ -122,6 +125,11 @@ test('sign in, enter the app, join the holodeck, open Crowdy Studio on a claimed
       }
     }
     if (!hosted) {
+      if (!seedToken) {
+        throw new Error(
+          'Hosted sign-in did not complete (Studio login/consent). That is the path this repo demonstrates. Set CONSTRUCT_E2E_SEED_TOKEN=1 and CROWDY_HTTP_URL only for a local stack that cannot show the password form.',
+        );
+      }
       await page.goto(`/?app=${appId}`);
       const session = await mintAppSession(
         { email: email!, password: password!, appId: appId! },

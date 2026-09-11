@@ -49,9 +49,10 @@ npm install
    *Constructor* access tier with the Crowdy Studio code keys and
    `use_studio_agent`, the dev server registered as a **redirect URI**, an app
    token, the self-claim grid policy, the game model, the Studio starter files,
-   and the Studio Agent app policy (platform catalog too, when this account is
-   an operator). It prints an app id; copy `.env.example` to `.env.local` and
-   set `VITE_APP_ID` to it.
+   and the Studio Agent **app** policy. Setup never writes operator platform
+   policy. If the platform catalog is unpublished the dock stays closed (an
+   operator publishes it; a third-party clone cannot). It prints an app id;
+   copy `.env.example` to `.env.local` and set `VITE_APP_ID` to it.
 
    Why a shell and not the browser: creating an app needs your account's
    session, and a game on its own domain never holds one -- see step 2.
@@ -80,9 +81,15 @@ the API origin for its tier. When you deploy somewhere other than
 `http://localhost:5175`, register that origin too -- `npm run setup -- --origin
 https://play.example.com`, or Studio > Apps > Settings > Sign-in & redirect
 URIs. That list is both where sign-in may return your players and the API's
-CORS allow-list for your app. If `VITE_CROWDY_HTTP_URL` is a proxy or raw IP
-rather than a CK tier host, set `VITE_AUTHORIZE_URL` to Studio's `/authorize`
-(the SDK cannot derive it).
+CORS allow-list for your app. If `VITE_CROWDY_HTTP_URL` is a same-origin proxy
+or raw IP rather than a CK tier host, set `VITE_AUTHORIZE_URL` to Studio's
+`/authorize` (the SDK cannot derive it).
+
+A local ck-api or IDE-on-public-IP stack is **opt-in**. Default `npm run dev`
+sends the same COOP/COEP as preview/production and does not proxy the API.
+Put `VITE_DEV_PROXY=1`, `VITE_DEV_ALLOWED_HOSTS=1`, and/or
+`VITE_DEV_RELAX_ISOLATION=1` in gitignored `.env.local` only — see
+`.env.example`. A normal clone talking to a CK tier leaves them unset.
 
 ## Command reference
 
@@ -91,7 +98,7 @@ rather than a CK tier host, set `VITE_AUTHORIZE_URL` to Studio's `/authorize`
 | `npm run dev` | Vite dev server with the production security headers |
 | `npm run build` / `npm run preview` | Production bundle, and serve it locally with the same headers |
 | `npm test` | Unit tests (vitest) + CSP builder tests (`node --test`) |
-| `npm run test:e2e` | Playwright: boots cross-origin isolated; with `CONSTRUCT_E2E=1` and credentials, signs in and opens Studio |
+| `npm run test:e2e` | Playwright: boots cross-origin isolated and shows hosted sign-in; with `CONSTRUCT_E2E=1` and credentials, completes Studio login / consent and opens Studio. Node token-seed is `CONSTRUCT_E2E_SEED_TOKEN=1` + `CROWDY_HTTP_URL` only |
 | `npm run lint` / `npm run typecheck` / `npm run format:check` | Quality gates CI runs |
 | `npm run setup -- --org "…" --app "…" [--origin https://…]` | Setup: org, app, tier, redirect URIs, seed; needs `CONSTRUCT_EMAIL` / `CONSTRUCT_PASSWORD` |
 | `npm run seed` | Re-deploy the model + Studio starter files to `APP_ID` after editing `model/` or `mods/` |

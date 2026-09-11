@@ -14,7 +14,7 @@ walkthrough and the security story, in that order.
 | Visitors may run mods | Added `run_server_code` + `run_client_code` to the default free tier | Fetching a grid's CLIENT artifact is gated on the **visitor's** tier |
 | Claimable chunks | Set the grid claim policy to `SELF_CLAIM` | `claimGridChunk` refuses under other policies |
 | Starter files | Published four common files (two templates × entrypoint + Cargo.toml) | Imported copy-by-value into your projects |
-| Crowdy Agent | Enabled the app (and, for operators, platform) Studio Agent policy | Ask/Build/Play in the Studio dock. Tokens are platform-funded — no OpenRouter key in this game. |
+| Crowdy Agent | Enabled the **app** Studio Agent policy and put `use_studio_agent` on Constructor | Ask/Build/Play in the Studio dock when that row and key are live. The platform catalog is operator-published; Setup does not touch it. Tokens are platform-funded — no OpenRouter key in this game. |
 | Cross-origin isolation | Vite sends COOP/COEP; production hosts must too ([HOSTING.md](HOSTING.md)) | The CLIENT sandbox bridge needs `SharedArrayBuffer` |
 
 ## Walkthrough: a CLIENT mod your visitors see

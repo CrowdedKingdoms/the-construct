@@ -204,55 +204,31 @@ describe('onboarding steps', () => {
     expect(steps.VISITOR_RUN_KEYS).not.toContain('use_studio_agent');
   });
 
-  it('enables platform then app agent policy when the catalog is empty', async () => {
+  it('writes only the app agent policy and never calls cp* fields', async () => {
     const query = vi.fn(async (document: string, _variables?: Any) => {
-      if (document.includes('ConstructSetAgentPlatform')) {
-        return {
-          cpSetCrowdyStudioAgentPlatformPolicy: {
-            enabled: true,
-            killSwitch: false,
-            allowedModelIds: [steps.STUDIO_AGENT_MODEL],
-            allowedModes: [...steps.STUDIO_AGENT_MODES],
-            revision: '1',
-          },
-        };
-      }
+      expect(document).not.toMatch(/\bcp[A-Z]/);
       if (document.includes('ConstructSetAgentPolicy')) {
         return {
           setCrowdyStudioAgentPolicy: {
             enabled: true,
             killSwitch: false,
-            allowedModelIds: [steps.STUDIO_AGENT_MODEL],
             allowedModes: [...steps.STUDIO_AGENT_MODES],
             revision: '1',
           },
         };
       }
-      if (document.includes('ConstructAgentPlatform')) {
-        return { cpCrowdyStudioAgentPlatformPolicy: { enabled: false, revision: '0' } };
-      }
       return {
         crowdyStudioAgentPolicy: { enabled: false, revision: '0' },
-        crowdyStudioAgentEffectivePolicy: { enabled: false, revision: '0' },
+        crowdyStudioAgentEffectivePolicy: {
+          enabled: false,
+          killSwitch: false,
+          allowedModelIds: [steps.STUDIO_AGENT_MODEL],
+          allowedModes: [],
+        },
       };
     });
-    const identity = { graphql: { query } };
-    const result = await steps.ensureAgentPolicy(identity as never, { appId: '77' });
+    const result = await steps.ensureAgentPolicy({ graphql: { query } } as never, { appId: '77' });
     expect(result).toEqual({ enabled: true, skipped: false });
-    const platformInput = (
-      query.mock.calls.find((c: Any[]) =>
-        String(c[0]).includes('ConstructSetAgentPlatform'),
-      )?.[1] as { input: Any } | undefined
-    )?.input;
-    expect(platformInput).toEqual(
-      expect.objectContaining({
-        enabled: true,
-        killSwitch: false,
-        allowedModelIds: [steps.STUDIO_AGENT_MODEL],
-        allowedToolNames: [...steps.STUDIO_AGENT_TOOLS],
-        idempotencyKey: 'construct-agent-platform-v1',
-      }),
-    );
     const appInput = (
       query.mock.calls.find((c: Any[]) => String(c[0]).includes('ConstructSetAgentPolicy'))?.[1] as
         { input: Any } | undefined
@@ -261,11 +237,13 @@ describe('onboarding steps', () => {
       expect.objectContaining({
         appId: '77',
         enabled: true,
-        allowedModelIds: [steps.STUDIO_AGENT_MODEL],
-        idempotencyKey: 'construct-agent-app-77-v1',
+        allowedModes: [...steps.STUDIO_AGENT_MODES],
+        idempotencyKey: 'construct-agent-app-77-v2',
       }),
     );
+    expect(appInput?.allowedModelIds).toBeUndefined();
     expect(appInput?.allowedToolNames).toBeUndefined();
+    expect(appInput?.allowedRiskClasses).toBeUndefined();
   });
 
   it('skips writes when effective policy already allows Ask/Build/Play', async () => {
@@ -275,25 +253,17 @@ describe('onboarding steps', () => {
       allowedModelIds: [steps.STUDIO_AGENT_MODEL],
       allowedModes: [...steps.STUDIO_AGENT_MODES],
     };
-    const query = vi.fn(async (document: string, _variables?: Any) => {
-      if (document.includes('ConstructAgentPlatform')) {
-        return { cpCrowdyStudioAgentPlatformPolicy: ready };
-      }
-      return {
-        crowdyStudioAgentPolicy: ready,
-        crowdyStudioAgentEffectivePolicy: ready,
-      };
-    });
+    const query = vi.fn(async () => ({
+      crowdyStudioAgentPolicy: ready,
+      crowdyStudioAgentEffectivePolicy: ready,
+    }));
     const result = await steps.ensureAgentPolicy({ graphql: { query } } as never, { appId: '77' });
     expect(result).toEqual({ enabled: true, skipped: true });
-    expect(query.mock.calls.some((c) => String(c[0]).includes('mutation'))).toBe(false);
+    expect(query.mock.calls.some((c: Any[]) => String(c[0]).includes('mutation'))).toBe(false);
   });
 
-  it('stays green when the caller cannot see operator policy', async () => {
-    const query = vi.fn(async (document: string, _variables?: Any) => {
-      if (document.includes('ConstructAgentPlatform')) {
-        throw new Error('FORBIDDEN');
-      }
+  it('stays green when the caller cannot read app policy', async () => {
+    const query = vi.fn(async () => {
       throw new Error('manage_compute required');
     });
     const lines: string[] = [];
@@ -304,5 +274,37 @@ describe('onboarding steps', () => {
     );
     expect(result).toEqual({ enabled: false, skipped: true });
     expect(lines.some((line) => /Studio → your app → Agent/.test(line))).toBe(true);
+  });
+
+  it('stays green and logs when the platform catalog is unpublished after the app write', async () => {
+    const query = vi.fn(async (document: string) => {
+      expect(document).not.toMatch(/\bcp[A-Z]/);
+      if (document.includes('ConstructSetAgentPolicy')) {
+        return {
+          setCrowdyStudioAgentPolicy: {
+            enabled: true,
+            killSwitch: false,
+            allowedModes: [...steps.STUDIO_AGENT_MODES],
+          },
+        };
+      }
+      return {
+        crowdyStudioAgentPolicy: { enabled: false, revision: '0' },
+        crowdyStudioAgentEffectivePolicy: {
+          enabled: false,
+          killSwitch: false,
+          allowedModelIds: [],
+          allowedModes: [],
+        },
+      };
+    });
+    const lines: string[] = [];
+    const result = await steps.ensureAgentPolicy(
+      { graphql: { query } } as never,
+      { appId: '77' },
+      (line) => lines.push(line),
+    );
+    expect(result).toEqual({ enabled: true, skipped: false });
+    expect(lines.some((line) => /platform catalog not published/.test(line))).toBe(true);
   });
 });

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig, loadEnv } from 'vite';
 
+import { constructDevServerOptions, envFlag } from './scripts/lib/dev-server-options.mjs';
 import { sdkDefaultHttpOrigin } from './scripts/lib/sdk-default-origin.mjs';
 import { securityHeaders } from './security-headers.mjs';
 
@@ -22,25 +23,15 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5175,
       host: true,
-      allowedHosts: true,
-      // IDE browser cannot call :3000 from this page (CSP connect-src is
-      // enforced against a rewritten request URL). Same-origin /graphql and
-      // /realtime go to ck-api on loopback instead.
-      proxy: {
-        '/graphql': { target: 'http://127.0.0.1:3000', changeOrigin: true, ws: true },
-        '/realtime': { target: 'http://127.0.0.1:3000', changeOrigin: true, ws: true },
-      },
-      // Isolation headers are correct on HTTPS / localhost. On this builder the
-      // IDE browser hits http://PUBLIC_IP:5175, which is not a secure context:
-      // COEP credentialless then blocks fetch() to ck-api (Failed to fetch) and
-      // the page never signs in. Omit COEP/COOP here so the holodeck can load;
-      // CLIENT mods stay off (crossOriginIsolated is false on plain HTTP).
-      headers: Object.fromEntries(
-        Object.entries(headers).filter(
-          ([name]) =>
-            name !== 'Cross-Origin-Embedder-Policy' && name !== 'Cross-Origin-Opener-Policy',
-        ),
-      ),
+      // Default: production isolation, no proxy. Local stacks opt in via
+      // VITE_DEV_PROXY / VITE_DEV_ALLOWED_HOSTS / VITE_DEV_RELAX_ISOLATION.
+      ...constructDevServerOptions({
+        headers,
+        proxy: envFlag(env, 'VITE_DEV_PROXY'),
+        allowAllHosts: envFlag(env, 'VITE_DEV_ALLOWED_HOSTS'),
+        relaxIsolation: envFlag(env, 'VITE_DEV_RELAX_ISOLATION'),
+        proxyTarget: env.VITE_DEV_PROXY_TARGET?.trim(),
+      }),
     },
     preview: {
       headers,

@@ -37,40 +37,9 @@ export const CONSTRUCTOR_TIER_KEYS = [
   'use_studio_agent',
 ];
 
-/** Model the platform agent catalog already prices; ZDR + tools required. */
+/** Priced ZDR model on hosted tiers; app policy inherits the platform catalog. */
 export const STUDIO_AGENT_MODEL = 'openai/gpt-oss-120b';
 export const STUDIO_AGENT_MODES = ['ASK', 'BUILD', 'PLAY'];
-export const STUDIO_AGENT_RISKS = ['READ_ONLY', 'ROUTINE_WRITE', 'WORLD_CONTROL', 'DESTRUCTIVE'];
-export const STUDIO_AGENT_TOOLS = [
-  'studio.context.get',
-  'project.list',
-  'project.get',
-  'project.checkpoint.list',
-  'project.checkpoint.restore',
-  'workspace.file.list',
-  'workspace.file.read',
-  'workspace.file.patch',
-  'diagnostics.local.get',
-  'runtime.status.get',
-  'runtime.test_draft',
-  'runtime.deploy_live',
-  'runtime.invoke',
-  'runtime.stop',
-  'game.capabilities.get',
-  'game.observe',
-  'game.control.move',
-  'game.control.look',
-  'game.control.stop',
-  'game.inventory.select',
-  'game.inventory.consume',
-  'game.inventory.transfer',
-  'game.interact',
-  'game.craft',
-  'game.mount',
-  'game.combat.attack',
-  'game.chat.send',
-  'game.travel.teleport',
-];
 
 /**
  * What every visitor gets: the default free tier's keys plus permission to RUN
@@ -340,76 +309,28 @@ const SET_AGENT_APP_POLICY = `mutation ConstructSetAgentPolicy($input: SetCrowdy
   setCrowdyStudioAgentPolicy(input: $input) { ${AGENT_POLICY_CORE} }
 }`;
 
-const AGENT_PLATFORM_QUERY = `query ConstructAgentPlatform {
-  cpCrowdyStudioAgentPlatformPolicy { ${AGENT_POLICY_CORE} }
-}`;
-
-const SET_AGENT_PLATFORM = `mutation ConstructSetAgentPlatform($input: SetCrowdyStudioAgentPlatformPolicyInput!) {
-  cpSetCrowdyStudioAgentPlatformPolicy(input: $input) { ${AGENT_POLICY_CORE} }
-}`;
-
-function policyReady(policy) {
+/** App row is on and allows Ask/Build/Play. Models inherit the platform catalog. */
+function appPolicyArmed(policy) {
   if (!policy || policy.enabled !== true || policy.killSwitch === true) return false;
-  const models = (policy.allowedModelIds ?? []).map(String);
   const modes = (policy.allowedModes ?? []).map(String);
-  return models.includes(STUDIO_AGENT_MODEL) && STUDIO_AGENT_MODES.every((m) => modes.includes(m));
+  return STUDIO_AGENT_MODES.every((m) => modes.includes(m));
+}
+
+function catalogVisible(policy) {
+  if (!policy || policy.killSwitch === true) return false;
+  return (policy.allowedModelIds ?? []).length > 0;
 }
 
 /**
- * 7. Arm Agentic Crowdy Studio for this app.
+ * Arm Agentic Crowdy Studio for this app only.
  *
- * The dock stays fail-closed until (1) platform policy allows a priced model,
- * (2) the app policy is enabled and not killed, and (3) the player's tier
- * holds `use_studio_agent` (step 3). Agent tokens are platform-funded — this
- * does not touch a player wallet or an OpenRouter key in the game.
- *
- * Platform writes need an operator / super-admin. On a hosted Crowded Kingdoms
- * tier a regular studio owner can still enable the *app* layer once an
- * operator has published a catalog; if that is missing we log where to click
- * in Studio and leave Setup green.
+ * The dock stays fail-closed until the *app* policy is enabled and the
+ * player's Constructor tier holds `use_studio_agent`. The platform catalog is
+ * an operator concern — this starter never reads or writes `cp*` fields.
+ * Agent tokens are platform-funded; this does not touch a player wallet or an
+ * OpenRouter key in the game.
  */
 export async function ensureAgentPolicy(identity, { appId }, log = noop) {
-  let platform = null;
-  let canSeePlatform = false;
-  try {
-    platform =
-      (await identity.graphql.query(AGENT_PLATFORM_QUERY))?.cpCrowdyStudioAgentPlatformPolicy ??
-      null;
-    canSeePlatform = true;
-  } catch (error) {
-    log(
-      `Studio Agent platform policy is not readable (${messageOf(error)}). ` +
-        'An operator enables it in Studio → Admin → Studio Agent. Continuing.',
-    );
-  }
-
-  if (canSeePlatform && !policyReady(platform)) {
-    try {
-      platform = (
-        await identity.graphql.query(SET_AGENT_PLATFORM, {
-          input: {
-            enabled: true,
-            killSwitch: false,
-            allowedModelIds: [STUDIO_AGENT_MODEL],
-            allowedModes: STUDIO_AGENT_MODES,
-            allowedToolNames: STUDIO_AGENT_TOOLS,
-            allowedRiskClasses: STUDIO_AGENT_RISKS,
-            expectedRevision: platform?.revision ?? '0',
-            idempotencyKey: 'construct-agent-platform-v1',
-          },
-        })
-      )?.cpSetCrowdyStudioAgentPlatformPolicy;
-      log(`Studio Agent platform policy enabled (${STUDIO_AGENT_MODEL}, ASK/BUILD/PLAY)`);
-    } catch (error) {
-      log(
-        `Could not enable the Studio Agent platform catalog (${messageOf(error)}). ` +
-          'Needs an operator. Studio → Admin → Studio Agent.',
-      );
-    }
-  } else if (canSeePlatform && policyReady(platform)) {
-    log('Studio Agent platform policy already allows Ask/Build/Play');
-  }
-
   let app;
   let effective;
   try {
@@ -424,8 +345,15 @@ export async function ensureAgentPolicy(identity, { appId }, log = noop) {
     return { enabled: false, skipped: true };
   }
 
-  if (policyReady(effective) || policyReady(app)) {
-    log('Studio Agent app policy already enabled');
+  if (appPolicyArmed(effective) || appPolicyArmed(app)) {
+    if (effective && !catalogVisible(effective)) {
+      log(
+        'Studio Agent app policy is on, but the platform catalog is not published. ' +
+          'The dock stays closed until an operator publishes it. Studio → your app → Agent.',
+      );
+    } else {
+      log('Studio Agent app policy already enabled');
+    }
     return { enabled: true, skipped: true };
   }
 
@@ -436,20 +364,36 @@ export async function ensureAgentPolicy(identity, { appId }, log = noop) {
           appId,
           enabled: true,
           killSwitch: false,
-          allowedModelIds: [STUDIO_AGENT_MODEL],
           allowedModes: STUDIO_AGENT_MODES,
           expectedRevision: app?.revision ?? '0',
-          idempotencyKey: `construct-agent-app-${appId}-v1`,
+          idempotencyKey: `construct-agent-app-${appId}-v2`,
         },
       })
     )?.setCrowdyStudioAgentPolicy;
-    const ok = policyReady(updated) || updated?.enabled === true;
-    log(
-      ok
-        ? 'Studio Agent app policy enabled (platform-funded; no player OpenRouter key)'
-        : `Studio Agent app policy written but not yet effective (${updated?.disableReasonCode ?? 'unknown'})`,
-    );
-    return { enabled: Boolean(ok), skipped: false };
+    let latestEffective = effective;
+    try {
+      latestEffective = (await identity.graphql.query(AGENT_APP_POLICY_QUERY, { appId }))
+        ?.crowdyStudioAgentEffectivePolicy;
+    } catch {
+      // The write is what matters; effective is best-effort for the log.
+    }
+    const armed = appPolicyArmed(updated) || updated?.enabled === true;
+    if (!armed) {
+      log(
+        `Studio Agent app policy written but not yet effective (${updated?.disableReasonCode ?? 'unknown'}). ` +
+          'Studio → your app → Agent. The dock stays hidden until that row is live.',
+      );
+      return { enabled: false, skipped: false };
+    }
+    if (latestEffective && !catalogVisible(latestEffective)) {
+      log(
+        'Studio Agent app policy enabled; platform catalog not published — ' +
+          'Studio → your app → Agent; dock stays closed.',
+      );
+    } else {
+      log('Studio Agent app policy enabled (platform-funded; no player OpenRouter key)');
+    }
+    return { enabled: true, skipped: false };
   } catch (error) {
     log(
       `Could not enable the Studio Agent app policy (${messageOf(error)}). ` +

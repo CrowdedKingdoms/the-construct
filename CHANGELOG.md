@@ -9,8 +9,16 @@ Agentic Crowdy Studio in the starter, plus a Studio wallet link.
 - `StudioService` mounts the Ask/Build/Play dock when policy and
   `use_studio_agent` are armed, with the Play safety banner outside the dock.
 - Setup grants `use_studio_agent` on the *Constructor* tier (never the default
-  visitor tier) and writes platform + app agent policy when the account can.
-  Agent tokens stay platform-funded; this game never holds an OpenRouter key.
+  visitor tier) and writes only the *app* Studio Agent policy
+  (`setCrowdyStudioAgentPolicy`). It never reads or writes operator `cp*`
+  fields. If the platform catalog is unpublished the step stays green and the
+  dock stays closed. Agent tokens stay platform-funded; this game never holds
+  an OpenRouter key.
+- Default `npm run dev` keeps production COOP/COEP and has no API proxy.
+  Local ck-api / IDE-on-public-IP stacks opt in via `VITE_DEV_PROXY`,
+  `VITE_DEV_ALLOWED_HOSTS`, and `VITE_DEV_RELAX_ISOLATION` in `.env.local`.
+- Live e2e uses hosted Studio login / consent. Node token-seed is opt-in
+  (`CONSTRUCT_E2E_SEED_TOKEN=1` plus an explicit `CROWDY_HTTP_URL`).
 - HUD **Wallet** opens Studio `/account/wallet` for grid / player-compute
   billing. First-join chat says the same. Studio origin and the hosted
   sign-in URL are derived from `VITE_AUTHORIZE_URL` / `VITE_STUDIO_URL`,

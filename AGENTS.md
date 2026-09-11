@@ -12,7 +12,9 @@ package and the public API only.
   build; `.env.example` carries no hostname and must not.
 - **Only public SDK surfaces.** If a needed operation is not wrapped by the SDK,
   use `client.graphql.query` with a public root field (as
-  `publishStarterFiles` does) and say so in a comment.
+  `publishStarterFiles` does) and say so in a comment. Never call operator
+  `cp*` fields from this repo — Setup writes app-scoped admin
+  (`setCrowdyStudioAgentPolicy`, Constructor `use_studio_agent`) only.
 - **A third party must be able to run it cold**: `git clone`, `npm install`,
   `npm run setup` (their own account), `npm run dev`, sign in through Crowded
   Kingdoms, play. Anything that needs an operator or a CK-owned resource does
@@ -50,7 +52,11 @@ There is no deploy workflow, deliberately: hosting is the developer's.
   `CONSTRUCT_EMAIL`/`CONSTRUCT_PASSWORD` → `npm run setup` → `npm run smoke`,
   then `CONSTRUCT_E2E=1 APP_ID=<id> CONSTRUCT_E2E_URL=http://localhost:5175
   npm run test:e2e` against `npm run dev` (the live test uses the dev-only
-  `window.__construct` handle).
+  `window.__construct` handle). Hosted Studio login is the path; do not seed
+  an app token unless `CONSTRUCT_E2E_SEED_TOKEN=1` and `CROWDY_HTTP_URL` are
+  set. A local ck-api or IDE-on-public-IP stack is opt-in via `VITE_DEV_*` in
+  `.env.local` (see `.env.example`); default `npm run dev` is isolating and
+  unproxied.
 - `model/blueprints.mjs`, `mods/templates/index.mjs` and
   `src/platform/onboarding/steps.mjs` are plain ES modules on purpose: the Node
   scripts import them and the browser imports the first two. Keep them free of
@@ -80,8 +86,9 @@ There is no deploy workflow, deliberately: hosting is the developer's.
   default world grid and a self-claimed chunk carry it only when the tier does
   (ck-api ≥ v1.87.3 for the claimed chunk).
 - `use_studio_agent` is also opt-in and belongs on the Constructor tier only,
-  never the default visitor tier. The dock stays fail-closed until platform
-  policy, app policy, and that key are all live. Agent tokens are
+  never the default visitor tier. The dock mounts when app policy and that
+  key are live (enforced server-side). The platform catalog is an operator
+  concern — this starter never publishes or unkills it. Agent tokens are
   platform-funded; `OPENROUTER_API_KEY` lives only in ck-api, never here.
 - The API refuses an empty `voxelState`; `ChunkStore.setVoxel` sends `''`
   without a `state`. Paint sends one byte.

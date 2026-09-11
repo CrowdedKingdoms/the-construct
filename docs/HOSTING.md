@@ -5,10 +5,17 @@ One requirement decides whether Crowdy Studio CLIENT mods work: the host must
 send the cross-origin isolation headers on **every** response (HTML, JS, wasm,
 worker scripts), and should send the Content-Security-Policy too.
 
-`security-headers.mjs` is the source of truth; the Vite dev and preview servers
-use it, and the values below are copied from it. If you change the API origin
-(`VITE_CROWDY_HTTP_URL`), regenerate the `connect-src` line — e.g.
+`security-headers.mjs` is the source of truth; the Vite **preview** server and
+default `npm run dev` use it, and the values below are copied from it. If you
+change the API origin (`VITE_CROWDY_HTTP_URL`), regenerate the `connect-src`
+line — e.g.
 `node -e "import('./security-headers.mjs').then(m=>console.log(m.buildCsp({apiOrigins:['https://YOUR_ORIGIN']})))"`.
+
+A local ck-api or IDE-on-public-IP checkout may set `VITE_DEV_PROXY`,
+`VITE_DEV_ALLOWED_HOSTS`, and `VITE_DEV_RELAX_ISOLATION` in gitignored
+`.env.local` (see `.env.example`). Those flags never apply to preview or a
+production host. `VITE_DEV_RELAX_ISOLATION=1` strips COEP/COOP on the *dev
+server only* so a plain-HTTP public IP can load; CLIENT mods stay off.
 
 ## The headers
 
