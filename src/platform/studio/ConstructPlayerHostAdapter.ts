@@ -197,7 +197,10 @@ export class ConstructPlayerHostAdapter implements PlayerHostAdapterV1 {
           'Command capability or controlled entity differs from its observation',
         );
       }
-      if (revision !== command.capabilityRevision || current.playerId !== command.controlledEntityId) {
+      if (
+        revision !== command.capabilityRevision ||
+        current.playerId !== command.controlledEntityId
+      ) {
         this.clearAgentIntent('CONTROL_TARGET_CHANGED');
         throw new CrowdyAgentError(
           'AGENT_CONTROL_TARGET_CHANGED',
@@ -234,7 +237,9 @@ export class ConstructPlayerHostAdapter implements PlayerHostAdapterV1 {
     this.observations.clear();
   }
 
-  private async route(command: Exclude<GameCommandV1, { kind: 'STOP' }>): Promise<GameCommandResultV1> {
+  private async route(
+    command: Exclude<GameCommandV1, { kind: 'STOP' }>,
+  ): Promise<GameCommandResultV1> {
     if (command.kind === 'MOVE') {
       this.options.locomotion.applyMove({
         direction: command.direction,
@@ -271,11 +276,11 @@ export class ConstructPlayerHostAdapter implements PlayerHostAdapterV1 {
     command: Exclude<GameCommandV1, { kind: 'STOP' }>,
     gate: ValidatedGateV1,
   ): void {
-    if (gate.contractVersion !== 'crowdy.validated-gate/1' || gate.observationId !== command.observationId) {
-      throw new CrowdyAgentError(
-        'AGENT_CONTEXT_STALE',
-        'Mismatched validated control gate',
-      );
+    if (
+      gate.contractVersion !== 'crowdy.validated-gate/1' ||
+      gate.observationId !== command.observationId
+    ) {
+      throw new CrowdyAgentError('AGENT_CONTEXT_STALE', 'Mismatched validated control gate');
     }
     const capability = COMMAND_CAPABILITIES.find((row) => row.kind === command.kind);
     if (!capability) {
@@ -373,7 +378,10 @@ function dec(value: number): string {
   return Number.isFinite(value) ? String(value) : '0';
 }
 
-function distance(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): number {
+function distance(
+  a: { x: number; y: number; z: number },
+  b: { x: number; y: number; z: number },
+): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 

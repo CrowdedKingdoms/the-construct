@@ -25,10 +25,7 @@ import {
   type CrowdyStudioEmbedContext,
   type CrowdyStudioEmbedHandle,
 } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
-import {
-  AgentControlBanner,
-  PlayerControlGate,
-} from '@crowdedkingdoms/crowdyjs/player-host';
+import { AgentControlBanner, PlayerControlGate } from '@crowdedkingdoms/crowdyjs/player-host';
 import glueWorkerAssetUrl from '@crowdedkingdoms/crowdyjs/player-glue-worker?worker&url';
 
 import { CLIENT_MODS_ENABLED, GAME_NAME } from '@/platform/config';
@@ -327,7 +324,9 @@ export class StudioService {
       grid: this.currentGrid,
       nearbyActors: nearby,
       humanInputActive: this.playerControlGate.humanInputActive(),
-      textInputFocused: isTextEntry(typeof document === 'undefined' ? null : document.activeElement),
+      textInputFocused: isTextEntry(
+        typeof document === 'undefined' ? null : document.activeElement,
+      ),
       modalOpen: this.embed?.modal ?? false,
     };
   }

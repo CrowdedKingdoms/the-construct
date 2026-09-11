@@ -23,7 +23,13 @@ import { CHUNK_SIZE } from '@/platform/config';
 import { HOLODECK_SCENE_ID, programBySceneId } from '@/platform/programs';
 import { NEUTRAL_POSE, type Pose } from '@/platform/realtime/actorCodec';
 import { chunkKey, worldToChunk, worldToVoxel, type ChunkCoord } from '@/platform/realtime/space';
-import { PAINT_CELL_DEFAULT, PAINT_CELL_MAX, PAINT_CELL_MIN, panOffset, zoomDistance } from '@/scenes/shared/cameraLook';
+import {
+  PAINT_CELL_DEFAULT,
+  PAINT_CELL_MAX,
+  PAINT_CELL_MIN,
+  panOffset,
+  zoomDistance,
+} from '@/scenes/shared/cameraLook';
 import { displayPose, TINT_COLORS, tintColor } from '@/scenes/shared/interpolate';
 
 const MOVE_SPEED = 9;
@@ -219,7 +225,10 @@ export class PaintScene implements GameScene {
     this.syncChunks();
     this.syncPlayers(nowMs);
     if (this.local) {
-      this.local.container.position.set(this.position.x * this.cellPx, this.position.z * this.cellPx);
+      this.local.container.position.set(
+        this.position.x * this.cellPx,
+        this.position.z * this.cellPx,
+      );
     }
     if (this.hintDirty) {
       this.hintDirty = false;

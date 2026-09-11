@@ -38,8 +38,7 @@ export default defineConfig(({ mode }) => {
       headers: Object.fromEntries(
         Object.entries(headers).filter(
           ([name]) =>
-            name !== 'Cross-Origin-Embedder-Policy' &&
-            name !== 'Cross-Origin-Opener-Policy',
+            name !== 'Cross-Origin-Embedder-Policy' && name !== 'Cross-Origin-Opener-Policy',
         ),
       ),
     },

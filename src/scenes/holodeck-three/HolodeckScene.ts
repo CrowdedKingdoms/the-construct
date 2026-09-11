@@ -217,7 +217,12 @@ export class HolodeckScene implements GameScene {
       this.localBody.position.set(this.position.x, 0.8, this.position.z);
       this.localBody.rotation.y = this.yaw;
     }
-    const off = followCameraOffset(this.yaw, this.pitch, this.cameraDistance, HOLODECK_CAMERA_HEIGHT);
+    const off = followCameraOffset(
+      this.yaw,
+      this.pitch,
+      this.cameraDistance,
+      HOLODECK_CAMERA_HEIGHT,
+    );
     const camOffset = new THREE.Vector3(off.x, off.y, off.z);
     this.camera.position.copy(this.position).add(camOffset);
     this.camera.lookAt(this.position.x, EYE_HEIGHT, this.position.z);

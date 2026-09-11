@@ -79,10 +79,7 @@ function isLoopbackHost(host: string): boolean {
  * configured as loopback, rewrite the hostname so navigation can actually
  * reach it. Path, port, and query stay intact.
  */
-function rewriteLoopbackToPageHost(
-  raw: string,
-  pageHostname?: string | null,
-): URL | null {
+function rewriteLoopbackToPageHost(raw: string, pageHostname?: string | null): URL | null {
   try {
     const url = new URL(raw);
     const pageHost = pageHostname?.trim();

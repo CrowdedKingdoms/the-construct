@@ -240,9 +240,9 @@ describe('onboarding steps', () => {
     const result = await steps.ensureAgentPolicy(identity as never, { appId: '77' });
     expect(result).toEqual({ enabled: true, skipped: false });
     const platformInput = (
-      query.mock.calls.find((c: Any[]) => String(c[0]).includes('ConstructSetAgentPlatform'))?.[1] as
-        | { input: Any }
-        | undefined
+      query.mock.calls.find((c: Any[]) =>
+        String(c[0]).includes('ConstructSetAgentPlatform'),
+      )?.[1] as { input: Any } | undefined
     )?.input;
     expect(platformInput).toEqual(
       expect.objectContaining({
@@ -255,8 +255,7 @@ describe('onboarding steps', () => {
     );
     const appInput = (
       query.mock.calls.find((c: Any[]) => String(c[0]).includes('ConstructSetAgentPolicy'))?.[1] as
-        | { input: Any }
-        | undefined
+        { input: Any } | undefined
     )?.input;
     expect(appInput).toEqual(
       expect.objectContaining({
@@ -298,8 +297,10 @@ describe('onboarding steps', () => {
       throw new Error('manage_compute required');
     });
     const lines: string[] = [];
-    const result = await steps.ensureAgentPolicy({ graphql: { query } } as never, { appId: '77' }, (line) =>
-      lines.push(line),
+    const result = await steps.ensureAgentPolicy(
+      { graphql: { query } } as never,
+      { appId: '77' },
+      (line) => lines.push(line),
     );
     expect(result).toEqual({ enabled: false, skipped: true });
     expect(lines.some((line) => /Studio → your app → Agent/.test(line))).toBe(true);

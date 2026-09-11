@@ -40,12 +40,7 @@ export const CONSTRUCTOR_TIER_KEYS = [
 /** Model the platform agent catalog already prices; ZDR + tools required. */
 export const STUDIO_AGENT_MODEL = 'openai/gpt-oss-120b';
 export const STUDIO_AGENT_MODES = ['ASK', 'BUILD', 'PLAY'];
-export const STUDIO_AGENT_RISKS = [
-  'READ_ONLY',
-  'ROUTINE_WRITE',
-  'WORLD_CONTROL',
-  'DESTRUCTIVE',
-];
+export const STUDIO_AGENT_RISKS = ['READ_ONLY', 'ROUTINE_WRITE', 'WORLD_CONTROL', 'DESTRUCTIVE'];
 export const STUDIO_AGENT_TOOLS = [
   'studio.context.get',
   'project.list',
@@ -532,9 +527,7 @@ export async function runOnboarding(options) {
   await step('studio', 'Crowdy Studio starter files', () =>
     publishStarterFiles(game, { appId }, log),
   );
-  await step('agent', 'Crowdy Agent policy', () =>
-    ensureAgentPolicy(identity, { appId }, log),
-  );
+  await step('agent', 'Crowdy Agent policy', () => ensureAgentPolicy(identity, { appId }, log));
   report.org = org;
   report.app = app;
   report.appId = appId;

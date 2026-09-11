@@ -209,11 +209,7 @@ export class Hud implements SceneHud {
     const mods = state.clientModsAvailable
       ? `client mods on${state.clientModsRunning ? ` · ${state.clientModsRunning} running` : ''}`
       : 'client mods off';
-    const agent = state.agentReady
-      ? 'agent on'
-      : state.agentReason
-        ? 'agent off'
-        : 'agent';
+    const agent = state.agentReady ? 'agent on' : state.agentReason ? 'agent off' : 'agent';
     this.studioChip.replaceChildren(
       el('div', { class: 'row' }, [
         el('strong', { text: state.open ? 'Studio open' : 'Studio' }),
@@ -221,7 +217,8 @@ export class Hud implements SceneHud {
       ]),
       el('div', { class: 'row muted' }, [perms ? `${perms} · ` : '', mods, ` · ${agent}`]),
     );
-    const bannerText = state.clientModsReason ?? (state.agentReason && !state.open ? state.agentReason : null);
+    const bannerText =
+      state.clientModsReason ?? (state.agentReason && !state.open ? state.agentReason : null);
     if (bannerText && !this.bannerDismissed) {
       this.bannerText.textContent = bannerText;
       this.banner.classList.remove('hidden');

@@ -53,10 +53,12 @@ describe('ConstructPlayerHostAdapter', () => {
     const { adapter } = setup();
     const capabilities = await adapter.capabilities();
     expect(capabilities.gameId).toBe('the-construct');
-    expect(capabilities.commands.map((c) => c.toolName)).toEqual(CONSTRUCT_AGENT_TOOL_NAMES.slice(2));
-    expect(capabilities.commands.some((c) => /inventory|combat|craft|mount|teleport/i.test(c.toolName))).toBe(
-      false,
+    expect(capabilities.commands.map((c) => c.toolName)).toEqual(
+      CONSTRUCT_AGENT_TOOL_NAMES.slice(2),
     );
+    expect(
+      capabilities.commands.some((c) => /inventory|combat|craft|mount|teleport/i.test(c.toolName)),
+    ).toBe(false);
   });
 
   it('observes nearby players and the current grid', async () => {
