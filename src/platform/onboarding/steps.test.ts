@@ -307,4 +307,27 @@ describe('onboarding steps', () => {
     expect(result).toEqual({ enabled: true, skipped: false });
     expect(lines.some((line) => /platform catalog not published/.test(line))).toBe(true);
   });
+
+  it('checks GitHub integration status and logs advisory when unconnected', async () => {
+    const lines: string[] = [];
+    const unconnectedGame = {
+      crowdyStudioGitHub: {
+        status: async () => ({ connected: false, owner: null, repo: null }),
+      },
+    };
+    const resUnconnected = await steps.checkGitHubIntegration(unconnectedGame as never, { appId: '77' }, (l) => lines.push(l));
+    expect(resUnconnected.connected).toBe(false);
+    expect(resUnconnected.skipped).toBe(true);
+    expect(lines.some((l) => /Advisory: No GitHub repository bound/.test(l))).toBe(true);
+
+    const connectedGame = {
+      crowdyStudioGitHub: {
+        status: async () => ({ connected: true, owner: 'modder', repo: 'my-mod' }),
+      },
+    };
+    const resConnected = await steps.checkGitHubIntegration(connectedGame as never, { appId: '77' });
+    expect(resConnected.connected).toBe(true);
+    expect(resConnected.skipped).toBe(false);
+    expect(resConnected.repo).toBe('modder/my-mod');
+  });
 });

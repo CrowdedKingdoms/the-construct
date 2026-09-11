@@ -7,5 +7,7 @@ export interface SecurityHeaderOptions {
 
 export function tierZoneWildcards(origins: Array<string | null | undefined>): string[];
 export function buildCsp(options?: SecurityHeaderOptions): string;
+export function buildDshCsp(options?: SecurityHeaderOptions): string;
 export function securityHeaders(options?: SecurityHeaderOptions): Record<string, string>;
+export function dshSecurityHeaders(options?: SecurityHeaderOptions): Record<string, string>;
 export const ISOLATION_HEADERS: readonly string[];

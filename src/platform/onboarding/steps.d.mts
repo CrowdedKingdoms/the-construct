@@ -10,7 +10,7 @@ export function slugify(value: string): string;
 export type Logger = (line: string) => void;
 
 export interface OnboardingStepEvent {
-  id: 'org' | 'app' | 'tier' | 'redirects' | 'enter' | 'claims' | 'model' | 'studio' | 'agent';
+  id: 'org' | 'app' | 'tier' | 'redirects' | 'enter' | 'claims' | 'model' | 'studio' | 'agent' | 'github';
   label: string;
   status: 'running' | 'done' | 'failed';
   value?: unknown;
@@ -87,4 +87,9 @@ export function ensureAgentPolicy(
   input: { appId: string },
   log?: Logger,
 ): Promise<{ enabled: boolean; skipped: boolean }>;
+export function checkGitHubIntegration(
+  game: CrowdyClient,
+  input: { appId: string },
+  log?: Logger,
+): Promise<{ connected: boolean; skipped: boolean; repo?: string }>;
 export function runOnboarding(options: RunOnboardingOptions): Promise<OnboardingReport>;

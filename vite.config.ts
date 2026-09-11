@@ -5,9 +5,35 @@ import { defineConfig, loadEnv } from 'vite';
 
 import { constructDevServerOptions, envFlag } from './scripts/lib/dev-server-options.mjs';
 import { sdkDefaultHttpOrigin } from './scripts/lib/sdk-default-origin.mjs';
-import { securityHeaders } from './security-headers.mjs';
+import { dshSecurityHeaders, securityHeaders } from './security-headers.mjs';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
+
+function dshHeadersPlugin(dshHeaders: Record<string, string>) {
+  return {
+    name: 'construct-dsh-headers',
+    configureServer(server: any) {
+      server.middlewares.use((req: any, res: any, next: any) => {
+        if (req.url && (req.url.startsWith('/dsh/') || req.url === '/dsh')) {
+          for (const [name, value] of Object.entries(dshHeaders)) {
+            res.setHeader(name, value);
+          }
+        }
+        next();
+      });
+    },
+    configurePreviewServer(server: any) {
+      server.middlewares.use((req: any, res: any, next: any) => {
+        if (req.url && (req.url.startsWith('/dsh/') || req.url === '/dsh')) {
+          for (const [name, value] of Object.entries(dshHeaders)) {
+            res.setHeader(name, value);
+          }
+        }
+        next();
+      });
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, rootDir, '');
@@ -15,8 +41,10 @@ export default defineConfig(({ mode }) => {
   // override, or the origin baked into the installed SDK for its tier.
   const apiOrigin = env.VITE_CROWDY_HTTP_URL?.trim() || sdkDefaultHttpOrigin(rootDir);
   const headers = securityHeaders({ apiOrigins: [apiOrigin] });
+  const dshHeaders = dshSecurityHeaders({ apiOrigins: [apiOrigin] });
 
   return {
+    plugins: [dshHeadersPlugin(dshHeaders)],
     resolve: {
       alias: { '@': path.resolve(rootDir, 'src') },
     },

@@ -25,10 +25,9 @@ import {
   type CrowdyStudioEmbedContext,
   type CrowdyStudioEmbedHandle,
 } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
-import { AgentControlBanner, PlayerControlGate } from '@crowdedkingdoms/crowdyjs/player-host';
 import glueWorkerAssetUrl from '@crowdedkingdoms/crowdyjs/player-glue-worker?worker&url';
 
-import { CLIENT_MODS_ENABLED, GAME_NAME } from '@/platform/config';
+import { API_HTTP_URL, CLIENT_MODS_ENABLED, GAME_NAME, STUDIO_ORIGIN } from '@/platform/config';
 import type { GameSession } from '@/platform/GameSession';
 import { messageOf } from '@/platform/network/NetworkManager';
 import { isTextEntry } from '@/engine/Input';
@@ -66,8 +65,9 @@ export interface StudioHooks {
   notify(text: string, tone?: 'info' | 'warn' | 'error'): void;
   /** Ask the player whether to trust an author's mods; defaults to `confirm`. */
   confirmTrust?(summary: string): Promise<boolean>;
-  /** Parent for the always-visible Play safety banner. */
-  bannerParent?: HTMLElement;
+  /** Screenshot hook for the agent pane. */
+  captureFrame?(): Promise<HTMLCanvasElement | ImageBitmap | Blob | null>;
+  describeView?(): string | undefined;
 }
 
 const GRID_REFRESH_MS = 8_000;
@@ -90,10 +90,6 @@ export class StudioService {
   private readonly declinedAuthors = new Set<string>();
   private readonly approvedAuthors = new Set<string>();
   private readonly agentHost: ConstructPlayerHostAdapter;
-  private readonly playerControlGate: PlayerControlGate;
-  private agentBanner: AgentControlBanner | null = null;
-  private unbindAgentControl: (() => void) | null = null;
-  private unbindAgentBanner: (() => void) | null = null;
   private gridEnteredAt = 0;
   private embed: CrowdyStudioEmbed | null = null;
   private hooks: StudioHooks | null = null;
@@ -112,10 +108,6 @@ export class StudioService {
       locomotion: this.locomotion,
       sendChat: (text) => this.session.chat.send(text),
     });
-    this.playerControlGate = new PlayerControlGate(
-      (reason) => this.agentHost.clearAgentIntent(reason),
-      { onPreempt: () => this.agentHost.invalidateObservations() },
-    );
     const isolated = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated;
     this.state = {
       open: false,
@@ -137,10 +129,7 @@ export class StudioService {
   /** Wire the engine-side hooks; call once after the loop exists. */
   attach(hooks: StudioHooks): void {
     this.hooks = hooks;
-    this.playerControlGate.start();
-    if (hooks.bannerParent) {
-      this.agentBanner = new AgentControlBanner(hooks.bannerParent, this.playerControlGate);
-    }
+    const network = () => this.session.network;
     this.embed = new CrowdyStudioEmbed({
       // Resolved lazily: the game client exists only after enterApp, and is
       // rebuilt if the player switches apps.
@@ -154,23 +143,39 @@ export class StudioService {
         get playerWallet() {
           return network().game.playerWallet;
         },
-        get crowdyStudioAgent() {
-          return network().game.crowdyStudioAgent;
+        get crowdyStudioGitHub() {
+          return network().game.crowdyStudioGitHub;
         },
       },
       appId: () => this.session.appId,
       gameName: GAME_NAME,
       closeKeyCode: 'KeyM',
-      agentSession: { idempotencyKeyPrefix: 'construct-agent-session:' },
-      controlGate: { maxLeaseSeconds: 120 },
-      onAgentMounted: (handle) => this.bindAgent(handle),
-      onAgentUnavailable: (message) => this.markAgentUnavailable(message),
-      onAgentUnmounted: () => this.releaseAgentBindings(),
+      dsh: {
+        graphql: network().game.graphql,
+        webBase: '/dsh/',
+        graphqlUrl: `${API_HTTP_URL}/graphql`,
+        apiOrigin: API_HTTP_URL,
+        getToken: () => network().game.getToken(),
+        persistScope: `${this.session.appId}/${this.session.selfUuid}`,
+        studioOrigin: STUDIO_ORIGIN ?? undefined,
+        openOnMount: true,
+      },
+      onAgentMounted: (_handle) => {
+        this.state = { ...this.state, agentReady: true, agentReason: null };
+        this.emit();
+      },
+      onAgentUnavailable: (message) => {
+        this.state = { ...this.state, agentReady: false, agentReason: message };
+        this.emit();
+      },
+      onAgentUnmounted: () => {
+        this.state = { ...this.state, agentReady: false, agentReason: null };
+        this.emit();
+      },
       suppressGameplayInput: () => hooks.suppressGameplayInput(),
       onLayoutChange: () => hooks.onLayoutChange(this.readRightInset()),
       onClosed: () => this.setOpen(false),
     });
-    const network = () => this.session.network;
     if (!this.timer) this.timer = setInterval(() => void this.poll(), 2000);
     this.emit();
   }
@@ -234,12 +239,8 @@ export class StudioService {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.lifecycle.shutdown();
-    this.releaseAgentBindings();
     this.embed?.destroy();
     this.embed = null;
-    this.agentBanner?.destroy();
-    this.agentBanner = null;
-    this.playerControlGate.destroy();
     this.locomotion.clear();
     this.hud.destroy();
   }
@@ -277,35 +278,11 @@ export class StudioService {
           }
         : {}),
       playerHost: this.agentHost,
+      dshHost: {
+        captureFrame: async () => (await this.hooks?.captureFrame?.()) ?? null,
+        describeView: () => this.hooks?.describeView?.(),
+      },
     };
-  }
-
-  private bindAgent(handle: CrowdyStudioEmbedHandle): void {
-    this.releaseAgentBindings();
-    if (!handle.agent || !handle.controlLeaseManager) {
-      this.markAgentUnavailable('CrowdyJS agent host is disabled');
-      return;
-    }
-    this.unbindAgentControl = this.playerControlGate.bind(handle.controlLeaseManager, handle.agent);
-    if (this.agentBanner) this.unbindAgentBanner = this.agentBanner.bind(handle.agent);
-    this.state = { ...this.state, agentReady: true, agentReason: null };
-    this.emit();
-  }
-
-  private markAgentUnavailable(message: string): void {
-    this.releaseAgentBindings();
-    this.agentBanner?.showUnavailable(message);
-    this.state = { ...this.state, agentReady: false, agentReason: message };
-    this.emit();
-    this.hooks?.notify(message, 'warn');
-  }
-
-  private releaseAgentBindings(): void {
-    this.unbindAgentBanner?.();
-    this.unbindAgentBanner = null;
-    this.unbindAgentControl?.();
-    this.unbindAgentControl = null;
-    this.locomotion.clear();
   }
 
   private observationFrame() {
@@ -323,7 +300,7 @@ export class StudioService {
       pitch: pose?.pitch ?? 0,
       grid: this.currentGrid,
       nearbyActors: nearby,
-      humanInputActive: this.playerControlGate.humanInputActive(),
+      humanInputActive: false,
       textInputFocused: isTextEntry(
         typeof document === 'undefined' ? null : document.activeElement,
       ),
@@ -389,7 +366,6 @@ export class StudioService {
       this.approvedAuthors.clear();
       this.lastModsReadAt = 0;
       this.gridEnteredAt = Date.now();
-      this.playerControlGate.contextChanged();
     }
     this.state = { ...this.state, grid };
     this.emit();

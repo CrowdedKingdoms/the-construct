@@ -403,6 +403,29 @@ export async function ensureAgentPolicy(identity, { appId }, log = noop) {
   }
 }
 
+/**
+ * Best practice: verify whether the app is connected to GitHub so players know
+ * GitHub can be their source of truth for files. Advisory only.
+ */
+export async function checkGitHubIntegration(game, { appId }, log = noop) {
+  try {
+    const status = await game?.crowdyStudioGitHub?.status?.({ appId });
+    if (status?.connected && status?.owner && status?.repo) {
+      const repo = `${status.owner}/${status.repo}`;
+      log(`GitHub repository connected: ${repo}`);
+      return { connected: true, skipped: false, repo };
+    }
+    log(
+      'Advisory: No GitHub repository bound. In Crowdy Studio, bind a GitHub repository ' +
+        'so GitHub serves as your source of truth for files.',
+    );
+    return { connected: false, skipped: true };
+  } catch (err) {
+    log(`GitHub integration check skipped (${messageOf(err)}).`);
+    return { connected: false, skipped: true };
+  }
+}
+
 function messageOf(error) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -472,6 +495,9 @@ export async function runOnboarding(options) {
     publishStarterFiles(game, { appId }, log),
   );
   await step('agent', 'Crowdy Agent policy', () => ensureAgentPolicy(identity, { appId }, log));
+  await step('github', 'GitHub repository integration', () =>
+    checkGitHubIntegration(game, { appId }, log),
+  );
   report.org = org;
   report.app = app;
   report.appId = appId;

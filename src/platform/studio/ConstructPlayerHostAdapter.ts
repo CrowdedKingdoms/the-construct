@@ -6,18 +6,19 @@
  * inventory, combat, craft, mount, or teleport: this starter does not have
  * those services. Effects never touch the token, GraphQL, or the mod worker.
  */
-import { CrowdyAgentError, toAgentError } from '@crowdedkingdoms/crowdyjs/agent';
-import type { CrowdyAgentPreemptionReason } from '@crowdedkingdoms/crowdyjs/agent';
-import type {
-  GameCommandResultV1,
-  GameCommandV1,
-  GameObservationV1,
-  ObserveRequestV1,
-  PlayerHostAdapterV1,
-  PlayerHostCapabilitiesV1,
-  PlayerHostCommandCapabilityV1,
-  PlayerHostLeaseScope,
-  ValidatedGateV1,
+import {
+  CrowdyAgentError,
+  toAgentError,
+  type CrowdyAgentPreemptionReason,
+  type GameCommandResultV1,
+  type GameCommandV1,
+  type GameObservationV1,
+  type ObserveRequestV1,
+  type PlayerHostAdapterV1,
+  type PlayerHostCapabilitiesV1,
+  type PlayerHostCommandCapabilityV1,
+  type PlayerHostLeaseScope,
+  type ValidatedGateV1,
 } from '@crowdedkingdoms/crowdyjs/player-host';
 
 import type { AgentLocomotion } from '@/platform/studio/agentLocomotion';

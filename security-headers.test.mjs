@@ -5,6 +5,8 @@ import {
   ISOLATION_HEADERS,
   PERMISSIONS_POLICY,
   buildCsp,
+  buildDshCsp,
+  dshSecurityHeaders,
   securityHeaders,
   tierZoneWildcards,
 } from './security-headers.mjs';
@@ -36,7 +38,20 @@ test('csp never relaxes inline script and keeps workers same-origin', () => {
   assert.ok(!csp.includes("'unsafe-inline'") || csp.includes("style-src 'self' 'unsafe-inline'"));
   assert.match(csp, /script-src 'self' 'wasm-unsafe-eval'(;|$)/);
   assert.match(csp, /worker-src 'self' blob:/);
+  assert.match(csp, /frame-src 'self'/);
   assert.match(csp, /frame-ancestors 'none'/);
+});
+
+test('dsh csp relaxes script-src for the worker and permits same-origin frame ancestors', () => {
+  const csp = buildDshCsp({ apiOrigins: ['https://ck.dev.example.com'] });
+  assert.match(csp, /script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:/);
+  assert.match(csp, /frame-ancestors 'self'/);
+  assert.match(csp, /frame-src 'self'/);
+  const connect = csp.split('; ').find((d) => d.startsWith('connect-src '));
+  assert.ok(connect?.includes('blob:'));
+  const headers = dshSecurityHeaders({ apiOrigins: ['https://ck.dev.example.com'] });
+  assert.equal(headers['Cross-Origin-Embedder-Policy'], 'credentialless');
+  assert.equal(headers['Cross-Origin-Opener-Policy'], 'same-origin');
 });
 
 test('localhost and IP origins get no wildcard', () => {

@@ -14,7 +14,8 @@ walkthrough and the security story, in that order.
 | Visitors may run mods | Added `run_server_code` + `run_client_code` to the default free tier | Fetching a grid's CLIENT artifact is gated on the **visitor's** tier |
 | Claimable chunks | Set the grid claim policy to `SELF_CLAIM` | `claimGridChunk` refuses under other policies |
 | Starter files | Published four common files (two templates × entrypoint + Cargo.toml) | Imported copy-by-value into your projects |
-| Crowdy Agent | Enabled the **app** Studio Agent policy and put `use_studio_agent` on Constructor | Ask/Build/Play in the Studio dock when that row and key are live. The platform catalog is operator-published; Setup does not touch it. Tokens are platform-funded — no OpenRouter key in this game. |
+| Studio Agent | Enabled the **app** Studio Agent policy and put `use_studio_agent` on Constructor | DeepSeek Harness (DSH) runs in a Web Worker inside the Studio agent pane, editing the open project (or bound GitHub repo) and testing drafts. Model tokens are billed per request to your player wallet by default (or the app's org wallet). |
+| GitHub integration | Checked GitHub connection status (advisory step) | Best practice: bind a GitHub repository in Studio so GitHub is your source of truth for files and version history. |
 | Cross-origin isolation | Vite sends COOP/COEP; production hosts must too ([HOSTING.md](HOSTING.md)) | The CLIENT sandbox bridge needs `SharedArrayBuffer` |
 
 ## Walkthrough: a CLIENT mod your visitors see
@@ -37,11 +38,15 @@ walkthrough and the security story, in that order.
    --offline`, then metering and optimisation). The console shows the build;
    the greeter starts in your sandbox and writes to the mod HUD:
    `Welcome, <you>!`.
-5. **Ask / Build / Play** in the agent dock (Constructor only). Ask explains
-   the project; Build writes files through the same Studio tools; Play can walk
-   and look for you on this holodeck (Pause / Stop stay on the always-visible
-   banner). Agent usage is platform-funded. **Wallet** in the HUD is for grid
-   / player-compute billing, not the agent.
+5. **Live-code with the Studio Agent** in the agent pane (Constructor only).
+   The agent runs the DeepSeek Harness directly in your browser. It can read
+   and edit your project files (committing to GitHub when a repository is bound),
+   run `draft_test`, observe your surroundings with `game_observe`, and inspect
+   screenshots of the game. Use the **Screenshot** button to share what you see,
+   or click **Fix with AI** on any compiler diagnostic in the Problems panel.
+   Model usage is metered per request at the rate card and billed to your
+   player wallet by default (or the app's org wallet). Use **Account > Wallet**
+   in Studio to manage funds.
 6. **Run ▾ → Deploy live.** The SERVER module is now scheduled while your app
    has players, and its CLIENT companion is attached to your grid.
 7. Have someone else walk onto your chunk. They are asked once to trust your
