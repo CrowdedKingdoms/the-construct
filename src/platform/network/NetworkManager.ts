@@ -37,6 +37,7 @@ import {
   API_WS_URL,
   APP_TOKEN_REFRESH_MS,
   APP_TOKEN_REFRESH_RETRY_MS,
+  AUTHORIZE_URL,
 } from '@/platform/config';
 import { envScopedKey, readScoped, writeScoped } from '@/platform/envScope';
 import { Emitter } from '@/platform/util/Emitter';
@@ -152,6 +153,7 @@ export class NetworkManager {
     await this.platform.portal.signIn({
       appId,
       redirectUri: window.location.origin + window.location.pathname,
+      ...(AUTHORIZE_URL ? { authorizeUrl: AUTHORIZE_URL } : {}),
     });
   }
 
@@ -317,6 +319,9 @@ export class NetworkManager {
           retryInitialDelayMs: 250,
           retryMaxDelayMs: 5_000,
           waitTimeoutMs: 5_000,
+          // Live video/voice should ride the binary relay when the API
+          // exposes it; CrowdyJS falls back to GraphQL if it is down.
+          binaryTransport: true,
           // ALWAYS the shared origin, never the per-instance URL above: a
           // token-holding client cannot re-mint, so when its instance dies
           // it must be able to ask a name that always answers.

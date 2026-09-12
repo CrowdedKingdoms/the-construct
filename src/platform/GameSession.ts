@@ -2,7 +2,7 @@
  * The engine-agnostic facade scenes receive. One instance per entered app.
  *
  * It wraps the World Stores session (presence, chunks, save), chat, webcam,
- * and the player's identity as a small, stable surface. Scenes read `players()` to
+ * voice, and the player's identity as a small, stable surface. Scenes read `players()` to
  * render others and never touch the SDK; the loop calls `feedPose` / `moveTo`
  * with what the active scene reports.
  */
@@ -19,6 +19,7 @@ import {
   type SaveState,
 } from '@/platform/realtime/WorldStores';
 import { WebcamService } from '@/platform/media/WebcamService';
+import { VoiceService } from '@/platform/media/VoiceService';
 import { ModelService } from '@/platform/model/ModelService';
 import { ChatService } from '@/platform/social/ChatService';
 import { StudioService } from '@/platform/studio/StudioService';
@@ -36,6 +37,8 @@ export class GameSession {
   readonly chat: ChatService;
   /** Proximity webcam: `toggle()` to send; scenes listen for `frame`/`ended`. */
   readonly webcam: WebcamService;
+  /** Proximity voice: `toggle()` to send; playback is automatic. */
+  readonly voice: VoiceService;
   readonly studio: StudioService;
   readonly model: ModelService;
   /** Flipped by the Studio service so other players see the "coding" marker. */
@@ -60,6 +63,33 @@ export class GameSession {
       },
       appId: () => this.appId,
       sendVideoFrame: (input) => network.game.udp.sendVideoFrame(input),
+      log: (message) => network.log(message),
+    });
+    this.voice = new VoiceService({
+      onAudio: (handler) => network.on('audio', handler),
+      onActorLeft: (handler) => network.on('actorLeft', handler),
+      onLaneLeave: (handler) =>
+        this.world.actors.lane('players').onLeave((actor) => handler(actor.uuid)),
+      selfUuid: () => (this.joinedFlag ? this.world.self.uuid : null),
+      selfChunk: () => {
+        if (!this.joinedFlag) return null;
+        const chunk = this.world.self.chunk;
+        return chunk ? { x: String(chunk.x), y: String(chunk.y), z: String(chunk.z) } : null;
+      },
+      selfPosition: () => {
+        if (!this.joinedFlag) return null;
+        const pose = this.world.self.state;
+        return pose ? { x: pose.x, y: pose.y, z: pose.z } : null;
+      },
+      remotePositions: () =>
+        remotePlayers().map((player) => ({
+          uuid: player.uuid,
+          x: player.pose.x,
+          y: player.pose.y,
+          z: player.pose.z,
+        })),
+      appId: () => this.appId,
+      sendAudioPacket: (input) => network.game.udp.sendAudioPacket(input),
       log: (message) => network.log(message),
     });
     this.studio = new StudioService(this);
@@ -137,6 +167,7 @@ export class GameSession {
     this.joinedFlag = true;
     this.chat.start();
     this.webcam.listen();
+    this.voice.listen();
     this.world.save.patch({ visits: (this.save.visits ?? 0) + 1 });
     this.events.emit('joined', {
       chunk: { x: Number(chunk.x), y: Number(chunk.y), z: Number(chunk.z) },
@@ -193,6 +224,7 @@ export class GameSession {
     this.joinedFlag = false;
     this.chat.stop();
     this.webcam.dispose();
+    this.voice.dispose();
     this.studio.close();
     await this.flushSave();
     disposeWorldSession();

@@ -34,6 +34,8 @@ export interface SceneHud {
   setHint(text: string | null): void;
   /** A short-lived notice. */
   toast(text: string, tone?: 'info' | 'warn' | 'error'): void;
+  /** Replace the F1 / ? overlay lines for this scene. */
+  setHelpLines?(lines: string[]): void;
 }
 
 export interface SceneSize {

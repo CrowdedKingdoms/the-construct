@@ -6,6 +6,8 @@ import { defineConfig } from 'vitest/config';
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  // Unit tests must not inherit `.env.local` (same-origin API, app id, Studio URL).
+  envDir: path.resolve(rootDir, 'src'),
   resolve: {
     alias: { '@': path.resolve(rootDir, 'src') },
   },
