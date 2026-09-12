@@ -323,6 +323,24 @@ label {
   text-overflow: ellipsis;
 }
 
+.hud-help {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 14px 18px;
+  font-size: 13px;
+  line-height: 1.45;
+  min-width: 280px;
+  max-width: min(420px, calc(100% - 40px));
+}
+
+.hud-help strong {
+  display: block;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
 .toasts {
   position: absolute;
   left: 50%;

@@ -1,16 +1,19 @@
 {
   "name": "the-construct",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "private": true,
-  "description": "Starter repo for browser games on Crowded Kingdoms: engine-agnostic platform layer, three.js holodeck hub, pixi.js program scene, Crowdy Studio with client mods, and in-app onboarding.",
+  "description": "Starter repo for browser games on Crowded Kingdoms: engine-agnostic platform layer, three.js holodeck hub, pixi.js program scene, Crowdy Studio with client mods and the Ask/Build/Play agent, and in-app onboarding.",
   "type": "module",
   "license": "MIT",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
+    "predev": "node scripts/copy-dsh-web.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-dsh-web.mjs",
     "build": "tsc -p tsconfig.json && vite build",
+    "dsh:copy": "node scripts/copy-dsh-web.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
@@ -18,7 +21,7 @@
     "format:check": "prettier --check .",
     "test": "npm run test:unit && npm run test:headers",
     "test:unit": "vitest run",
-    "test:headers": "node --test security-headers.test.mjs",
+    "test:headers": "node --test security-headers.test.mjs scripts/lib/dev-server-options.test.mjs",
     "test:e2e": "playwright test",
     "check:pin": "node scripts/ci/check-sdk-pin.mjs",
     "setup": "node scripts/setup.mjs",
@@ -26,11 +29,12 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
-    "@crowdedkingdoms/crowdyjs": "15.12.1-test.1",
+    "@crowdedkingdoms/crowdyjs": "16.0.0-test.1",
     "pixi.js": "^8.20.1",
     "three": "^0.185.1"
   },
   "devDependencies": {
+    "@crowdedkingdoms/crowdy-dsh": "0.2.1-test.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^20.19.0",
