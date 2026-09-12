@@ -19,9 +19,9 @@ Clone it, run it, then replace the demo scenes with your game.
 | --- | --- | --- |
 | Holodeck | A three.js hub where players arrive, see each other, chat, and step on pads | `src/scenes/holodeck-three/` |
 | Paint | A pixi.js program: a shared canvas painted with persisted voxels | `src/scenes/program-pixi/` |
-| Platform layer | Hosted sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B), model, Studio — engine-agnostic | `src/platform/` |
+| Platform layer | Hosted sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B) and voice (V), model, Studio — engine-agnostic | `src/platform/` |
 | Adapter boundary | The small `GameScene` contract both renderers implement | `src/engine/`, [docs/RENDERER-ADAPTER.md](docs/RENDERER-ADAPTER.md) |
-| Crowdy Studio | The in-game IDE: players claim a chunk and write SERVER + CLIENT Rust mods | `src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
+| Crowdy Studio | The in-game IDE: players claim a chunk, write SERVER + CLIENT Rust mods, and use the Ask/Build/Play agent | `src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
 | Game model | Kit blueprints (progression, leaderboards) + a hand-authored catalog, seeded idempotently | `model/blueprints.mjs` |
 | Setup | org → free app → access tier → redirect URIs → seed → Studio starter files, from a shell (`npm run setup`) | `src/platform/onboarding/`, `scripts/setup.mjs` |
 | Security headers | COOP/COEP/CSP that make CLIENT mods possible, plus the Permissions-Policy the camera needs, wired into Vite and documented per host | `security-headers.mjs`, [docs/HOSTING.md](docs/HOSTING.md) |
@@ -45,11 +45,14 @@ npm install
      npm run setup -- --org "My studio" --app "The Construct"
    ```
 
-   Eight idempotent steps run: organization, free app on shared hosting, a
-   *Constructor* access tier with the Crowdy Studio code keys, the dev server
-   registered as a **redirect URI**, an app token, the self-claim grid policy,
-   the game model, and the Studio starter files. It prints an app id; copy
-   `.env.example` to `.env.local` and set `VITE_APP_ID` to it.
+   Nine idempotent steps run: organization, free app on shared hosting, a
+   *Constructor* access tier with the Crowdy Studio code keys and
+   `use_studio_agent`, the dev server registered as a **redirect URI**, an app
+   token, the self-claim grid policy, the game model, the Studio starter files,
+   and the Studio Agent **app** policy. Setup never writes operator platform
+   policy. If the platform catalog is unpublished the dock stays closed (an
+   operator publishes it; a third-party clone cannot). It prints an app id;
+   copy `.env.example` to `.env.local` and set `VITE_APP_ID` to it.
 
    Why a shell and not the browser: creating an app needs your account's
    session, and a game on its own domain never holds one -- see step 2.
@@ -59,21 +62,34 @@ npm install
    password: since ck-api v1.88.0 the direct sign-in calls are served only to
    Crowded Kingdoms' own pages, so this hosted flow is the only one a game on
    its own domain can use.
-3. **Enter The Construct.** You are in the holodeck. `WASD` moves, click to
-   look, `T` chats, `E` on a pad. Open a second browser (or a friend does) at
-   the same URL — you see each other.
+3. **Enter The Construct.** You are in the holodeck. `WASD` moves, click the
+   canvas or hold right-mouse to look, scroll to zoom, `T` or Enter chats,
+   `B` camera, `V` voice, `E` on a pad, `F1` for the control list. Open a
+   second browser (or a friend does) at the same URL — you see each other.
 4. Step on **Load: Paint** and press `E`: the pixi.js program. Click to paint;
-   the cells replicate live and persist.
+   scroll to zoom; middle-drag or Alt+click to pan. The cells replicate live
+   and persist.
 5. Step on **Claim & Studio** and press `E`: you claim the chunk you stand on
-   and Crowdy Studio opens beside the game. Follow [docs/MODDING.md](docs/MODDING.md)
-   to deploy a mod that runs in the browser — yours and your visitors'.
+   and Crowdy Studio opens beside the game. The Ask/Build/Play agent lives in
+   that dock (Constructor tier, platform-funded — no OpenRouter key in this
+   game). **Wallet** in the HUD opens Studio for grid / player-compute billing.
+   Follow [docs/MODDING.md](docs/MODDING.md) to deploy a mod that runs in the
+   browser — yours and your visitors'.
 
 Everything but `VITE_APP_ID` is optional: the installed SDK build already knows
 the API origin for its tier. When you deploy somewhere other than
 `http://localhost:5175`, register that origin too -- `npm run setup -- --origin
 https://play.example.com`, or Studio > Apps > Settings > Sign-in & redirect
 URIs. That list is both where sign-in may return your players and the API's
-CORS allow-list for your app.
+CORS allow-list for your app. If `VITE_CROWDY_HTTP_URL` is a same-origin proxy
+or raw IP rather than a CK tier host, set `VITE_AUTHORIZE_URL` to Studio's
+`/authorize` (the SDK cannot derive it).
+
+A local ck-api or IDE-on-public-IP stack is **opt-in**. Default `npm run dev`
+sends the same COOP/COEP as preview/production and does not proxy the API.
+Put `VITE_DEV_PROXY=1`, `VITE_DEV_ALLOWED_HOSTS=1`, and/or
+`VITE_DEV_RELAX_ISOLATION=1` in gitignored `.env.local` only — see
+`.env.example`. A normal clone talking to a CK tier leaves them unset.
 
 ## Command reference
 
@@ -82,7 +98,7 @@ CORS allow-list for your app.
 | `npm run dev` | Vite dev server with the production security headers |
 | `npm run build` / `npm run preview` | Production bundle, and serve it locally with the same headers |
 | `npm test` | Unit tests (vitest) + CSP builder tests (`node --test`) |
-| `npm run test:e2e` | Playwright: boots cross-origin isolated; with `CONSTRUCT_E2E=1` and credentials, signs in and opens Studio |
+| `npm run test:e2e` | Playwright: boots cross-origin isolated and shows hosted sign-in; with `CONSTRUCT_E2E=1` and credentials, completes Studio login / consent and opens Studio. Node token-seed is `CONSTRUCT_E2E_SEED_TOKEN=1` + `CROWDY_HTTP_URL` only |
 | `npm run lint` / `npm run typecheck` / `npm run format:check` | Quality gates CI runs |
 | `npm run setup -- --org "…" --app "…" [--origin https://…]` | Setup: org, app, tier, redirect URIs, seed; needs `CONSTRUCT_EMAIL` / `CONSTRUCT_PASSWORD` |
 | `npm run seed` | Re-deploy the model + Studio starter files to `APP_ID` after editing `model/` or `mods/` |
@@ -143,7 +159,10 @@ A new organization gets free apps on shared hosting (three by default) with
 monthly allowances per app (egress, ingress, compute hours, storage). Nothing
 here asks for a card. Sustained usage above the allowances bills the org
 wallet; a player's mods have a free monthly compute trial before their own
-wallet is involved. Current figures: [Shared environment](https://docs.crowdedkingdoms.com/management-api/shared-environment)
+wallet is involved. Crowdy Agent tokens are **platform-funded** on Crowded
+Kingdoms (this game never asks for an OpenRouter key). The HUD Wallet link is
+for the player's grid / compute wallet, not the agent. Current figures:
+[Shared environment](https://docs.crowdedkingdoms.com/management-api/shared-environment)
 and [Player billing](https://docs.crowdedkingdoms.com/management-api/player-billing).
 
 ## Hosting is yours

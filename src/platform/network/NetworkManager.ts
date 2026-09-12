@@ -37,6 +37,7 @@ import {
   API_WS_URL,
   APP_TOKEN_REFRESH_MS,
   APP_TOKEN_REFRESH_RETRY_MS,
+  AUTHORIZE_URL,
 } from '@/platform/config';
 import { envScopedKey, readScoped, writeScoped } from '@/platform/envScope';
 import { Emitter } from '@/platform/util/Emitter';
@@ -65,6 +66,7 @@ export interface BootstrapInfo {
   minimumClientVersion?: string;
   maxReplicationDistance?: number;
   udpConnected?: boolean;
+  binaryRelayEnabled?: boolean;
 }
 
 export interface NetworkEvents {
@@ -152,6 +154,7 @@ export class NetworkManager {
     await this.platform.portal.signIn({
       appId,
       redirectUri: window.location.origin + window.location.pathname,
+      ...(AUTHORIZE_URL ? { authorizeUrl: AUTHORIZE_URL } : {}),
     });
   }
 
@@ -317,6 +320,9 @@ export class NetworkManager {
           retryInitialDelayMs: 250,
           retryMaxDelayMs: 5_000,
           waitTimeoutMs: 5_000,
+          // Live video/voice should ride the binary relay when the API
+          // exposes it; CrowdyJS falls back to GraphQL if it is down.
+          binaryTransport: true,
           // ALWAYS the shared origin, never the per-instance URL above: a
           // token-holding client cannot re-mint, so when its instance dies
           // it must be able to ask a name that always answers.
@@ -342,10 +348,16 @@ export class NetworkManager {
     const appId = this.requireAppId();
     const boot = await this.game.serverStatus.gameClientBootstrap(appId);
     const min = boot.versionInfo?.minimumClientVersion;
+    // Present on ck-api since the binary relay shipped; the 15.11 pin's
+    // generated type does not yet name the field.
+    const binaryRelayEnabled =
+      (boot as { binaryRelayEnabled?: boolean }).binaryRelayEnabled ?? false;
+    this.log(`bootstrap: binaryRelayEnabled=${String(binaryRelayEnabled)}`);
     return {
       minimumClientVersion: min ? `${min.major}.${min.minor}.${min.patch}.${min.build}` : undefined,
       maxReplicationDistance: boot.maxReplicationDistance ?? undefined,
       udpConnected: boot.udpProxyConnectionStatus?.connected ?? undefined,
+      binaryRelayEnabled,
     };
   }
 

@@ -1,8 +1,8 @@
 {
   "name": "the-construct",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "private": true,
-  "description": "Starter repo for browser games on Crowded Kingdoms: engine-agnostic platform layer, three.js holodeck hub, pixi.js program scene, Crowdy Studio with client mods, and in-app onboarding.",
+  "description": "Starter repo for browser games on Crowded Kingdoms: engine-agnostic platform layer, three.js holodeck hub, pixi.js program scene, Crowdy Studio with client mods and the Ask/Build/Play agent, and in-app onboarding.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -18,7 +18,7 @@
     "format:check": "prettier --check .",
     "test": "npm run test:unit && npm run test:headers",
     "test:unit": "vitest run",
-    "test:headers": "node --test security-headers.test.mjs",
+    "test:headers": "node --test security-headers.test.mjs scripts/lib/dev-server-options.test.mjs",
     "test:e2e": "playwright test",
     "check:pin": "node scripts/ci/check-sdk-pin.mjs",
     "setup": "node scripts/setup.mjs",

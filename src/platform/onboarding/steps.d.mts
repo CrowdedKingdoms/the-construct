@@ -3,12 +3,14 @@ import type { CrowdyClient } from '@crowdedkingdoms/crowdyjs';
 export const CONSTRUCTOR_TIER_NAME: string;
 export const CONSTRUCTOR_TIER_KEYS: readonly string[];
 export const VISITOR_RUN_KEYS: readonly string[];
+export const STUDIO_AGENT_MODEL: string;
+export const STUDIO_AGENT_MODES: readonly string[];
 export function slugify(value: string): string;
 
 export type Logger = (line: string) => void;
 
 export interface OnboardingStepEvent {
-  id: 'org' | 'app' | 'tier' | 'enter' | 'claims' | 'model' | 'studio';
+  id: 'org' | 'app' | 'tier' | 'redirects' | 'enter' | 'claims' | 'model' | 'studio' | 'agent';
   label: string;
   status: 'running' | 'done' | 'failed';
   value?: unknown;
@@ -80,4 +82,9 @@ export function publishStarterFiles(
   input: { appId: string },
   log?: Logger,
 ): Promise<Array<{ slug: string; status: 'current' | 'published'; versionNo?: number }>>;
+export function ensureAgentPolicy(
+  identity: CrowdyClient,
+  input: { appId: string },
+  log?: Logger,
+): Promise<{ enabled: boolean; skipped: boolean }>;
 export function runOnboarding(options: RunOnboardingOptions): Promise<OnboardingReport>;

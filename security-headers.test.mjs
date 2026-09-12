@@ -61,12 +61,10 @@ test('unparseable origins are ignored rather than emitted', () => {
   assert.match(csp, /connect-src 'self'(;|$)/);
 });
 
-test('permissions policy lets the page use the camera and nothing else, and no embed anything', () => {
+test('permissions policy lets the page use the camera and microphone, and no embed anything', () => {
   const headers = securityHeaders({ apiOrigins: ['https://ck.prod.example.com'] });
   assert.equal(headers['Permissions-Policy'], PERMISSIONS_POLICY);
   assert.match(PERMISSIONS_POLICY, /(^|, )camera=\(self\)(,|$)/);
-  // The microphone stays denied until voice is wired; a fork that adds voice
-  // changes this to microphone=(self) and this assertion with it.
-  assert.match(PERMISSIONS_POLICY, /(^|, )microphone=\(\)(,|$)/);
+  assert.match(PERMISSIONS_POLICY, /(^|, )microphone=\(self\)(,|$)/);
   assert.ok(!PERMISSIONS_POLICY.includes('*'), 'no wildcard grant');
 });

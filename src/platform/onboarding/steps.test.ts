@@ -198,4 +198,113 @@ describe('onboarding steps', () => {
     const world = blueprints.find((b) => b.name === 'construct-world')!;
     expect(world.containers.map((c: Any) => c.typeName)).toEqual(['Program']);
   });
+
+  it('keeps use_studio_agent on Constructor and off the visitor default', () => {
+    expect(steps.CONSTRUCTOR_TIER_KEYS).toContain('use_studio_agent');
+    expect(steps.VISITOR_RUN_KEYS).not.toContain('use_studio_agent');
+  });
+
+  it('writes only the app agent policy and never calls cp* fields', async () => {
+    const query = vi.fn(async (document: string, _variables?: Any) => {
+      expect(document).not.toMatch(/\bcp[A-Z]/);
+      if (document.includes('ConstructSetAgentPolicy')) {
+        return {
+          setCrowdyStudioAgentPolicy: {
+            enabled: true,
+            killSwitch: false,
+            allowedModes: [...steps.STUDIO_AGENT_MODES],
+            revision: '1',
+          },
+        };
+      }
+      return {
+        crowdyStudioAgentPolicy: { enabled: false, revision: '0' },
+        crowdyStudioAgentEffectivePolicy: {
+          enabled: false,
+          killSwitch: false,
+          allowedModelIds: [steps.STUDIO_AGENT_MODEL],
+          allowedModes: [],
+        },
+      };
+    });
+    const result = await steps.ensureAgentPolicy({ graphql: { query } } as never, { appId: '77' });
+    expect(result).toEqual({ enabled: true, skipped: false });
+    const appInput = (
+      query.mock.calls.find((c: Any[]) => String(c[0]).includes('ConstructSetAgentPolicy'))?.[1] as
+        { input: Any } | undefined
+    )?.input;
+    expect(appInput).toEqual(
+      expect.objectContaining({
+        appId: '77',
+        enabled: true,
+        allowedModes: [...steps.STUDIO_AGENT_MODES],
+        idempotencyKey: 'construct-agent-app-77-v2',
+      }),
+    );
+    expect(appInput?.allowedModelIds).toBeUndefined();
+    expect(appInput?.allowedToolNames).toBeUndefined();
+    expect(appInput?.allowedRiskClasses).toBeUndefined();
+  });
+
+  it('skips writes when effective policy already allows Ask/Build/Play', async () => {
+    const ready = {
+      enabled: true,
+      killSwitch: false,
+      allowedModelIds: [steps.STUDIO_AGENT_MODEL],
+      allowedModes: [...steps.STUDIO_AGENT_MODES],
+    };
+    const query = vi.fn(async () => ({
+      crowdyStudioAgentPolicy: ready,
+      crowdyStudioAgentEffectivePolicy: ready,
+    }));
+    const result = await steps.ensureAgentPolicy({ graphql: { query } } as never, { appId: '77' });
+    expect(result).toEqual({ enabled: true, skipped: true });
+    expect(query.mock.calls.some((c: Any[]) => String(c[0]).includes('mutation'))).toBe(false);
+  });
+
+  it('stays green when the caller cannot read app policy', async () => {
+    const query = vi.fn(async () => {
+      throw new Error('manage_compute required');
+    });
+    const lines: string[] = [];
+    const result = await steps.ensureAgentPolicy(
+      { graphql: { query } } as never,
+      { appId: '77' },
+      (line) => lines.push(line),
+    );
+    expect(result).toEqual({ enabled: false, skipped: true });
+    expect(lines.some((line) => /Studio → your app → Agent/.test(line))).toBe(true);
+  });
+
+  it('stays green and logs when the platform catalog is unpublished after the app write', async () => {
+    const query = vi.fn(async (document: string) => {
+      expect(document).not.toMatch(/\bcp[A-Z]/);
+      if (document.includes('ConstructSetAgentPolicy')) {
+        return {
+          setCrowdyStudioAgentPolicy: {
+            enabled: true,
+            killSwitch: false,
+            allowedModes: [...steps.STUDIO_AGENT_MODES],
+          },
+        };
+      }
+      return {
+        crowdyStudioAgentPolicy: { enabled: false, revision: '0' },
+        crowdyStudioAgentEffectivePolicy: {
+          enabled: false,
+          killSwitch: false,
+          allowedModelIds: [],
+          allowedModes: [],
+        },
+      };
+    });
+    const lines: string[] = [];
+    const result = await steps.ensureAgentPolicy(
+      { graphql: { query } } as never,
+      { appId: '77' },
+      (line) => lines.push(line),
+    );
+    expect(result).toEqual({ enabled: true, skipped: false });
+    expect(lines.some((line) => /platform catalog not published/.test(line))).toBe(true);
+  });
 });

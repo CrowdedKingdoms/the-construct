@@ -39,8 +39,29 @@ try {
     const have = new Set((constructor.permissionKeys ?? []).map(String));
     check(
       CONSTRUCTOR_TIER_KEYS.every((k) => have.has(k)),
-      'Constructor tier carries the four code keys and use_video_chat',
+      'Constructor tier carries the code keys, use_video_chat, and use_studio_agent',
     );
+  }
+
+  try {
+    const data = await identity.graphql.query(
+      `query ConstructSmokeAgent($appId: BigInt!) {
+        crowdyStudioAgentEffectivePolicy(appId: $appId) {
+          enabled killSwitch allowedModelIds allowedModes disableReasonCode
+        }
+      }`,
+      { appId },
+    );
+    const effective = data?.crowdyStudioAgentEffectivePolicy;
+    if (effective) {
+      check(
+        effective.enabled === true && effective.killSwitch !== true,
+        'Studio Agent effective policy is enabled',
+        're-run npm run setup (or Studio → your app → Agent)',
+      );
+    }
+  } catch {
+    // Readable only with manage_compute. Third-party smoke still passes.
   }
   const access = await identity.appAccess.myAccess(appId).catch(() => null);
   check(Boolean(access), 'signed-in user has access to the app');

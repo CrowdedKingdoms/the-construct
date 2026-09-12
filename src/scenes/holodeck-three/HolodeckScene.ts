@@ -11,19 +11,31 @@
 import * as THREE from 'three';
 
 import type { GameScene, SceneContext, SceneSize } from '@/engine/GameScene';
+import { Controls, helpLines } from '@/engine/controls';
 import { HOLODECK_SPAWN } from '@/platform/programs';
 import { NEUTRAL_POSE, type Pose } from '@/platform/realtime/actorCodec';
 import { AvatarPool } from '@/scenes/holodeck-three/avatars';
 import { animatePads, buildPads, disposePads, padAt, type Pad } from '@/scenes/holodeck-three/pads';
+import {
+  DEFAULT_CAMERA_DISTANCE,
+  HOLODECK_CAMERA_HEIGHT,
+  HOLODECK_ZOOM_MAX,
+  HOLODECK_ZOOM_MIN,
+  LOOK_PITCH_MAX,
+  LOOK_PITCH_MIN,
+  LOOK_SENSITIVITY,
+  applyLook,
+  followCameraOffset,
+  zoomDistance,
+} from '@/scenes/shared/cameraLook';
 import { tintColor } from '@/scenes/shared/interpolate';
 
 const ROOM_HALF = 60;
 const EYE_HEIGHT = 1.6;
 const WALK_SPEED = 6;
 const RUN_SPEED = 11;
-const LOOK_SENSITIVITY = 0.0022;
-const CAMERA_DISTANCE = 6.5;
-const CAMERA_HEIGHT = 3;
+
+const IDLE_HINT = 'WASD move · click or hold RMB to look · scroll zoom · E on a pad · F1 help';
 
 export class HolodeckScene implements GameScene {
   readonly id = 'holodeck';
@@ -42,6 +54,7 @@ export class HolodeckScene implements GameScene {
   private readonly velocity = new THREE.Vector3();
   private yaw = HOLODECK_SPAWN.yaw;
   private pitch = -0.25;
+  private cameraDistance = DEFAULT_CAMERA_DISTANCE;
   private activePad: Pad | null = null;
   private lastHint: string | null = null;
 
@@ -79,8 +92,7 @@ export class HolodeckScene implements GameScene {
     };
     renderer.domElement.addEventListener('click', onClick);
     this.disposables.push(() => renderer.domElement.removeEventListener('click', onClick));
-    this.disposables.push(context.input.onKey('KeyE', () => this.activate()));
-    this.disposables.push(context.input.onKey('Enter', () => this.activate()));
+    this.disposables.push(context.input.onKeys(Controls.activate, () => this.activate()));
     // Webcam frames land on the avatar's face; the server's actor-left notice
     // (or the idle fallback) clears it. Players in another program are not in
     // this pool, so their frames are closed unseen.
@@ -95,7 +107,8 @@ export class HolodeckScene implements GameScene {
     );
 
     this.resize(size);
-    context.hud.setHint('WASD to move · click to look · E on a pad');
+    context.hud.setHelpLines?.(helpLines('holodeck'));
+    context.hud.setHint(IDLE_HINT);
   }
 
   unmount(): void {
@@ -136,6 +149,11 @@ export class HolodeckScene implements GameScene {
     this.velocity.set(0, 0, 0);
   }
 
+  /** Test/debug snapshot of look + zoom. */
+  lookDebug(): { yaw: number; pitch: number; distance: number } {
+    return { yaw: this.yaw, pitch: this.pitch, distance: this.cameraDistance };
+  }
+
   localPose(): Pose {
     return {
       ...NEUTRAL_POSE,
@@ -156,18 +174,33 @@ export class HolodeckScene implements GameScene {
     if (!context || !renderer) return;
     const { input, session } = context;
 
-    // Look
-    if (input.pointer.locked && !input.suppressed) {
+    // Look: pointer lock or RMB drag. Wheel zooms the follow camera.
+    if (input.isLooking()) {
       const { dx, dy } = input.takePointerDelta();
-      this.yaw -= dx * LOOK_SENSITIVITY;
-      this.pitch = Math.max(-1.2, Math.min(0.6, this.pitch - dy * LOOK_SENSITIVITY));
+      const next = applyLook(this.yaw, this.pitch, dx, dy, LOOK_SENSITIVITY);
+      this.yaw = next.yaw;
+      this.pitch = next.pitch;
     } else {
       input.takePointerDelta();
     }
+    const wheel = input.takeWheel();
+    if (wheel !== 0) {
+      this.cameraDistance = zoomDistance(
+        this.cameraDistance,
+        wheel,
+        HOLODECK_ZOOM_MIN,
+        HOLODECK_ZOOM_MAX,
+      );
+    }
 
-    // Move relative to the camera yaw
-    const axes = input.suppressed ? { x: 0, y: 0 } : input.axes();
-    const speed = input.isDown('ShiftLeft') || input.isDown('ShiftRight') ? RUN_SPEED : WALK_SPEED;
+    // Move relative to the camera yaw. Agent Play adds the same axes a human
+    // WASD would, plus LOOK deltas (degrees converted to radians upstream).
+    const agent = session.studio.locomotion.sample(nowMs);
+    this.yaw += agent.yaw;
+    this.pitch = Math.max(LOOK_PITCH_MIN, Math.min(LOOK_PITCH_MAX, this.pitch + agent.pitch));
+    const human = input.suppressed ? { x: 0, y: 0 } : input.axes();
+    const axes = { x: clampAxis(human.x + agent.x), y: clampAxis(human.y + agent.y) };
+    const speed = input.isRun() ? RUN_SPEED : WALK_SPEED;
     const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const right = new THREE.Vector3(forward.z, 0, -forward.x);
     const wish = new THREE.Vector3()
@@ -184,11 +217,13 @@ export class HolodeckScene implements GameScene {
       this.localBody.position.set(this.position.x, 0.8, this.position.z);
       this.localBody.rotation.y = this.yaw;
     }
-    const camOffset = new THREE.Vector3(
-      Math.sin(this.yaw) * CAMERA_DISTANCE * Math.cos(this.pitch),
-      CAMERA_HEIGHT - Math.sin(this.pitch) * CAMERA_DISTANCE,
-      Math.cos(this.yaw) * CAMERA_DISTANCE * Math.cos(this.pitch),
+    const off = followCameraOffset(
+      this.yaw,
+      this.pitch,
+      this.cameraDistance,
+      HOLODECK_CAMERA_HEIGHT,
     );
+    const camOffset = new THREE.Vector3(off.x, off.y, off.z);
     this.camera.position.copy(this.position).add(camOffset);
     this.camera.lookAt(this.position.x, EYE_HEIGHT, this.position.z);
 
@@ -199,7 +234,7 @@ export class HolodeckScene implements GameScene {
     const pad = padAt(this.pads, this.position.x, this.position.z);
     if (pad !== this.activePad) {
       this.activePad = pad;
-      const hint = pad ? `Press E — ${pad.label}` : 'WASD to move · click to look · E on a pad';
+      const hint = pad ? `Press E — ${pad.label}` : IDLE_HINT;
       if (hint !== this.lastHint) {
         this.lastHint = hint;
         context.hud.setHint(hint);
@@ -274,6 +309,10 @@ export class HolodeckScene implements GameScene {
 
 function clamp(value: number): number {
   return Math.max(-ROOM_HALF + 1, Math.min(ROOM_HALF - 1, value));
+}
+
+function clampAxis(value: number): number {
+  return Math.max(-1, Math.min(1, value));
 }
 
 function messageOf(error: unknown): string {

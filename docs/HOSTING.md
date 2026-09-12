@@ -5,10 +5,17 @@ One requirement decides whether Crowdy Studio CLIENT mods work: the host must
 send the cross-origin isolation headers on **every** response (HTML, JS, wasm,
 worker scripts), and should send the Content-Security-Policy too.
 
-`security-headers.mjs` is the source of truth; the Vite dev and preview servers
-use it, and the values below are copied from it. If you change the API origin
-(`VITE_CROWDY_HTTP_URL`), regenerate the `connect-src` line — e.g.
+`security-headers.mjs` is the source of truth; the Vite **preview** server and
+default `npm run dev` use it, and the values below are copied from it. If you
+change the API origin (`VITE_CROWDY_HTTP_URL`), regenerate the `connect-src`
+line — e.g.
 `node -e "import('./security-headers.mjs').then(m=>console.log(m.buildCsp({apiOrigins:['https://YOUR_ORIGIN']})))"`.
+
+A local ck-api or IDE-on-public-IP checkout may set `VITE_DEV_PROXY`,
+`VITE_DEV_ALLOWED_HOSTS`, and `VITE_DEV_RELAX_ISOLATION` in gitignored
+`.env.local` (see `.env.example`). Those flags never apply to preview or a
+production host. `VITE_DEV_RELAX_ISOLATION=1` strips COEP/COOP on the *dev
+server only* so a plain-HTTP public IP can load; CLIENT mods stay off.
 
 ## The headers
 
@@ -16,16 +23,16 @@ use it, and the values below are copied from it. If you change the API origin
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: credentialless
 Cross-Origin-Resource-Policy: same-origin
-Permissions-Policy: camera=(self), microphone=()
+Permissions-Policy: camera=(self), microphone=(self)
 Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://<api-origin> wss://<api-origin> https://*.<tier-zone> wss://*.<tier-zone>; worker-src 'self' blob:; frame-src 'none'; media-src 'self' blob:; manifest-src 'self'
 Referrer-Policy: strict-origin-when-cross-origin
 X-Content-Type-Options: nosniff
 ```
 
-`Permissions-Policy` is what lets the proximity webcam (`WebcamService`) ask
-for the camera and denies it to anything embedded; the microphone stays denied
-until a fork wires voice (then `microphone=(self)`). Some hosts ship a default
-policy that denies the camera outright, so set it explicitly.
+`Permissions-Policy` is what lets the proximity webcam (`WebcamService`) and
+voice (`VoiceService`) ask for the camera and microphone, and denies both to
+anything embedded. Some hosts ship a default policy that denies devices
+outright, so set it explicitly.
 
 `<api-origin>` is the host the bundle dials (for the published `latest` SDK,
 the production API). `<tier-zone>` is that host minus its first label: the API
@@ -50,7 +57,7 @@ not. The Playwright smoke (`npm run test:e2e`) asserts it against `vite preview`
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: credentialless
   Cross-Origin-Resource-Policy: same-origin
-  Permissions-Policy: camera=(self), microphone=()
+  Permissions-Policy: camera=(self), microphone=(self)
   Content-Security-Policy: <the CSP line above>
   Referrer-Policy: strict-origin-when-cross-origin
   X-Content-Type-Options: nosniff
@@ -69,7 +76,7 @@ not. The Playwright smoke (`npm run test:e2e`) asserts it against `vite preview`
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
         { "key": "Cross-Origin-Embedder-Policy", "value": "credentialless" },
         { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
-        { "key": "Permissions-Policy", "value": "camera=(self), microphone=()" },
+        { "key": "Permissions-Policy", "value": "camera=(self), microphone=(self)" },
         { "key": "Content-Security-Policy", "value": "<the CSP line above>" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "X-Content-Type-Options", "value": "nosniff" }
@@ -97,7 +104,7 @@ location / {
   add_header Cross-Origin-Opener-Policy "same-origin" always;
   add_header Cross-Origin-Embedder-Policy "credentialless" always;
   add_header Cross-Origin-Resource-Policy "same-origin" always;
-  add_header Permissions-Policy "camera=(self), microphone=()" always;
+  add_header Permissions-Policy "camera=(self), microphone=(self)" always;
   add_header Content-Security-Policy "<the CSP line above>" always;
   add_header Referrer-Policy "strict-origin-when-cross-origin" always;
   add_header X-Content-Type-Options "nosniff" always;
@@ -112,7 +119,7 @@ header {
   Cross-Origin-Opener-Policy "same-origin"
   Cross-Origin-Embedder-Policy "credentialless"
   Cross-Origin-Resource-Policy "same-origin"
-  Permissions-Policy "camera=(self), microphone=()"
+  Permissions-Policy "camera=(self), microphone=(self)"
   Content-Security-Policy "<the CSP line above>"
   Referrer-Policy "strict-origin-when-cross-origin"
   X-Content-Type-Options "nosniff"

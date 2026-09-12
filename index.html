@@ -6,12 +6,35 @@
     <meta name="color-scheme" content="dark" />
     <title>The Construct</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- First paint is this page, before Vite/CSS/main.ts. Keep it dark so the
+         IDE browser is not a white void while the module graph loads. -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #07090d;
+        color: #e9f5f1;
+        font-family: system-ui, sans-serif;
+      }
+      #construct-boot-fallback {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        font-size: 14px;
+        letter-spacing: 0.02em;
+        color: #8fa3a0;
+      }
+    </style>
   </head>
   <body>
     <div id="app">
       <div id="game-root" aria-label="Game viewport"></div>
       <div id="ui-root"></div>
     </div>
+    <div id="construct-boot-fallback">Loading The Construct…</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

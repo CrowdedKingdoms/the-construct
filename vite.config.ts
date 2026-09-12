@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig, loadEnv } from 'vite';
 
+import { constructDevServerOptions, envFlag } from './scripts/lib/dev-server-options.mjs';
 import { sdkDefaultHttpOrigin } from './scripts/lib/sdk-default-origin.mjs';
 import { securityHeaders } from './security-headers.mjs';
 
@@ -22,10 +23,15 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5175,
       host: true,
-      // Same isolation + network policy locally as a correct production host:
-      // CLIENT mods need `crossOriginIsolated`, and finding out only after
-      // deploying is the failure these headers exist to prevent.
-      headers,
+      // Default: production isolation, no proxy. Local stacks opt in via
+      // VITE_DEV_PROXY / VITE_DEV_ALLOWED_HOSTS / VITE_DEV_RELAX_ISOLATION.
+      ...constructDevServerOptions({
+        headers,
+        proxy: envFlag(env, 'VITE_DEV_PROXY'),
+        allowAllHosts: envFlag(env, 'VITE_DEV_ALLOWED_HOSTS'),
+        relaxIsolation: envFlag(env, 'VITE_DEV_RELAX_ISOLATION'),
+        proxyTarget: env.VITE_DEV_PROXY_TARGET?.trim(),
+      }),
     },
     preview: {
       headers,

@@ -7,7 +7,7 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 
 | Game concept | Platform surface | In this repo |
 | --- | --- | --- |
-| Accounts, sign-in | **Hosted**: `portal.signIn` → Studio `/authorize` → `portal.handleSignInCallback` — an app-scoped token, never a session | `platform/auth/AuthService.ts`, `platform/network/NetworkManager.ts`, `ui/LoginForm.ts` |
+| Accounts, sign-in | **Hosted**: `portal.signIn` → Studio `/authorize` → `portal.handleSignInCallback` — an app-scoped token, never a session. Pass `VITE_AUTHORIZE_URL` when the API origin is not a CK tier host. | `platform/auth/AuthService.ts`, `platform/network/NetworkManager.ts`, `ui/LoginForm.ts` |
 | Entering a game | `portal.mintAppToken(appId)` → app-scoped token + the app's endpoint | `platform/network/NetworkManager.ts#enterApp` |
 | Org / app creation, tiers | `organizations.create`, `apps.create`, `appAccess.createTier` / `grant` | `platform/onboarding/steps.mjs` |
 | Version floor, UDP status | `serverStatus.gameClientBootstrap(appId)` | `NetworkManager#bootstrap` |
@@ -20,12 +20,14 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 | Player-owned land | `marketplace.claimGridChunk` under `SELF_CLAIM`; grids carry effective permission keys | `platform/studio/GridService.ts` |
 | Who is on which grid | Admin-only `gameApps.nearbyPermissions`; players read the game's own `Claim` registry | `GridService#lookup` |
 | In-game IDE | `@crowdedkingdoms/crowdyjs/crowdy-studio` embed kit over `crowdyStudio` + `playerCompute` | `platform/studio/StudioService.ts` |
+| Crowdy Agent | `client.crowdyStudioAgent` + `context.playerHost`; Constructor `use_studio_agent`; **app** policy (`setCrowdyStudioAgentPolicy`) | `platform/studio/StudioService.ts`, `ConstructPlayerHostAdapter.ts`. Setup writes the app row only — never `cp*` / platform catalog. Tokens are platform-funded. |
+| Player wallet | Studio `/account/wallet` (grid / player-compute billing, not agent tokens) | HUD **Wallet**; origin from `VITE_AUTHORIZE_URL` / `VITE_STUDIO_URL` |
 | CLIENT mods for visitors | `marketplace.gridClientMods` → `trustGridAuthor` → `clientArtifactBytes` → `PlayerCodeBroker` | `platform/studio/clientModHost.ts` |
 | Starter mod files | `crowdyStudioCommonPublish` (common-file catalog) | `mods/templates/`, `steps.mjs#publishStarterFiles` |
 | Progression, leaderboards | `kit.progression`, `kit.leaderboards` | `ModelService#progress` |
 | Webcam | `udp.sendVideoFrame` (fragments a JPEG into `sendVideoPacket`s) / `video` notifications + `VideoFrameAssembler`; `use_video_chat` | `platform/media/WebcamService.ts`; holodeck draws the face plane (`avatars.ts#setFace`), Paint shows a camera-on ring — a 2D game decides whether to draw video |
 | Player left | `actorLeft` notification (Buddy says an actor is gone, ~5 s after its last update) | `WorldStores` lane drops the actor; `WebcamService` ends the stream; scenes free per-uuid objects at once instead of after the 12 s reaper |
-| Voice | `udp.sendAudioPacket` / `audio` notifications | not wired; see BWF's `VoiceChat` pattern in the docs (`WebcamService` is the same shape for video) |
+| Voice | `udp.sendAudioPacket` / `audio` notifications | `platform/media/VoiceService.ts` (µ-law 8 kHz, V to toggle); holodeck/Paint play nearby speakers |
 | Teams, guilds | `teams.*`, `guildBlueprint` → `kit.social` | not wired |
 | Cross-game lobby | The same hosted PKCE flow, for another app id | `main.ts` `switchApp` |
 
