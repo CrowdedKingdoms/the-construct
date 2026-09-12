@@ -11,11 +11,18 @@
  */
 import '@/style.css';
 
+import { Controls } from '@/engine/controls';
 import { GameLoop } from '@/engine/GameLoop';
 import { Input } from '@/engine/Input';
 import { SceneRouter } from '@/engine/SceneRouter';
 import { AuthService } from '@/platform/auth/AuthService';
-import { APP_ID_STORAGE_KEY, BUILD_APP_ID, GAME_NAME, resolveAppId } from '@/platform/config';
+import {
+  APP_ID_STORAGE_KEY,
+  BUILD_APP_ID,
+  GAME_NAME,
+  STUDIO_WALLET_URL,
+  resolveAppId,
+} from '@/platform/config';
 import { ensureEnvScope, readScoped, writeScoped } from '@/platform/envScope';
 import { GameSession } from '@/platform/GameSession';
 import { NetworkManager, messageOf, type AppRoute } from '@/platform/network/NetworkManager';
@@ -53,6 +60,7 @@ interface RunningGame {
   disposers: Array<() => void>;
 }
 
+document.getElementById('construct-boot-fallback')?.remove();
 void boot();
 
 async function boot(): Promise<void> {
@@ -138,11 +146,20 @@ async function startGame(): Promise<void> {
   router.register(HOLODECK_SCENE_ID, () => new HolodeckScene());
   router.register('paint', () => new PaintScene());
 
+  const studioWalletUrl = STUDIO_WALLET_URL;
   const hud = new Hud(uiRoot!, {
     openStudio: () => void toggleStudio(),
     openSetup: () => void switchApp(),
     signOut: () => void signOut(),
     toggleCamera: () => void session.webcam.toggle(),
+    toggleVoice: () => void session.voice.toggle(),
+    ...(studioWalletUrl
+      ? {
+          openWallet: () => {
+            window.open(studioWalletUrl, '_blank', 'noopener');
+          },
+        }
+      : {}),
   });
   const chat = new ChatPanel(uiRoot!, session.chat, input);
   const loop = new GameLoop(gameRoot!, router, session);
@@ -152,6 +169,14 @@ async function startGame(): Promise<void> {
     suppressGameplayInput: () => input.suppress(),
     onLayoutChange: (rightInset) => loop.setRightInset(rightInset),
     notify: (text, tone) => hud.toast(text, tone),
+    captureFrame: async () => {
+      const canvas = gameRoot!.querySelector('canvas.scene-canvas') as HTMLCanvasElement | null;
+      return canvas ?? null;
+    },
+    describeView: () => {
+      const scene = router.current?.id;
+      return `Scene: ${scene ?? 'holodeck'}`;
+    },
   });
 
   const game: RunningGame = { session, loop, router, hud, chat, timers: [], disposers: [] };
@@ -160,16 +185,36 @@ async function startGame(): Promise<void> {
   game.disposers.push(session.studio.events.on('state', (state) => hud.renderStudio(state)));
   hud.renderStudio(session.studio.snapshot);
   game.disposers.push(
-    input.onKey('KeyM', () => {
+    input.onKeys(Controls.studio, () => {
       if (input.suppressed && !session.studio.isOpen) return;
       void toggleStudio();
     }),
   );
   game.disposers.push(session.webcam.events.on('local', (state) => hud.renderCamera(state)));
+  game.disposers.push(session.voice.events.on('local', (state) => hud.renderVoice(state)));
   game.disposers.push(
-    input.onKey('KeyB', () => {
+    input.onKeys(Controls.webcam, () => {
       if (input.suppressed) return;
       void session.webcam.toggle();
+    }),
+  );
+  game.disposers.push(
+    input.onKeys(Controls.voice, () => {
+      if (input.suppressed) return;
+      void session.voice.toggle();
+    }),
+  );
+  game.disposers.push(
+    input.onKeys(Controls.help, (event) => {
+      if (input.suppressed) return;
+      event.preventDefault();
+      hud.toggleHelp();
+    }),
+  );
+  game.disposers.push(
+    input.onKeys(Controls.escape, () => {
+      if (hud.isHelpOpen) hud.setHelpOpen(false);
+      input.exitLook();
     }),
   );
   game.disposers.push(
@@ -192,7 +237,12 @@ async function startGame(): Promise<void> {
   card.hide();
   hud.toast(`Welcome to ${GAME_NAME}`);
   session.chat.system(
-    'Proximity chat — only players within a few chunks hear you. Press T to type, B for your camera.',
+    'Proximity chat — nearby players hear you. T or Enter to type, B camera, V voice, F1 controls.',
+  );
+  session.chat.system(
+    studioWalletUrl
+      ? "Crowdy Agent lives in Studio (M) after you claim a chunk. Ask/Build writes mods; Play can walk for you. Model usage is metered per request to your player wallet by default (or the app's org wallet) — no API key needed. Grid compute uses the same wallet (Wallet in the HUD)."
+      : "Crowdy Agent lives in Studio (M) after you claim a chunk. Ask/Build writes mods; Play can walk for you. Model usage is metered per request to your player wallet by default (or the app's org wallet) — no API key needed.",
   );
 
   const refreshHud = async () => {

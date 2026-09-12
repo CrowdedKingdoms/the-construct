@@ -129,6 +129,25 @@ export class GridService {
     const claim = claims.find((c) => chunkKey(c.chunk) === chunkKey(chunk));
     if (!claim) return null;
     const owned = claim.ownerUserId === this.network.user?.userId;
+    if (owned) {
+      const record: OwnedRecord = {
+        gridId: claim.gridId,
+        bounds: singleChunkBounds(chunk),
+        effectiveKeys: [],
+      };
+      const refreshed = await this.refreshOwnedKeys(chunk, record);
+      if (refreshed && refreshed.length > 0) {
+        this.owned.set(chunkKey(chunk), { ...record, effectiveKeys: refreshed });
+        this.saveOwned();
+        return {
+          gridId: claim.gridId,
+          bounds: record.bounds,
+          permissions: studioPermissions(refreshed),
+          owned: true,
+          ownerName: claim.ownerName,
+        };
+      }
+    }
     return {
       gridId: claim.gridId,
       bounds: singleChunkBounds(chunk),

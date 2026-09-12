@@ -7,10 +7,11 @@
  * so a step that fails half-way can be retried without cleanup. Plain ES
  * module: the browser Setup wizard and `scripts/setup.mjs` run the same code.
  *
- * Tokens: steps 1-3 and the tier grant use the IDENTITY session (org and app
- * administration). Everything on the game plane (claim policy, model, Studio
- * common files) uses an APP-SCOPED token minted for the new app — the caller
- * supplies `enterApp(appId)` which returns a game client holding one.
+ * Tokens: steps 1-3, the tier grant, and the Studio Agent policy use the
+ * IDENTITY session (org and app administration). Everything on the game plane
+ * (claim policy, model, Studio common files) uses an APP-SCOPED token minted
+ * for the new app — the caller supplies `enterApp(appId)` which returns a game
+ * client holding one.
  */
 import { constructBlueprints } from '../../../model/blueprints.mjs';
 import { STARTER_TEMPLATES, commonFilesFor } from '../../../mods/templates/index.mjs';
@@ -33,7 +34,12 @@ export const CONSTRUCTOR_TIER_KEYS = [
   'run_server_code',
   'write_client_code',
   'run_client_code',
+  'use_studio_agent',
 ];
+
+/** Priced ZDR model on hosted tiers; app policy inherits the platform catalog. */
+export const STUDIO_AGENT_MODEL = 'openai/gpt-oss-120b';
+export const STUDIO_AGENT_MODES = ['ASK', 'BUILD', 'PLAY'];
 
 /**
  * What every visitor gets: the default free tier's keys plus permission to RUN
@@ -166,7 +172,8 @@ export async function ensureConstructorTier(identity, { appId, userId }, log = n
       name: CONSTRUCTOR_TIER_NAME,
       isFree: true,
       isDefault: false,
-      description: 'The Construct developer tier: play, paint, and write SERVER + CLIENT mods.',
+      description:
+        'The Construct developer tier: play, paint, write SERVER + CLIENT mods, and use Crowdy Agent.',
       permissionKeys: CONSTRUCTOR_TIER_KEYS,
     });
     created = true;
@@ -289,6 +296,144 @@ export async function publishStarterFiles(game, { appId }, log = noop) {
   return results;
 }
 
+const AGENT_POLICY_CORE = `
+  revision enabled killSwitch allowedModelIds allowedModes disableReasonCode
+`;
+
+const AGENT_APP_POLICY_QUERY = `query ConstructAgentPolicy($appId: BigInt!) {
+  crowdyStudioAgentPolicy(appId: $appId) { ${AGENT_POLICY_CORE} }
+  crowdyStudioAgentEffectivePolicy(appId: $appId) { ${AGENT_POLICY_CORE} }
+}`;
+
+const SET_AGENT_APP_POLICY = `mutation ConstructSetAgentPolicy($input: SetCrowdyStudioAgentAppPolicyInput!) {
+  setCrowdyStudioAgentPolicy(input: $input) { ${AGENT_POLICY_CORE} }
+}`;
+
+/** App row is on and allows Ask/Build/Play. Models inherit the platform catalog. */
+function appPolicyArmed(policy) {
+  if (!policy || policy.enabled !== true || policy.killSwitch === true) return false;
+  const modes = (policy.allowedModes ?? []).map(String);
+  return STUDIO_AGENT_MODES.every((m) => modes.includes(m));
+}
+
+function catalogVisible(policy) {
+  if (!policy || policy.killSwitch === true) return false;
+  return (policy.allowedModelIds ?? []).length > 0;
+}
+
+/**
+ * Arm Agentic Crowdy Studio for this app only.
+ *
+ * The dock stays fail-closed until the *app* policy is enabled and the
+ * player's Constructor tier holds `use_studio_agent`. The platform catalog is
+ * an operator concern — this starter never reads or writes `cp*` fields.
+ * Agent tokens are platform-funded; this does not touch a player wallet or an
+ * OpenRouter key in the game.
+ */
+export async function ensureAgentPolicy(identity, { appId }, log = noop) {
+  let app;
+  let effective;
+  try {
+    const data = await identity.graphql.query(AGENT_APP_POLICY_QUERY, { appId });
+    app = data?.crowdyStudioAgentPolicy;
+    effective = data?.crowdyStudioAgentEffectivePolicy;
+  } catch (error) {
+    log(
+      `Studio Agent app policy is not readable (${messageOf(error)}). ` +
+        'Needs manage_compute. Enable it in Studio → your app → Agent.',
+    );
+    return { enabled: false, skipped: true };
+  }
+
+  if (appPolicyArmed(effective) || appPolicyArmed(app)) {
+    if (effective && !catalogVisible(effective)) {
+      log(
+        'Studio Agent app policy is on, but the platform catalog is not published. ' +
+          'The dock stays closed until an operator publishes it. Studio → your app → Agent.',
+      );
+    } else {
+      log('Studio Agent app policy already enabled');
+    }
+    return { enabled: true, skipped: true };
+  }
+
+  try {
+    const updated = (
+      await identity.graphql.query(SET_AGENT_APP_POLICY, {
+        input: {
+          appId,
+          enabled: true,
+          killSwitch: false,
+          // Explicit on purpose: unlike tools and risk classes, modes have no
+          // inherit-on-omit at the app layer ("there is no inherit-on-empty for
+          // modes" -- SetCrowdyStudioAgentPolicyInput). PLAY is included because
+          // the HUD promises "Play can walk for you".
+          allowedModes: STUDIO_AGENT_MODES,
+          expectedRevision: app?.revision ?? '0',
+          idempotencyKey: `construct-agent-app-${appId}-v2`,
+        },
+      })
+    )?.setCrowdyStudioAgentPolicy;
+    let latestEffective = effective;
+    try {
+      latestEffective = (await identity.graphql.query(AGENT_APP_POLICY_QUERY, { appId }))
+        ?.crowdyStudioAgentEffectivePolicy;
+    } catch {
+      // The write is what matters; effective is best-effort for the log.
+    }
+    const armed = appPolicyArmed(updated) || updated?.enabled === true;
+    if (!armed) {
+      log(
+        `Studio Agent app policy written but not yet effective (${updated?.disableReasonCode ?? 'unknown'}). ` +
+          'Studio → your app → Agent. The dock stays hidden until that row is live.',
+      );
+      return { enabled: false, skipped: false };
+    }
+    if (latestEffective && !catalogVisible(latestEffective)) {
+      log(
+        'Studio Agent app policy enabled; platform catalog not published — ' +
+          'Studio → your app → Agent; dock stays closed.',
+      );
+    } else {
+      log('Studio Agent app policy enabled (platform-funded; no player OpenRouter key)');
+    }
+    return { enabled: true, skipped: false };
+  } catch (error) {
+    log(
+      `Could not enable the Studio Agent app policy (${messageOf(error)}). ` +
+        'Studio → your app → Agent. The dock stays hidden until that row is live.',
+    );
+    return { enabled: false, skipped: true };
+  }
+}
+
+/**
+ * Best practice: verify whether the app is connected to GitHub so players know
+ * GitHub can be their source of truth for files. Advisory only.
+ */
+export async function checkGitHubIntegration(game, { appId }, log = noop) {
+  try {
+    const status = await game?.crowdyStudioGitHub?.status?.({ appId });
+    if (status?.connected && status?.owner && status?.repo) {
+      const repo = `${status.owner}/${status.repo}`;
+      log(`GitHub repository connected: ${repo}`);
+      return { connected: true, skipped: false, repo };
+    }
+    log(
+      'Advisory: No GitHub repository bound. In Crowdy Studio, bind a GitHub repository ' +
+        'so GitHub serves as your source of truth for files.',
+    );
+    return { connected: false, skipped: true };
+  } catch (err) {
+    log(`GitHub integration check skipped (${messageOf(err)}).`);
+    return { connected: false, skipped: true };
+  }
+}
+
+function messageOf(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * The whole sequence. `enterApp(appId)` must return a client holding an
  * app-scoped token for `appId` (browser: NetworkManager.enterApp; Node: mint
@@ -352,6 +497,10 @@ export async function runOnboarding(options) {
   await step('model', 'Game model', () => deployModel(game, { appId }, log));
   await step('studio', 'Crowdy Studio starter files', () =>
     publishStarterFiles(game, { appId }, log),
+  );
+  await step('agent', 'Crowdy Agent policy', () => ensureAgentPolicy(identity, { appId }, log));
+  await step('github', 'GitHub repository integration', () =>
+    checkGitHubIntegration(game, { appId }, log),
   );
   report.org = org;
   report.app = app;
