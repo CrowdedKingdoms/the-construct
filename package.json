@@ -34,7 +34,7 @@
     "three": "^0.185.1"
   },
   "devDependencies": {
-    "@crowdedkingdoms/crowdy-dsh": "0.2.0-dev.1",
+    "@crowdedkingdoms/crowdy-dsh": "0.2.0-dev.2",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^20.19.0",
