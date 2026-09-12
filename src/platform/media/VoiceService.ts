@@ -236,6 +236,15 @@ export class VoiceService {
   stop(): void {
     this.transmitting = false;
     this.resetCaptureState();
+    // Release the microphone, not just the transmit flag: while the track kept
+    // running the browser's recording indicator stayed lit after V, and the
+    // next start() re-acquires everything through its `??=` chain anyway.
+    this.captureNode?.disconnect();
+    this.captureNode = null;
+    this.source?.disconnect();
+    this.source = null;
+    for (const track of this.stream?.getTracks() ?? []) track.stop();
+    this.stream = null;
     this.events.emit('local', { live: false, error: this.errorValue });
   }
 
