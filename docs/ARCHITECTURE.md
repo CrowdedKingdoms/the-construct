@@ -103,9 +103,10 @@ The Ask/Build/Play agent is the same embed. `StudioService` passes
 walk, look, stop, proximity chat). Setup puts `use_studio_agent` on the
 Constructor tier and writes the **app** policy. The platform catalog is an
 operator concern (this starter never reads or writes `cp*` fields). The Play
-safety banner lives outside the dock. Agent tokens are platform-funded — this
-game never holds an OpenRouter key. HUD **Wallet** links to Studio for grid /
-player-compute billing.
+safety banner lives outside the dock. Model usage is metered per request to
+the player's wallet by default (or the app's org wallet) — this game never
+holds a provider key. HUD **Wallet** links to Studio for the same wallet, which
+also covers grid / player-compute billing.
 
 ## Generic versus demo
 

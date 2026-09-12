@@ -20,7 +20,7 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 | Player-owned land | `marketplace.claimGridChunk` under `SELF_CLAIM`; grids carry effective permission keys | `platform/studio/GridService.ts` |
 | Who is on which grid | Admin-only `gameApps.nearbyPermissions`; players read the game's own `Claim` registry | `GridService#lookup` |
 | In-game IDE | `@crowdedkingdoms/crowdyjs/crowdy-studio` embed kit over `crowdyStudio` + `playerCompute` | `platform/studio/StudioService.ts` |
-| Crowdy Agent | `client.crowdyStudioAgent` + `context.playerHost`; Constructor `use_studio_agent`; **app** policy (`setCrowdyStudioAgentPolicy`) | `platform/studio/StudioService.ts`, `ConstructPlayerHostAdapter.ts`. Setup writes the app row only — never `cp*` / platform catalog. Tokens are platform-funded. |
+| Crowdy Agent | `client.crowdyStudioAgent` + `context.playerHost`; Constructor `use_studio_agent`; **app** policy (`setCrowdyStudioAgentPolicy`) | `platform/studio/StudioService.ts`, `ConstructPlayerHostAdapter.ts`. Setup writes the app row only — never `cp*` / platform catalog. Model usage is metered to the player wallet by default (or the app's org wallet); no provider key in the game. |
 | Player wallet | Studio `/account/wallet` (grid / player-compute billing, not agent tokens) | HUD **Wallet**; origin from `VITE_AUTHORIZE_URL` / `VITE_STUDIO_URL` |
 | CLIENT mods for visitors | `marketplace.gridClientMods` → `trustGridAuthor` → `clientArtifactBytes` → `PlayerCodeBroker` | `platform/studio/clientModHost.ts` |
 | Starter mod files | `crowdyStudioCommonPublish` (common-file catalog) | `mods/templates/`, `steps.mjs#publishStarterFiles` |

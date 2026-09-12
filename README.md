@@ -71,8 +71,9 @@ npm install
    and persist.
 5. Step on **Claim & Studio** and press `E`: you claim the chunk you stand on
    and Crowdy Studio opens beside the game. The Ask/Build/Play agent lives in
-   that dock (Constructor tier, platform-funded — no OpenRouter key in this
-   game). **Wallet** in the HUD opens Studio for grid / player-compute billing.
+   that dock (Constructor tier; model usage is metered to your player wallet by
+   default, or the app's org wallet — no provider key in this game). **Wallet**
+   in the HUD opens Studio for that wallet and grid / player-compute billing.
    Follow [docs/MODDING.md](docs/MODDING.md) to deploy a mod that runs in the
    browser — yours and your visitors'.
 
