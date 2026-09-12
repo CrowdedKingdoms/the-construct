@@ -19,7 +19,7 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 | Scheduled world life | Model automations (`schedule` / `event`), compute modules; run only while players are present | `construct-pulse` automation |
 | Player-owned land | `marketplace.claimGridChunk` under `SELF_CLAIM`; grids carry effective permission keys | `platform/studio/GridService.ts` |
 | Who is on which grid | Admin-only `gameApps.nearbyPermissions`; players read the game's own `Claim` registry | `GridService#lookup` |
-| In-game IDE | `@crowdedkingdoms/crowdyjs/crowdy-studio` embed kit over `crowdyStudio` + `playerCompute` | `platform/studio/StudioService.ts` |
+| In-game IDE | `@crowdedkingdoms/crowdyjs/crowdy-studio` embed kit over `crowdyStudio` + `playerCompute`. GitHub SoT (`github:` identity session) is omitted — this origin has no identity session; play tokens get `SCOPE_MISSING` | `platform/studio/StudioService.ts`; [MODDING.md](MODDING.md#github-as-the-studio-working-tree) |
 | CLIENT mods for visitors | `marketplace.gridClientMods` → `trustGridAuthor` → `clientArtifactBytes` → `PlayerCodeBroker` | `platform/studio/clientModHost.ts` |
 | Starter mod files | `crowdyStudioCommonPublish` (common-file catalog) | `mods/templates/`, `steps.mjs#publishStarterFiles` |
 | Progression, leaderboards | `kit.progression`, `kit.leaderboards` | `ModelService#progress` |

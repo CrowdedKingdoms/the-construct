@@ -122,6 +122,16 @@ export class StudioService {
         // Deliberately no `crowdyStudioAgent`: the agent dock needs a platform
         // policy only an operator can arm, and a `playerHost` adapter this
         // game does not implement. Omitting it keeps the agent hidden/fail-closed.
+        //
+        // Deliberately no `crowdyStudioGitHub` and no embed `github:`:
+        // crowdyStudioGitHub* requires an identity session. This page holds
+        // only a play app-token from hosted sign-in (AGENTS.md). Passing the
+        // game client would SCOPE_MISSING and show a broken GitHub card. The
+        // same `github:` identity-session pattern as BWF cannot land until
+        // this origin can hold a session — not Construct PR #42 (agent
+        // dock; still app-token), not `npm run setup` (Node identity, not
+        // the browser). Author Studio is out of scope. Mod Studio stays on
+        // `crowdyStudio` + `playerCompute`.
       },
       appId: () => this.session.appId,
       gameName: GAME_NAME,
