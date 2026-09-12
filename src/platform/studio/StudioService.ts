@@ -8,9 +8,11 @@
  *  - the grid the player is on and their effective permissions on it,
  *  - the same-origin glue worker that runs CLIENT mods,
  *  - the allowlisted host-call router (what a mod may read),
- *  - input suppression and layout hooks, and
+ *  - input suppression and layout hooks,
  *  - the visitor lifecycle: when you stand on someone else's grid, their
- *    trusted CLIENT mods run for you after you approve them.
+ *    trusted CLIENT mods run for you after you approve them, and
+ *  - the Agentic Crowdy Studio host (Ask / Build / Play) when the platform
+ *    policy and `use_studio_agent` are armed.
  *
  * CLIENT mods need `crossOriginIsolated` (COOP + COEP headers on the host). The
  * service checks that at construction and hides the CLIENT half when it is
@@ -24,11 +26,15 @@ import {
 } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
 import glueWorkerAssetUrl from '@crowdedkingdoms/crowdyjs/player-glue-worker?worker&url';
 
-import { CLIENT_MODS_ENABLED, GAME_NAME } from '@/platform/config';
+import { API_HTTP_URL, CLIENT_MODS_ENABLED, GAME_NAME, STUDIO_ORIGIN } from '@/platform/config';
 import type { GameSession } from '@/platform/GameSession';
 import { messageOf } from '@/platform/network/NetworkManager';
+import { isTextEntry } from '@/engine/Input';
 import { chunkKey, worldToChunk, type ChunkCoord, type Vec3 } from '@/platform/realtime/space';
+import { AgentLocomotion } from '@/platform/studio/agentLocomotion';
 import { ClientModLifecycle, type ClientModScope } from '@/platform/studio/ClientModLifecycle';
+import { ConstructPlayerHostAdapter } from '@/platform/studio/ConstructPlayerHostAdapter';
+import { HumanInputMonitor } from './HumanInputMonitor';
 import {
   bytesToBase64,
   routeClientHostCall,
@@ -47,6 +53,10 @@ export interface StudioState {
   clientModsRunning: number;
   /** Why CLIENT mods are unavailable, when they are. */
   clientModsReason: string | null;
+  /** Agent dock mounted (policy + permission + host). */
+  agentReady: boolean;
+  /** Why the agent dock is hidden or dead, when it is. */
+  agentReason: string | null;
 }
 
 export interface StudioHooks {
@@ -55,6 +65,9 @@ export interface StudioHooks {
   notify(text: string, tone?: 'info' | 'warn' | 'error'): void;
   /** Ask the player whether to trust an author's mods; defaults to `confirm`. */
   confirmTrust?(summary: string): Promise<boolean>;
+  /** Screenshot hook for the agent pane. */
+  captureFrame?(): Promise<HTMLCanvasElement | ImageBitmap | Blob | null>;
+  describeView?(): string | undefined;
 }
 
 const GRID_REFRESH_MS = 8_000;
@@ -70,10 +83,14 @@ const GRID_SETTLE_MS = 4_000;
 export class StudioService {
   readonly events = new Emitter<{ state: StudioState }>();
   readonly grids: GridService;
+  /** Play locomotion wishes; HolodeckScene samples these each frame. */
+  readonly locomotion = new AgentLocomotion();
   private readonly hud = new CrowdyStudioTextHud();
   private readonly lifecycle = new ClientModLifecycle();
   private readonly declinedAuthors = new Set<string>();
   private readonly approvedAuthors = new Set<string>();
+  private readonly agentHost: ConstructPlayerHostAdapter;
+  private readonly humanInput = new HumanInputMonitor();
   private gridEnteredAt = 0;
   private embed: CrowdyStudioEmbed | null = null;
   private hooks: StudioHooks | null = null;
@@ -87,6 +104,11 @@ export class StudioService {
 
   constructor(private readonly session: GameSession) {
     this.grids = new GridService(session.network);
+    this.agentHost = new ConstructPlayerHostAdapter({
+      frame: () => this.observationFrame(),
+      locomotion: this.locomotion,
+      sendChat: (text) => this.session.chat.send(text),
+    });
     const isolated = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated;
     this.state = {
       open: false,
@@ -100,12 +122,15 @@ export class StudioService {
           : 'CLIENT mods are off: this page is not cross-origin isolated. The host must send ' +
             'Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: credentialless ' +
             '(see docs/HOSTING.md).',
+      agentReady: false,
+      agentReason: null,
     };
   }
 
   /** Wire the engine-side hooks; call once after the loop exists. */
   attach(hooks: StudioHooks): void {
     this.hooks = hooks;
+    const network = () => this.session.network;
     this.embed = new CrowdyStudioEmbed({
       // Resolved lazily: the game client exists only after enterApp, and is
       // rebuilt if the player switches apps.
@@ -119,18 +144,42 @@ export class StudioService {
         get playerWallet() {
           return network().game.playerWallet;
         },
-        // Deliberately no `crowdyStudioAgent`: the agent dock needs a platform
-        // policy only an operator can arm, and a `playerHost` adapter this
-        // game does not implement. Omitting it keeps the agent hidden/fail-closed.
+        get crowdyStudioGitHub() {
+          return network().game.crowdyStudioGitHub;
+        },
       },
       appId: () => this.session.appId,
       gameName: GAME_NAME,
       closeKeyCode: 'KeyM',
+      dsh: {
+        graphql: network().game.graphql,
+        // Under Vite's base, so a build served from a sub-path (`vite build
+        // --base /the-construct/`) finds its own harness instead of the
+        // origin's root. The default base is '/', which keeps '/dsh/'.
+        webBase: `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}dsh/`,
+        graphqlUrl: `${API_HTTP_URL}/graphql`,
+        apiOrigin: API_HTTP_URL,
+        getToken: () => network().game.getToken(),
+        persistScope: `${this.session.appId}/${this.session.selfUuid}`,
+        studioOrigin: STUDIO_ORIGIN ?? undefined,
+        openOnMount: true,
+      },
+      onAgentMounted: (_handle) => {
+        this.state = { ...this.state, agentReady: true, agentReason: null };
+        this.emit();
+      },
+      onAgentUnavailable: (message) => {
+        this.state = { ...this.state, agentReady: false, agentReason: message };
+        this.emit();
+      },
+      onAgentUnmounted: () => {
+        this.state = { ...this.state, agentReady: false, agentReason: null };
+        this.emit();
+      },
       suppressGameplayInput: () => hooks.suppressGameplayInput(),
       onLayoutChange: () => hooks.onLayoutChange(this.readRightInset()),
       onClosed: () => this.setOpen(false),
     });
-    const network = () => this.session.network;
     if (!this.timer) this.timer = setInterval(() => void this.poll(), 2000);
     this.emit();
   }
@@ -196,6 +245,8 @@ export class StudioService {
     this.lifecycle.shutdown();
     this.embed?.destroy();
     this.embed = null;
+    this.locomotion.clear();
+    this.humanInput.dispose();
     this.hud.destroy();
   }
 
@@ -231,6 +282,34 @@ export class StudioService {
             hud: this.hud,
           }
         : {}),
+      playerHost: this.agentHost,
+      dshHost: {
+        captureFrame: async () => (await this.hooks?.captureFrame?.()) ?? null,
+        describeView: () => this.hooks?.describeView?.(),
+      },
+    };
+  }
+
+  private observationFrame() {
+    const pose = this.session.joined ? this.session.world.self.state : null;
+    const nearby = this.session.players().map((player) => ({
+      actorId: player.uuid,
+      position: { x: player.pose.x, y: player.pose.y, z: player.pose.z },
+      label: player.pose.name || undefined,
+    }));
+    return {
+      playerId: this.session.joined ? this.session.selfUuid : 'local',
+      position: pose ? { x: pose.x, y: pose.y, z: pose.z } : { x: 0, y: 0, z: 0 },
+      velocity: pose ? { x: pose.vx, y: pose.vy, z: pose.vz } : { x: 0, y: 0, z: 0 },
+      yaw: pose?.yaw ?? 0,
+      pitch: pose?.pitch ?? 0,
+      grid: this.currentGrid,
+      nearbyActors: nearby,
+      humanInputActive: this.humanInput.active(),
+      textInputFocused: isTextEntry(
+        typeof document === 'undefined' ? null : document.activeElement,
+      ),
+      modalOpen: this.embed?.modal ?? false,
     };
   }
 

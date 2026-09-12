@@ -10,10 +10,12 @@ walkthrough and the security story, in that order.
 
 | Requirement | What Setup did | Why |
 | --- | --- | --- |
-| Code keys on a tier | Created the *Constructor* tier with `write_server_code`, `run_server_code`, `write_client_code`, `run_client_code`; granted it to you | A claim materialises only the keys your tier holds onto the grid |
+| Code keys on a tier | Created the *Constructor* tier with `write_server_code`, `run_server_code`, `write_client_code`, `run_client_code`, and `use_studio_agent`; granted it to you | A claim materialises only the keys your tier holds onto the grid. Agent stays off the default visitor tier. |
 | Visitors may run mods | Added `run_server_code` + `run_client_code` to the default free tier | Fetching a grid's CLIENT artifact is gated on the **visitor's** tier |
 | Claimable chunks | Set the grid claim policy to `SELF_CLAIM` | `claimGridChunk` refuses under other policies |
 | Starter files | Published four common files (two templates × entrypoint + Cargo.toml) | Imported copy-by-value into your projects |
+| Studio Agent | Enabled the **app** Studio Agent policy and put `use_studio_agent` on Constructor | DeepSeek Harness (DSH) runs in a Web Worker inside the Studio agent pane, editing the open project (or bound GitHub repo) and testing drafts. Model tokens are billed per request to your player wallet by default (or the app's org wallet). |
+| GitHub integration | Checked GitHub connection status (advisory step) | Best practice: bind a GitHub repository in Studio so GitHub is your source of truth for files and version history. |
 | Cross-origin isolation | Vite sends COOP/COEP; production hosts must too ([HOSTING.md](HOSTING.md)) | The CLIENT sandbox bridge needs `SharedArrayBuffer` |
 
 ## Walkthrough: a CLIENT mod your visitors see
@@ -36,9 +38,20 @@ walkthrough and the security story, in that order.
    --offline`, then metering and optimisation). The console shows the build;
    the greeter starts in your sandbox and writes to the mod HUD:
    `Welcome, <you>!`.
-5. **Run ▾ → Deploy live.** The SERVER module is now scheduled while your app
+5. **Live-code with the Studio Agent** in the agent pane (Constructor only).
+   The agent runs the DeepSeek Harness directly in your browser. It can read
+   and edit your project files (committing to GitHub when a repository is bound),
+   run `draft_test`, observe your surroundings with `game_observe`, and inspect
+   screenshots of the game. Use the **Screenshot** button to share what you see,
+   or click **Fix with AI** on any compiler diagnostic in the Problems panel.
+   Model usage is metered per request at the rate card and billed to your
+   player wallet by default (or the app's org wallet). Use **Account > Wallet**
+   in Studio to manage funds. The agent cannot move you or act in the world;
+   it only observes. When it wants to **deploy live**, the pane asks you first
+   and nothing ships until you click **Deploy live** there.
+6. **Run ▾ → Deploy live.** The SERVER module is now scheduled while your app
    has players, and its CLIENT companion is attached to your grid.
-6. Have someone else walk onto your chunk. They are asked once to trust your
+7. Have someone else walk onto your chunk. They are asked once to trust your
    mods (the aggregate capability summary is shown); after that the greeter
    runs in *their* browser and greets both of you. Change the code and deploy
    again: the capability hash changes, and they are asked again.
@@ -112,8 +125,5 @@ and the SERVER-only path are here so it can be a deliberate one.
   wants to react to "camera on" would need a new allowlisted call in
   `clientModHost.ts`, which is your decision to make, not this starter's.
 
-- **The Studio agent dock** (Ask/Build/Play) needs a platform-level policy an
-  operator arms and a `playerHost` adapter the game implements. This starter
-  omits `crowdyStudioAgent`, so the dock stays hidden and fail-closed.
 - **Marketplace listings and paid mods** — `marketplace.publishListing` and
   friends. Read [Player marketplace](https://docs.crowdedkingdoms.com/game-api/player-marketplace).

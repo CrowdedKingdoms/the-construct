@@ -70,8 +70,9 @@ A checklist, in the order that keeps everything working at every step.
 
 ## 8. Things this starter leaves to you
 
-- Voice chat (`udp.sendAudioPacket`), teams/guilds, channels, the Overworld
-  PKCE lobby, marketplace listings, the Studio agent dock, native clients.
-  Each has a platform surface; see [PLATFORM-MAP.md](PLATFORM-MAP.md).
-  (Webcam video is wired — `WebcamService` — so voice is the one media lane
-  left; it is the same shape with `sendAudioPacket`.)
+- Teams/guilds, channels, the Overworld PKCE lobby, marketplace listings,
+  native clients. Each has a platform surface; see
+  [PLATFORM-MAP.md](PLATFORM-MAP.md). Webcam (`WebcamService`), voice
+  (`VoiceService`), and the Studio agent dock (`ConstructPlayerHostAdapter`)
+  are wired. A fork that is not a holodeck must replace the Play adapter
+  (inventory, combat, and teleport are not advertised here).

@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.5.0 — 2026-09-10
+
+Agentic Crowdy Studio in the starter, plus a Studio wallet link.
+
+- `ConstructPlayerHostAdapter` implements `crowdy.player-host/1`: observe,
+  walk, look, stop, and proximity chat. Holodeck samples the same axes as WASD.
+- `StudioService` mounts the Ask/Build/Play dock when policy and
+  `use_studio_agent` are armed, with the Play safety banner outside the dock.
+- Setup grants `use_studio_agent` on the *Constructor* tier (never the default
+  visitor tier) and writes only the *app* Studio Agent policy
+  (`setCrowdyStudioAgentPolicy`). It never reads or writes operator `cp*`
+  fields. If the platform catalog is unpublished the step stays green and the
+  dock stays closed. Agent tokens stay platform-funded; this game never holds
+  an OpenRouter key.
+- Default `npm run dev` keeps production COOP/COEP and has no API proxy.
+  Local ck-api / IDE-on-public-IP stacks opt in via `VITE_DEV_PROXY`,
+  `VITE_DEV_ALLOWED_HOSTS`, and `VITE_DEV_RELAX_ISOLATION` in `.env.local`.
+- Live e2e uses hosted Studio login / consent. Node token-seed is opt-in
+  (`CONSTRUCT_E2E_SEED_TOKEN=1` plus an explicit `CROWDY_HTTP_URL`).
+- HUD **Wallet** opens Studio `/account/wallet` for grid / player-compute
+  billing. First-join chat says the same. Studio origin and the hosted
+  sign-in URL are derived from `VITE_AUTHORIZE_URL` / `VITE_STUDIO_URL`,
+  rewriting loopback when the page is on a public IP so the IDE browser
+  does not navigate to `127.0.0.1` and sit on a blank tab.
+
+## 0.4.0 — 2026-09-10
+
+Controls, mouse look/camera, and proximity voice.
+
+- Single `Controls` map: E activates pads (Enter no longer does), T/Enter
+  focus chat, V toggles voice, F1/`?` opens the help overlay, Escape unlocks
+  look.
+- Holodeck mouse look actually works (pointer lock on the canvas, not only
+  `#game-root`) plus RMB-drag look for insecure HTTP and wheel zoom.
+- Paint: wheel zoom, middle-drag / Alt+LMB pan.
+- `VoiceService`: µ-law 8 kHz proximity voice; `microphone=(self)`.
+- Game client sets `realtime.binaryTransport: true`.
+
 ## 0.3.0 — 2026-09-08
 
 Hosted sign-in (ck-api `v1.88.0`, CrowdyJS `15.6.0`). The browser never holds

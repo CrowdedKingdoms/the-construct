@@ -92,14 +92,51 @@ export function buildCsp({ apiOrigins = [], extraConnectSrc = [] } = {}) {
     // The glue worker and Monaco workers are same-origin module workers; blob:
     // covers Vite's dev-mode worker wrappers.
     "worker-src 'self' blob:",
-    "frame-src 'none'",
+    // 'self' lets Crowdy Studio embed the same-origin in-browser DeepSeek Harness (/dsh/).
+    "frame-src 'self'",
+    "media-src 'self' blob:",
+    "manifest-src 'self'",
+  ].join('; ');
+}
+
+/**
+ * Build the Content-Security-Policy for the in-browser DeepSeek Harness (/dsh/*).
+ * The harness worker loads lowered module bodies with `new Function` and runs its
+ * own module system; its iframe is embedded by the game page ('self').
+ */
+export function buildDshCsp({ apiOrigins = [], extraConnectSrc = [] } = {}) {
+  const configured = apiOrigins.map(originOf);
+  const wsTwins = configured
+    .filter(Boolean)
+    .map((origin) => origin.replace(/^http(s?):/, (_, secure) => `ws${secure}:`));
+  const connectSources = unique([
+    "'self'",
+    'blob:',
+    ...configured,
+    ...wsTwins,
+    ...tierZoneWildcards(configured),
+    ...extraConnectSrc,
+  ]);
+
+  return [
+    "default-src 'self'",
+    "base-uri 'none'",
+    "object-src 'none'",
+    "frame-ancestors 'self'",
+    "script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    `connect-src ${connectSources.join(' ')}`,
+    "worker-src 'self' blob:",
+    "frame-src 'self'",
     "media-src 'self' blob:",
     "manifest-src 'self'",
   ].join('; ');
 }
 
 /** Which powerful features the page (and only the page) may use. */
-export const PERMISSIONS_POLICY = 'camera=(self), microphone=()';
+export const PERMISSIONS_POLICY = 'camera=(self), microphone=(self)';
 
 /**
  * The full header set. Apply to every response of the site (HTML, JS, worker
@@ -115,10 +152,24 @@ export function securityHeaders(options = {}) {
     'Cross-Origin-Embedder-Policy': 'credentialless',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Content-Security-Policy': buildCsp(options),
-    // The page may use the camera (proximity webcam, WebcamService); nothing
-    // embedded may, and the microphone is not asked for (voice is not wired —
-    // change to `microphone=(self)` when it is). An explicit policy also stops
-    // a hosting default from silently denying the camera.
+    // The page may use the camera and microphone (WebcamService / VoiceService);
+    // nothing embedded may. An explicit policy also stops a hosting default
+    // from silently denying either device.
+    'Permissions-Policy': PERMISSIONS_POLICY,
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'X-Content-Type-Options': 'nosniff',
+  };
+}
+
+/**
+ * Security headers for the in-browser DeepSeek Harness surface (/dsh/*).
+ */
+export function dshSecurityHeaders(options = {}) {
+  return {
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Embedder-Policy': 'credentialless',
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Content-Security-Policy': buildDshCsp(options),
     'Permissions-Policy': PERMISSIONS_POLICY,
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',

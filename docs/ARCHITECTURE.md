@@ -98,6 +98,16 @@ this game's router (`world_read` only). Visitors run a grid's mods after
 trusting the author. All of that needs the page to be cross-origin isolated,
 which is why `security-headers.mjs` exists.
 
+The Ask/Build/Play agent is the same embed. `StudioService` passes
+`client.crowdyStudioAgent` and a `ConstructPlayerHostAdapter` (`observe`,
+walk, look, stop, proximity chat). Setup puts `use_studio_agent` on the
+Constructor tier and writes the **app** policy. The platform catalog is an
+operator concern (this starter never reads or writes `cp*` fields). The Play
+safety banner lives outside the dock. Model usage is metered per request to
+the player's wallet by default (or the app's org wallet) — this game never
+holds a provider key. HUD **Wallet** links to Studio for the same wallet, which
+also covers grid / player-compute billing.
+
 ## Generic versus demo
 
 Keep (or adapt) for any game: everything under `src/platform/`, `src/engine/`,
