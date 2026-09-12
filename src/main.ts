@@ -241,8 +241,8 @@ async function startGame(): Promise<void> {
   );
   session.chat.system(
     studioWalletUrl
-      ? 'Crowdy Agent lives in Studio (M) after you claim a chunk. Ask/Build writes mods; Play can walk for you. Model usage is metered per request to your player wallet by default (or the app\'s org wallet) — no API key needed. Grid compute uses the same wallet (Wallet in the HUD).'
-      : 'Crowdy Agent lives in Studio (M) after you claim a chunk. Ask/Build writes mods; Play can walk for you. Model usage is metered per request to your player wallet by default (or the app\'s org wallet) — no API key needed.',
+      ? "Crowdy Agent lives in Studio (M) after you claim a chunk. Ask/Build writes mods; Play can walk for you. Model usage is metered per request to your player wallet by default (or the app's org wallet) — no API key needed. Grid compute uses the same wallet (Wallet in the HUD)."
+      : "Crowdy Agent lives in Studio (M) after you claim a chunk. Ask/Build writes mods; Play can walk for you. Model usage is metered per request to your player wallet by default (or the app's org wallet) — no API key needed.",
   );
 
   const refreshHud = async () => {
