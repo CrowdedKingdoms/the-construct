@@ -153,7 +153,10 @@ export class StudioService {
       closeKeyCode: 'KeyM',
       dsh: {
         graphql: network().game.graphql,
-        webBase: '/dsh/',
+        // Under Vite's base, so a build served from a sub-path (`vite build
+        // --base /the-construct/`) finds its own harness instead of the
+        // origin's root. The default base is '/', which keeps '/dsh/'.
+        webBase: `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}dsh/`,
         graphqlUrl: `${API_HTTP_URL}/graphql`,
         apiOrigin: API_HTTP_URL,
         getToken: () => network().game.getToken(),

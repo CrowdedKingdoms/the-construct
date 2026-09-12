@@ -66,7 +66,6 @@ export interface BootstrapInfo {
   minimumClientVersion?: string;
   maxReplicationDistance?: number;
   udpConnected?: boolean;
-  binaryRelayEnabled?: boolean;
 }
 
 export interface NetworkEvents {
@@ -348,16 +347,10 @@ export class NetworkManager {
     const appId = this.requireAppId();
     const boot = await this.game.serverStatus.gameClientBootstrap(appId);
     const min = boot.versionInfo?.minimumClientVersion;
-    // Present on ck-api since the binary relay shipped; the 15.11 pin's
-    // generated type does not yet name the field.
-    const binaryRelayEnabled =
-      (boot as { binaryRelayEnabled?: boolean }).binaryRelayEnabled ?? false;
-    this.log(`bootstrap: binaryRelayEnabled=${String(binaryRelayEnabled)}`);
     return {
       minimumClientVersion: min ? `${min.major}.${min.minor}.${min.patch}.${min.build}` : undefined,
       maxReplicationDistance: boot.maxReplicationDistance ?? undefined,
       udpConnected: boot.udpProxyConnectionStatus?.connected ?? undefined,
-      binaryRelayEnabled,
     };
   }
 

@@ -364,6 +364,10 @@ export async function ensureAgentPolicy(identity, { appId }, log = noop) {
           appId,
           enabled: true,
           killSwitch: false,
+          // Explicit on purpose: unlike tools and risk classes, modes have no
+          // inherit-on-omit at the app layer ("there is no inherit-on-empty for
+          // modes" -- SetCrowdyStudioAgentPolicyInput). PLAY is included because
+          // the HUD promises "Play can walk for you".
           allowedModes: STUDIO_AGENT_MODES,
           expectedRevision: app?.revision ?? '0',
           idempotencyKey: `construct-agent-app-${appId}-v2`,
