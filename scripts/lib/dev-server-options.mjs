@@ -37,6 +37,7 @@ export function constructDevServerOptions(input) {
           proxy: {
             '/graphql': { target: proxyTarget, changeOrigin: true, ws: true },
             '/realtime': { target: proxyTarget, changeOrigin: true, ws: true },
+            '/v1/model': { target: proxyTarget, changeOrigin: true },
           },
         }
       : {}),

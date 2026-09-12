@@ -169,7 +169,14 @@ async function startGame(): Promise<void> {
     suppressGameplayInput: () => input.suppress(),
     onLayoutChange: (rightInset) => loop.setRightInset(rightInset),
     notify: (text, tone) => hud.toast(text, tone),
-    bannerParent: uiRoot!,
+    captureFrame: async () => {
+      const canvas = gameRoot!.querySelector('canvas.scene-canvas') as HTMLCanvasElement | null;
+      return canvas ?? null;
+    },
+    describeView: () => {
+      const scene = router.current?.id;
+      return `Scene: ${scene ?? 'holodeck'}`;
+    },
   });
 
   const game: RunningGame = { session, loop, router, hud, chat, timers: [], disposers: [] };
