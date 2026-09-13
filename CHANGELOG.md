@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 — 2026-09-13
+
+CrowdyJS `17.1.0-dev.1` and crowdy-dsh `0.3.1-dev.1`: on the binary relay
+(which this starter turns on) the SDK now packs the messages sent within
+`realtime.bundleWindowMs` (1 ms) into one `MESSAGE_BUNDLE` datagram, accepted
+by replication server v0.27.0+. Nothing to change here: a lone message is sent
+unwrapped, `...AndWait` and `disconnect()` flush on their own, and a hidden tab
+flushes each send immediately. `realtime: { bundleSends: false }` opts out.
+
 ## 0.6.1 — 2026-09-13
 
 CrowdyJS `17.0.1-dev.1`: a bound Studio save with a stale revision is a
