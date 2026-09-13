@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.6.1 — 2026-09-13
+
+CrowdyJS `17.0.1-dev.1`: a bound Studio save with a stale revision is a
+conflict, not a commit.
+
+## 0.6.0 — 2026-09-13
+
+CrowdyJS `17.0.0-dev.1` and crowdy-dsh `0.3.0-dev.1` (ck-api v2.0.0): a bound
+GitHub repository is the working tree, and GitHub stays optional.
+
+- A project starts in Crowdy Studio and stays there until its owner binds a
+  repository in hosted Studio (push the project in, or take the repository);
+  every save and every agent edit then commits to it, "Refresh from GitHub"
+  picks up pushes made elsewhere, unbind keeps the files. No behaviour changes
+  for a project that never binds.
+- The GitHub card keeps riding the game's app token: the API scopes every
+  working-tree field to projects this token's user owns, so no identity
+  session is needed on this origin and none is held. Connect / Bind / Unbind
+  are identity-only and happen in hosted Studio.
+- `docs/MODDING.md` says so; `StudioService` says why.
+
 ## 0.5.0 — 2026-09-10
 
 Agentic Crowdy Studio in the starter, plus a Studio wallet link.
