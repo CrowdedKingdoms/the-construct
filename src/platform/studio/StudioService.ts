@@ -144,6 +144,13 @@ export class StudioService {
         get playerWallet() {
           return network().game.playerWallet;
         },
+        // The GitHub card rides the game's app token on purpose: the API
+        // scopes every crowdyStudioGitHub* working-tree field to projects
+        // this token's user owns, so no identity session is needed here
+        // (and this page never holds one — it signs in through hosted
+        // /authorize). Connect / Bind / Unbind are identity-only and happen
+        // in hosted Studio. GitHub is optional; a project saves in Studio
+        // either way.
         get crowdyStudioGitHub() {
           return network().game.crowdyStudioGitHub;
         },
