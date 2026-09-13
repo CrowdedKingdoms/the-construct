@@ -15,7 +15,7 @@ walkthrough and the security story, in that order.
 | Claimable chunks | Set the grid claim policy to `SELF_CLAIM` | `claimGridChunk` refuses under other policies |
 | Starter files | Published four common files (two templates × entrypoint + Cargo.toml) | Imported copy-by-value into your projects |
 | Studio Agent | Enabled the **app** Studio Agent policy and put `use_studio_agent` on Constructor | DeepSeek Harness (DSH) runs in a Web Worker inside the Studio agent pane, editing the open project (or bound GitHub repo) and testing drafts. Model tokens are billed per request to your player wallet by default (or the app's org wallet). |
-| GitHub integration | Checked GitHub connection status (advisory step) | Best practice: bind a GitHub repository in Studio so GitHub is your source of truth for files and version history. |
+| GitHub integration | Checked GitHub connection status (advisory step) | Optional. A project starts in Crowdy Studio and works there for good; when you want history and your own editor, bind a repository in hosted Studio (push the project in, or take an existing repository) and it becomes the working tree — every Studio save and every agent edit commits to it, and "Refresh from GitHub" picks up pushes made elsewhere. Unbind keeps the files. The in-game card rides the game's app token; binding itself needs your Crowded Kingdoms sign-in, so it happens in hosted Studio. |
 | Cross-origin isolation | Vite sends COOP/COEP; production hosts must too ([HOSTING.md](HOSTING.md)) | The CLIENT sandbox bridge needs `SharedArrayBuffer` |
 
 ## Walkthrough: a CLIENT mod your visitors see
@@ -40,7 +40,7 @@ walkthrough and the security story, in that order.
    `Welcome, <you>!`.
 5. **Live-code with the Studio Agent** in the agent pane (Constructor only).
    The agent runs the DeepSeek Harness directly in your browser. It can read
-   and edit your project files (committing to GitHub when a repository is bound),
+   and edit your project files (for a project bound to GitHub, each save is a commit),
    run `draft_test`, observe your surroundings with `game_observe`, and inspect
    screenshots of the game. Use the **Screenshot** button to share what you see,
    or click **Fix with AI** on any compiler diagnostic in the Problems panel.
