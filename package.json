@@ -1,6 +1,6 @@
 {
   "name": "the-construct",
-  "version": "0.5.0",
+  "version": "0.6.1",
   "private": true,
   "description": "Starter repo for browser games on Crowded Kingdoms: engine-agnostic platform layer, three.js holodeck hub, pixi.js program scene, Crowdy Studio with client mods and the Ask/Build/Play agent, and in-app onboarding.",
   "type": "module",
