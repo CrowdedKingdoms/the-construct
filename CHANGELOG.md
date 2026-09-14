@@ -2,7 +2,7 @@
 
 ## 0.8.0 — 2026-09-14
 
-Publish to Crowdy Games. CrowdyJS `17.2.0-dev.1` (ck-api v2.1.0).
+Publish to Crowdy Games. CrowdyJS `17.2.0-test.1` (ck-api v2.1.0).
 
 - `npm run publish [-- --slug my-game]` (`scripts/publish.mjs`): sign in, claim
   the hosting slug, build, upload `dist/`, and print the play URL. The game is
