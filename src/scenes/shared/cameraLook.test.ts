@@ -6,6 +6,7 @@ import {
   applyLook,
   followCameraOffset,
   panOffset,
+  wishOnGround,
   zoomDistance,
 } from '@/scenes/shared/cameraLook';
 
@@ -31,6 +32,29 @@ describe('followCameraOffset', () => {
     expect(at.x).toBeCloseTo(0, 5);
     expect(at.z).toBeCloseTo(6, 5);
     expect(at.y).toBeCloseTo(3, 5);
+  });
+});
+
+describe('wishOnGround', () => {
+  it('D strafes screen-right and A screen-left at spawn yaw', () => {
+    const d = wishOnGround(0, { x: 1, y: 0 });
+    expect(d.x).toBeCloseTo(1, 5);
+    expect(d.z).toBeCloseTo(0, 5);
+    const a = wishOnGround(0, { x: -1, y: 0 });
+    expect(a.x).toBeCloseTo(-1, 5);
+    expect(a.z).toBeCloseTo(0, 5);
+  });
+
+  it('W walks away from the follow camera at spawn yaw', () => {
+    const w = wishOnGround(0, { x: 0, y: 1 });
+    expect(w.x).toBeCloseTo(0, 5);
+    expect(w.z).toBeCloseTo(-1, 5);
+  });
+
+  it('D stays screen-right after a right turn', () => {
+    const d = wishOnGround(-Math.PI / 2, { x: 1, y: 0 });
+    expect(d.x).toBeCloseTo(0, 5);
+    expect(d.z).toBeCloseTo(1, 5);
   });
 });
 

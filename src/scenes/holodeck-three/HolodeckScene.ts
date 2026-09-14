@@ -26,6 +26,7 @@ import {
   LOOK_SENSITIVITY,
   applyLook,
   followCameraOffset,
+  wishOnGround,
   zoomDistance,
 } from '@/scenes/shared/cameraLook';
 import { tintColor } from '@/scenes/shared/interpolate';
@@ -202,12 +203,9 @@ export class HolodeckScene implements GameScene {
     const human = input.suppressed ? { x: 0, y: 0 } : input.axes();
     const axes = { x: clampAxis(human.x + agent.x), y: clampAxis(human.y + agent.y) };
     const speed = input.isRun() ? RUN_SPEED : WALK_SPEED;
-    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-    const right = new THREE.Vector3(forward.z, 0, -forward.x);
-    const wish = new THREE.Vector3()
-      .addScaledVector(forward, axes.y)
-      .addScaledVector(right, axes.x);
-    if (wish.lengthSq() > 0) wish.normalize().multiplyScalar(speed);
+    const dir = wishOnGround(this.yaw, axes);
+    const wish = new THREE.Vector3(dir.x, 0, dir.z);
+    if (wish.lengthSq() > 0) wish.multiplyScalar(speed);
     this.velocity.lerp(wish, Math.min(1, dt * 12));
     this.position.addScaledVector(this.velocity, dt);
     this.position.x = clamp(this.position.x);
