@@ -54,8 +54,16 @@ export default defineConfig(({ mode }) => {
   // The CSP must admit whichever API the bundle will actually dial: an explicit
   // override, or the origin baked into the installed SDK for its tier.
   const apiOrigin = env.VITE_CROWDY_HTTP_URL?.trim() || sdkDefaultHttpOrigin(rootDir);
-  const headers = securityHeaders({ apiOrigins: [apiOrigin] });
-  const dshHeaders = dshSecurityHeaders({ apiOrigins: [apiOrigin] });
+  // Who may FRAME this game. Empty (the default) means nobody: a self-hosted game is a
+  // top-level page. The shell e2e (tests/e2e/shell.spec.ts) sets it to its fixture's
+  // origin; a fork that runs behind a shell of its own sets it to that origin. On
+  // Crowdy Games the platform's edge serves the equivalent and this is not read.
+  const frameAncestors = (env.CONSTRUCT_FRAME_ANCESTORS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const headers = securityHeaders({ apiOrigins: [apiOrigin], frameAncestors });
+  const dshHeaders = dshSecurityHeaders({ apiOrigins: [apiOrigin], frameAncestors });
 
   return {
     plugins: [dshHeadersPlugin(dshHeaders)],

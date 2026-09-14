@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.0 — 2026-09-14
+
+Publish to Crowdy Games. CrowdyJS `17.2.0-test.1` (ck-api v2.1.0).
+
+- `npm run publish [-- --slug my-game]` (`scripts/publish.mjs`): sign in, claim
+  the hosting slug, build, upload `dist/`, and print the play URL. The game is
+  reached at `https://<games host>/<slug>/` (a first-party shell) and executes
+  on `https://<slug>.<content host>`, its own origin, behind the same headers
+  `docs/HOSTING.md` asks a self-hoster to serve.
+- Hosted sign-in under the shell needs nothing from this repo: the SDK's
+  `EmbeddedHost` asks the shell to navigate and uses the shell page as
+  `redirect_uri`; the code is relayed into the frame.
+- `security-headers.mjs` gains `frameAncestors` (and `corpFor`): a framed game
+  serves `frame-ancestors <shell>` and `Cross-Origin-Resource-Policy:
+  cross-origin`; `CONSTRUCT_FRAME_ANCESTORS` sets it for preview.
+- `tests/e2e/shell.spec.ts`: the bundle framed by a shell fixture is
+  cross-origin isolated and its sign-in click produces a `crowdyjs:navigate`
+  to `/authorize` with the shell page as `redirect_uri`.
 ## 0.7.0 — 2026-09-13
 
 CrowdyJS `17.1.0-dev.1` and crowdy-dsh `0.3.1-dev.1`: on the binary relay

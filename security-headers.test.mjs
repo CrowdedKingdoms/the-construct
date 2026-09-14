@@ -54,6 +54,34 @@ test('dsh csp relaxes script-src for the worker and permits same-origin frame an
   assert.equal(headers['Cross-Origin-Opener-Policy'], 'same-origin');
 });
 
+test('a framed game names exactly its framer; the DSH pane names the framer beside self', () => {
+  // The Crowdy Games shell (or a shell of your own) frames the game; frame-ancestors is
+  // checked against EVERY ancestor, so the pane -- framed by the game, framed by the
+  // shell -- must admit both, and the game page must admit only the shell.
+  const framed = {
+    apiOrigins: ['https://ck.dev.example.com'],
+    frameAncestors: ['https://games.example.test/some/path'],
+  };
+  assert.match(buildCsp(framed), /frame-ancestors https:\/\/games\.example\.test(;|$)/);
+  assert.doesNotMatch(buildCsp(framed), /frame-ancestors 'none'/);
+  assert.match(buildDshCsp(framed), /frame-ancestors 'self' https:\/\/games\.example\.test(;|$)/);
+  // Unframed (the default) is unchanged.
+  assert.match(buildCsp({ apiOrigins: ['https://ck.dev.example.com'] }), /frame-ancestors 'none'/);
+  assert.match(
+    buildDshCsp({ apiOrigins: ['https://ck.dev.example.com'] }),
+    /frame-ancestors 'self'(;|$)/,
+  );
+  // Garbage is not an ancestor.
+  assert.match(buildCsp({ frameAncestors: ['not a url'] }), /frame-ancestors 'none'/);
+  // CORP follows: a framed document must be embeddable under the shell's COEP.
+  assert.equal(securityHeaders(framed)['Cross-Origin-Resource-Policy'], 'cross-origin');
+  assert.equal(dshSecurityHeaders(framed)['Cross-Origin-Resource-Policy'], 'cross-origin');
+  assert.equal(
+    securityHeaders({ apiOrigins: ['https://ck.dev.example.com'] })['Cross-Origin-Resource-Policy'],
+    'same-origin',
+  );
+});
+
 test('localhost and IP origins get no wildcard', () => {
   assert.deepEqual(tierZoneWildcards(['http://localhost:3000', 'http://127.0.0.1:3000']), []);
 });

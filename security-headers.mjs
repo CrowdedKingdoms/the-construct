@@ -62,7 +62,7 @@ export function tierZoneWildcards(origins) {
  *   the SDK default). `extraConnectSrc` — additional exact origins a fork needs
  *   (analytics beacon, its own backend). Keep this list exact; no `*`.
  */
-export function buildCsp({ apiOrigins = [], extraConnectSrc = [] } = {}) {
+export function buildCsp({ apiOrigins = [], extraConnectSrc = [], frameAncestors = [] } = {}) {
   const configured = apiOrigins.map(originOf);
   const wsTwins = configured
     .filter(Boolean)
@@ -79,7 +79,11 @@ export function buildCsp({ apiOrigins = [], extraConnectSrc = [] } = {}) {
     "default-src 'self'",
     "base-uri 'none'",
     "object-src 'none'",
-    "frame-ancestors 'none'",
+    // 'none' when self-hosted at the top level. When this game is FRAMED -- by the
+    // Crowdy Games shell (which the platform's content edge sets for you), or by a
+    // shell of your own -- name exactly that origin here (`frameAncestors`); a game
+    // that can be framed anywhere is a clickjacking surface.
+    `frame-ancestors ${frameAncestorsSource(frameAncestors)}`,
     // 'wasm-unsafe-eval' lets the SDK instantiate WebAssembly (the Rust
     // language worker and the player-mod runtime). It grants no JS eval.
     "script-src 'self' 'wasm-unsafe-eval'",
@@ -104,7 +108,7 @@ export function buildCsp({ apiOrigins = [], extraConnectSrc = [] } = {}) {
  * The harness worker loads lowered module bodies with `new Function` and runs its
  * own module system; its iframe is embedded by the game page ('self').
  */
-export function buildDshCsp({ apiOrigins = [], extraConnectSrc = [] } = {}) {
+export function buildDshCsp({ apiOrigins = [], extraConnectSrc = [], frameAncestors = [] } = {}) {
   const configured = apiOrigins.map(originOf);
   const wsTwins = configured
     .filter(Boolean)
@@ -122,7 +126,10 @@ export function buildDshCsp({ apiOrigins = [], extraConnectSrc = [] } = {}) {
     "default-src 'self'",
     "base-uri 'none'",
     "object-src 'none'",
-    "frame-ancestors 'self'",
+    // 'self' (the game page frames the pane) PLUS whoever frames the game: frame-ancestors
+    // is checked against EVERY ancestor, so under the Crowdy Games shell the pane's
+    // ancestors are the game and the shell, and 'self' alone would refuse it.
+    `frame-ancestors 'self'${frameAncestors.length ? ` ${frameAncestorsSource(frameAncestors)}` : ''}`,
     "script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
@@ -133,6 +140,17 @@ export function buildDshCsp({ apiOrigins = [], extraConnectSrc = [] } = {}) {
     "media-src 'self' blob:",
     "manifest-src 'self'",
   ].join('; ');
+}
+
+/** `frameAncestors` -> a CSP source list; `'none'` when nothing may frame the page. */
+export function frameAncestorsSource(frameAncestors = []) {
+  const origins = unique(frameAncestors.map(originOf));
+  return origins.length ? origins.join(' ') : "'none'";
+}
+
+/** `same-origin` unless somebody may frame the game, then `cross-origin` (see securityHeaders). */
+export function corpFor({ frameAncestors = [] } = {}) {
+  return frameAncestors.some((a) => originOf(a)) ? 'cross-origin' : 'same-origin';
 }
 
 /** Which powerful features the page (and only the page) may use. */
@@ -150,7 +168,11 @@ export function securityHeaders(options = {}) {
     // cross-origin subresources without CORP headers by stripping credentials,
     // which is what a static game on a CDN needs. Both values enable isolation.
     'Cross-Origin-Embedder-Policy': 'credentialless',
-    'Cross-Origin-Resource-Policy': 'same-origin',
+    // `same-origin` for a top-level game. A FRAMED game must say `cross-origin`:
+    // browsers enforce CORP on nested navigations too, so under the shell's COEP a
+    // `same-origin` document is refused with ERR_BLOCKED_BY_RESPONSE before
+    // frame-ancestors is even consulted. Measured 2026-09-13 in the shell e2e.
+    'Cross-Origin-Resource-Policy': corpFor(options),
     'Content-Security-Policy': buildCsp(options),
     // The page may use the camera and microphone (WebcamService / VoiceService);
     // nothing embedded may. An explicit policy also stops a hosting default
@@ -168,7 +190,7 @@ export function dshSecurityHeaders(options = {}) {
   return {
     'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Embedder-Policy': 'credentialless',
-    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Cross-Origin-Resource-Policy': corpFor(options),
     'Content-Security-Policy': buildDshCsp(options),
     'Permissions-Policy': PERMISSIONS_POLICY,
     'Referrer-Policy': 'strict-origin-when-cross-origin',
