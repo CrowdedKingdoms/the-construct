@@ -75,7 +75,8 @@ switch overlays flip: `suppress()`. While the chat box has focus or Crowdy
 Studio's modal is open, gameplay keys are ignored but `onKey` shortcuts still
 fire (except while typing). Scenes read `input.axes()` / `input.isDown()` and
 never attach their own keyboard listeners; pointer listeners on the scene's
-canvas are fine (Paint does this).
+canvas are fine (Paint does this). Holodeck WASD is `wishOnGround` in
+`src/scenes/shared/cameraLook.ts` (D is screen-right at spawn yaw).
 
 ## Layout
 

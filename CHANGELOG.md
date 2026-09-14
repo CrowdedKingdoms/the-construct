@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.1 — 2026-09-14
+
+Holodeck A/D was inverted. The ground-right vector was
+`(forward.z, −forward.x)`, which is left when the follow camera sits on +Z.
+`moveBasis` / `wishOnGround` in `src/scenes/shared/cameraLook.ts` now use the
+right-handed perpendicular so D is screen-right and A is screen-left; unit
+tests lock the signs.
+
 ## 0.8.0 — 2026-09-14
 
 Publish to Crowdy Games. CrowdyJS `17.2.0-test.1` (ck-api v2.1.0).

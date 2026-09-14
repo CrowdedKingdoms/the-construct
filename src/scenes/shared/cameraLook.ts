@@ -1,6 +1,7 @@
 /**
- * Pointer-look and zoom math used by the holodeck (and unit-tested so a
- * sign flip cannot sneak back in). No renderer types on purpose.
+ * Pointer-look, zoom, and ground-plane WASD math used by the holodeck
+ * (unit-tested so a sign flip cannot sneak back in). No renderer types
+ * on purpose.
  */
 
 export const LOOK_PITCH_MIN = -1.2;
@@ -56,6 +57,41 @@ export function zoomDistance(
 ): number {
   const next = distance * (1 + wheelY * factor);
   return Math.max(min, Math.min(max, next));
+}
+
+/**
+ * Ground-plane facing and camera-right for WASD.
+ *
+ * At yaw 0 the follow camera sits on +Z looking toward −Z, so +X is
+ * screen-right. The right vector is the right-handed perpendicular
+ * `(−forward.z, forward.x)`. `(forward.z, −forward.x)` is left — that
+ * was the holodeck bug (A walked right, D left).
+ */
+export function moveBasis(yaw: number): {
+  forward: { x: number; z: number };
+  right: { x: number; z: number };
+} {
+  const forward = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
+  return {
+    forward,
+    right: { x: -forward.z, z: forward.x },
+  };
+}
+
+/**
+ * Unit wish on the ground from WASD axes (`x` = strafe, `y` = forward).
+ * Zero input stays zero.
+ */
+export function wishOnGround(
+  yaw: number,
+  axes: { x: number; y: number },
+): { x: number; z: number } {
+  const { forward, right } = moveBasis(yaw);
+  const x = forward.x * axes.y + right.x * axes.x;
+  const z = forward.z * axes.y + right.z * axes.x;
+  const length = Math.hypot(x, z);
+  if (length === 0) return { x: 0, z: 0 };
+  return { x: x / length, z: z / length };
 }
 
 /** Screen-pixel drag → world-unit pan. Dragging right moves the view right. */
