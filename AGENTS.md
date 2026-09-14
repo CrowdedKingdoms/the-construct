@@ -41,7 +41,17 @@ pin** — git resolves `package.json`/`package-lock.json` silently in whichever
 direction changed last. Repin with `npm install --save-exact
 @crowdedkingdoms/crowdyjs@<version>`.
 
-There is no deploy workflow, deliberately: hosting is the developer's.
+There is no deploy workflow in this repo, deliberately. Hosting is the
+developer's -- and since 0.8.0 one of the developer's options is
+`npm run publish` (`scripts/publish.mjs`), which publishes `dist/` to Crowdy
+Games through the public hosting surface (`client.hosting`, ck-api v2.1) on the
+IDENTITY client, never the app token. A game published there runs framed by the
+platform's first-party shell; the SDK's `EmbeddedHost` bridge makes hosted
+sign-in work unchanged, and `tests/e2e/shell.spec.ts` proves the framed bundle
+is cross-origin isolated and routes sign-in through the shell. `security-headers.mjs`
+takes `frameAncestors` for a shell of your own; unframed output is unchanged.
+Crowded Kingdom Studios publishes this repo itself as `the-construct` (a slug
+reserved for that org) through the same command a third party runs.
 
 ## Working in this repo
 

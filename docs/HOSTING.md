@@ -1,5 +1,52 @@
 # Hosting
 
+Two ways to put the game in front of players. The first is a command; the
+second is any static host you like.
+
+## Host on Crowdy Games (one command)
+
+```sh
+CONSTRUCT_EMAIL=you@example.com CONSTRUCT_PASSWORD=... npm run publish
+# -> Play it at: https://<games host>/<slug>/
+```
+
+`npm run publish` signs in with your account (an identity session, from Node --
+a browser page cannot do this, by design), claims a **slug** for your app
+(default: the app's slug; `-- --slug my-game` to choose), builds, and uploads
+`dist/` to the platform. Your game is then reached at
+`https://<games host>/<slug>/` -- a first-party Crowded Kingdoms page (the
+*shell*) that frames your bundle from an origin of its own,
+`https://<slug>.<content host>`. Every header in the next section is served for
+you by the platform's edge, including the `/dsh/*` policy, and `crossOriginIsolated`
+is true inside the frame (the shell delegates it), so CLIENT mods work.
+
+What is different from self-hosting, and what is not:
+
+- **Sign-in is the same flow** (`portal.signIn` -> Studio `/authorize` ->
+  `portal.handleSignInCallback`). Inside the shell the SDK (CrowdyJS >= 17.2)
+  asks the shell to navigate the tab and uses the shell page as the
+  `redirect_uri`; the shell relays the returned code into your frame. Nothing in
+  this repo changes for it. The PKCE verifier never leaves your origin and the
+  shell never holds a token.
+- **Your origin is yours.** localStorage, IndexedDB, service workers and
+  `BroadcastChannel` are per game; no other game shares them.
+- **The slug is global on the tier** and a DNS label (`a-z0-9-`, 1-63, no edge
+  hyphens); first-party names are reserved. `HOSTED_SLUG_UNAVAILABLE` says
+  which rule you hit. Publishing is self-serve and immediate; being *listed* in
+  the Overworld lobby is an operator's decision.
+- **Quotas**: 2,000 files / 250 MB per publish, 60 MB per file, 10 publishes an
+  hour per app. A 0.6 build is ~130 files / ~23 MB.
+- **You publish from the tier your SDK pin dials.** A `prod` clone publishes to
+  production Crowdy Games; a `dev` clone to the dev tier. The same
+  `manage_apps` permission that let you run `npm run setup` is what lets you
+  publish. `--no-build` reuses an existing `dist/`; `--dir` points at another.
+- `CONTENT_HOSTING_DISABLED` means the tier you dialled has no content CDN yet;
+  self-host (below) until it does.
+
+Everything below is for hosting the build yourself.
+
+## Self-hosting
+
 `npm run build` writes a static site to `dist/`. Put it on any static host.
 One requirement decides whether Crowdy Studio CLIENT mods work: the host must
 send the cross-origin isolation headers on **every** response (HTML, JS, wasm,
@@ -18,6 +65,15 @@ production host. `VITE_DEV_RELAX_ISOLATION=1` strips COEP/COOP on the *dev
 server only* so a plain-HTTP public IP can load; CLIENT mods stay off.
 
 ## The headers
+
+Behind a shell of your own? Set `CONSTRUCT_FRAME_ANCESTORS=https://your-shell.example`
+when you build/preview, or pass `frameAncestors` to `securityHeaders()`: the
+game then serves `frame-ancestors <that origin>` (the DSH pane `'self'` plus it)
+and `Cross-Origin-Resource-Policy: cross-origin`, which a framed document needs
+under the shell's COEP. The shell itself must send COOP `same-origin`, a COEP,
+and delegate `cross-origin-isolated` to the frame (`Permissions-Policy` +
+`allow=`), or `crossOriginIsolated` is false inside it. `tests/e2e/shell.spec.ts`
+is the working example.
 
 ```text
 Cross-Origin-Opener-Policy: same-origin
