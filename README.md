@@ -104,6 +104,7 @@ Put `VITE_DEV_PROXY=1`, `VITE_DEV_ALLOWED_HOSTS=1`, and/or
 | `npm run setup -- --org "…" --app "…" [--origin https://…]` | Setup: org, app, tier, redirect URIs, seed; needs `CONSTRUCT_EMAIL` / `CONSTRUCT_PASSWORD` |
 | `npm run seed` | Re-deploy the model + Studio starter files to `APP_ID` after editing `model/` or `mods/` |
 | `npm run smoke` | Verify an app has everything Setup should have produced |
+| `npm run publish [-- --slug my-game] [--no-build] [--dir dist]` | Publish the build to Crowdy Games: claim the slug, build, upload; prints the play URL. Needs `CONSTRUCT_EMAIL` / `CONSTRUCT_PASSWORD` and `VITE_APP_ID` |
 | `npm run check:pin` | The CrowdyJS pin is exact and matches the branch tier |
 
 ## How it is put together
@@ -166,11 +167,14 @@ for the player's grid / compute wallet, not the agent. Current figures:
 [Shared environment](https://docs.crowdedkingdoms.com/management-api/shared-environment)
 and [Player billing](https://docs.crowdedkingdoms.com/management-api/player-billing).
 
-## Hosting is yours
+## Hosting: one command, or yours
 
-This repo deploys nothing. `npm run build` produces a static site you can put
-anywhere — with one requirement: the host must send the COOP/COEP headers or
-CLIENT mods will not run (the game says so on screen). Recipes in
+`npm run publish` puts the game on **Crowdy Games**: it is reached at
+`https://<games host>/<slug>/` and runs on an origin of its own, with every
+security header served for you, and players sign in exactly as they would
+anywhere else. Or `npm run build` produces a static site you can put anywhere
+— with one requirement: the host must send the COOP/COEP headers or CLIENT mods
+will not run (the game says so on screen). Both in
 [docs/HOSTING.md](docs/HOSTING.md).
 
 ## Branches and the SDK pin
