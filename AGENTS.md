@@ -39,7 +39,9 @@ environment. `scripts/ci/check-sdk-pin.mjs` refuses a caret and a cross-tier
 pin; CI runs it against the PR base. **After any promotion merge, re-check the
 pin** — git resolves `package.json`/`package-lock.json` silently in whichever
 direction changed last. Repin with `npm install --save-exact
-@crowdedkingdoms/crowdyjs@<version>`.
+@crowdedkingdoms/crowdyjs@<version>`, or promote with
+`infra-control-plane/scripts/ops/promote.mjs --repo the-construct --from <tier> --to <tier>`, which re-pins to the destination
+tier's registry artifact, runs `check:pin` and opens the PR.
 
 There is no deploy workflow in this repo, deliberately. Hosting is the
 developer's -- and since 0.8.0 one of the developer's options is
