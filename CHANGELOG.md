@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.2 — 2026-09-14
+
+CrowdyJS `17.3.0-dev.1`: the Studio GitHub card gains "Create repository on
+GitHub" (GitHub's form prefilled; the App cannot create one itself) and the
+`repositorySelection` reminder.
+
 ## 0.8.1 — 2026-09-14
 
 Holodeck A/D was inverted. The ground-right vector was
