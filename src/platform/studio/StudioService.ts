@@ -37,10 +37,14 @@ import { ConstructPlayerHostAdapter } from '@/platform/studio/ConstructPlayerHos
 import { HumanInputMonitor } from './HumanInputMonitor';
 import {
   bytesToBase64,
+  DEFAULT_VOXEL_STATE,
   routeClientHostCall,
   runConsentedGridMod,
   type ClientModHostReads,
+  type ClientModHostWrites,
 } from '@/platform/studio/clientModHost';
+import { PointerClickBuffer } from '@/platform/studio/pointerClicks';
+import { ModOverlayStore } from '@/platform/studio/modOverlay';
 import { GridService, type GridSnapshot } from '@/platform/studio/GridService';
 import { hasAnyStudioPermission, toBrokerBounds } from '@/platform/studio/permissions';
 import { Emitter } from '@/platform/util/Emitter';
@@ -70,6 +74,30 @@ export interface StudioHooks {
   describeView?(): string | undefined;
 }
 
+/**
+ * CrowdyJS TextHud JSON.stringifies payloads and clips them at 200 characters,
+ * which turns an ASCII table into a one-line `{greeting:"BILL…`. Prefer a
+ * `greeting` string (still textContent, never HTML) and do not clip it.
+ */
+function createConstructTextHud(): CrowdyStudioTextHud {
+  const hud = new CrowdyStudioTextHud();
+  Object.assign(hud, {
+    describe(payload: unknown) {
+      if (typeof payload === 'string') return payload;
+      if (payload && typeof payload === 'object') {
+        const greeting = (payload as { greeting?: unknown }).greeting;
+        if (typeof greeting === 'string' && greeting.length > 0) return greeting;
+      }
+      try {
+        return JSON.stringify(payload);
+      } catch {
+        return '(unrenderable payload)';
+      }
+    },
+  });
+  return hud;
+}
+
 const GRID_REFRESH_MS = 8_000;
 const MODS_REFRESH_MS = 10_000;
 /**
@@ -85,12 +113,15 @@ export class StudioService {
   readonly grids: GridService;
   /** Play locomotion wishes; HolodeckScene samples these each frame. */
   readonly locomotion = new AgentLocomotion();
-  private readonly hud = new CrowdyStudioTextHud();
+  /** CLIENT overlay_draw gizmos; the holodeck merges these onto instances. */
+  readonly overlay = new ModOverlayStore();
+  private readonly hud = createConstructTextHud();
   private readonly lifecycle = new ClientModLifecycle();
   private readonly declinedAuthors = new Set<string>();
   private readonly approvedAuthors = new Set<string>();
   private readonly agentHost: ConstructPlayerHostAdapter;
   private readonly humanInput = new HumanInputMonitor();
+  private readonly pointerClicks = new PointerClickBuffer();
   private gridEnteredAt = 0;
   private embed: CrowdyStudioEmbed | null = null;
   private hooks: StudioHooks | null = null;
@@ -125,6 +156,11 @@ export class StudioService {
       agentReady: false,
       agentReason: null,
     };
+  }
+
+  /** Grid the local player is standing on, if known. */
+  get grid(): GridSnapshot | null {
+    return this.currentGrid;
   }
 
   /** Wire the engine-side hooks; call once after the loop exists. */
@@ -185,9 +221,17 @@ export class StudioService {
       },
       suppressGameplayInput: () => hooks.suppressGameplayInput(),
       onLayoutChange: () => hooks.onLayoutChange(this.readRightInset()),
-      onClosed: () => this.setOpen(false),
+      onClosed: () => {
+        if (this.currentGrid) {
+          const source = `studio:${this.currentGrid.gridId}`;
+          this.overlay.remove(source);
+          this.hud.remove(source);
+        }
+        this.setOpen(false);
+      },
     });
     if (!this.timer) this.timer = setInterval(() => void this.poll(), 2000);
+    this.pointerClicks.attach();
     this.emit();
   }
 
@@ -244,6 +288,11 @@ export class StudioService {
 
   close(): void {
     this.embed?.close();
+    if (this.currentGrid) {
+      const source = `studio:${this.currentGrid.gridId}`;
+      this.overlay.remove(source);
+      this.hud.remove(source);
+    }
   }
 
   dispose(): void {
@@ -254,7 +303,9 @@ export class StudioService {
     this.embed = null;
     this.locomotion.clear();
     this.humanInput.dispose();
+    this.pointerClicks.dispose();
     this.hud.destroy();
+    this.overlay.clear();
   }
 
   // ---------------------------------------------------------------------------
@@ -269,6 +320,8 @@ export class StudioService {
     const bounds = toBrokerBounds(grid.bounds);
     const clientOk = this.state.clientModsAvailable;
     const reads = this.reads();
+    const writes = this.writes();
+    const overlaySource = `studio:${grid.gridId}`;
     return {
       gridId: grid.gridId,
       grid: bounds,
@@ -285,7 +338,20 @@ export class StudioService {
       ...(clientOk
         ? {
             workerUrl: glueWorkerAssetUrl,
-            onHostCall: (call: PlayerCodeHostCall) => routeClientHostCall(call, reads, bounds),
+            onHostCall: (call: PlayerCodeHostCall) =>
+              routeClientHostCall(call, reads, bounds, writes, this.pointerClicks),
+            onPresentation: (presentation) => {
+              if (presentation.channel === 'hud') {
+                this.hud.set({
+                  source: overlaySource,
+                  label: 'Crowdy Studio preview',
+                  payload: presentation.payload,
+                });
+              }
+              if (presentation.channel === 'overlay') {
+                this.overlay.apply(overlaySource, presentation.payload, bounds);
+              }
+            },
             hud: this.hud,
           }
         : {}),
@@ -369,6 +435,24 @@ export class StudioService {
     };
   }
 
+  private writes(): ClientModHostWrites {
+    return {
+      setVoxel: async (input) => {
+        const chunks = this.session.world.chunks;
+        const ok = await chunks.setVoxel({
+          chunk: input.chunk,
+          x: input.x,
+          y: input.y,
+          z: input.z,
+          voxelType: input.voxelType,
+          state: input.state ?? DEFAULT_VOXEL_STATE,
+        });
+        if (ok) chunks.markDirty(input.chunk);
+        return ok;
+      },
+    };
+  }
+
   private adoptGrid(grid: GridSnapshot | null, chunk: ChunkCoord): void {
     this.currentGrid = grid;
     this.lastGridChunkKey = chunkKey(chunk);
@@ -378,6 +462,7 @@ export class StudioService {
       this.approvedAuthors.clear();
       this.lastModsReadAt = 0;
       this.gridEnteredAt = Date.now();
+      this.overlay.clear();
     }
     this.state = { ...this.state, grid };
     this.emit();
@@ -511,7 +596,10 @@ export class StudioService {
       grid: toBrokerBounds(grid.bounds),
       workerUrl: glueWorkerAssetUrl,
       reads: this.reads(),
+      writes: this.writes(),
       hud: this.hud,
+      overlay: this.overlay,
+      input: this.pointerClicks,
     });
     if (handle) {
       this.lifecycle.track(scope, descriptorOf(mod), handle);

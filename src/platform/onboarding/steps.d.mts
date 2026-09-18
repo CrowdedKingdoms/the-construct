@@ -3,6 +3,7 @@ import type { CrowdyClient } from '@crowdedkingdoms/crowdyjs';
 export const CONSTRUCTOR_TIER_NAME: string;
 export const CONSTRUCTOR_TIER_KEYS: readonly string[];
 export const VISITOR_RUN_KEYS: readonly string[];
+export const STUDIO_AGENT_MODELS: readonly string[];
 export const STUDIO_AGENT_MODEL: string;
 export const STUDIO_AGENT_MODES: readonly string[];
 export function slugify(value: string): string;

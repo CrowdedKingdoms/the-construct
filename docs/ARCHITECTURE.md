@@ -51,8 +51,9 @@ World Stores (`@crowdedkingdoms/crowdyjs/stores`) run over one shared
   frame; the store sends at 5 Hz, only when bytes changed, with keyframes.
 - `actors` — everyone else, decoded once with the same `poseCodec` and
   reaped when stale. Scenes read `session.players(programId)`.
-- `chunks` — the voxel cache the Paint program draws on and CLIENT mods read.
-  Realtime edits merge in; `markDirty` queues durable write-back.
+- `chunks` — the voxel cache the Paint program draws on, the holodeck draws
+  as cubes, and CLIENT mods read and write (`voxel_set`). Realtime edits
+  merge in; `markDirty` queues durable write-back.
 - `host` — 3 s heartbeats that keep the actor's presence fresh for the
   server-side gates (player-compute occupancy, artifact fetches).
 - `save` — a JSON blob per user per app, autosaved.
