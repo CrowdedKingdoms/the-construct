@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@crowdedkingdoms/crowdyjs', () => ({ PlayerCodeBroker: class {} }));
 
 const {
+  DEFAULT_VOXEL_STATE,
   HostCallRefusedError,
   OFFERED_HOST_CALLS,
   bytesToBase64,
+  parseVoxelSetArgs,
   routeClientHostCall,
   voxelsFromBase64,
 } = await import('@/platform/studio/clientModHost');
@@ -33,12 +35,14 @@ function sampleGrid(): Uint8Array {
 }
 
 describe('routeClientHostCall', () => {
-  it('offers exactly the world_read family', () => {
+  it('offers world_read plus voxel_set and pointer_clicks', () => {
     expect([...OFFERED_HOST_CALLS]).toEqual([
       'actors_list',
       'actors_list_radius',
       'chunk_get',
       'voxels_list',
+      'voxel_set',
+      'pointer_clicks',
     ]);
   });
 
@@ -91,13 +95,101 @@ describe('routeClientHostCall', () => {
     });
   });
 
-  it('refuses everything it does not offer', async () => {
+  it('refuses host calls it does not offer', async () => {
     const r = reads();
-    for (const fn of ['voxel_set', 'model_invoke', 'emit_spatial', 'fetch', 'eval']) {
+    for (const fn of ['model_invoke', 'emit_spatial', 'fetch', 'eval']) {
       await expect(
         routeClientHostCall({ fn, args: {} } as never, r.reads, grid),
       ).rejects.toBeInstanceOf(HostCallRefusedError);
     }
+  });
+
+  it('drains pointer_clicks when the game supplies an input sink', async () => {
+    const r = reads();
+    await expect(
+      routeClientHostCall({ fn: 'pointer_clicks', args: {} } as never, r.reads, grid),
+    ).rejects.toBeInstanceOf(HostCallRefusedError);
+    const snapshot = {
+      nowMs: 50,
+      buttons: 1,
+      holdingMs: { '0': 40 },
+      clicks: [{ t: 'down' as const, button: 0, atMs: 10, nx: 0, ny: 0 }],
+    };
+    expect(
+      await routeClientHostCall(
+        { fn: 'pointer_clicks', args: {} } as never,
+        r.reads,
+        grid,
+        undefined,
+        { drainPointerClicks: () => snapshot },
+      ),
+    ).toEqual(snapshot);
+  });
+
+  it('refuses voxel_set when the game did not supply a write sink', async () => {
+    const r = reads();
+    await expect(
+      routeClientHostCall(
+        {
+          fn: 'voxel_set',
+          args: { chunkX: 0, chunkY: 0, chunkZ: 0, x: 1, y: 0, z: 2, voxelType: 3 },
+        } as never,
+        r.reads,
+        grid,
+      ),
+    ).rejects.toBeInstanceOf(HostCallRefusedError);
+  });
+
+  it('writes a voxel through the Paint-equivalent sink', async () => {
+    const r = reads();
+    const written: unknown[] = [];
+    const out = await routeClientHostCall(
+      {
+        fn: 'voxel_set',
+        args: { chunk: { x: '0', y: '0', z: '0' }, voxel: [1, 0, 2], voxel_type: 7 },
+      } as never,
+      r.reads,
+      grid,
+      {
+        setVoxel: async (input) => {
+          written.push(input);
+          return true;
+        },
+      },
+    );
+    expect(out).toEqual({ ok: true });
+    expect(written).toEqual([
+      {
+        chunk: { x: 0, y: 0, z: 0 },
+        x: 1,
+        y: 0,
+        z: 2,
+        voxelType: 7,
+        state: DEFAULT_VOXEL_STATE,
+      },
+    ]);
+  });
+
+  it('parses flattened chunkX host-call args the broker clamps', () => {
+    expect(
+      parseVoxelSetArgs({
+        chunkX: 3,
+        chunkY: 0,
+        chunkZ: 3,
+        x: 8,
+        y: 1,
+        z: 4,
+        voxelType: 2,
+        state_base64: 'AA==',
+      }),
+    ).toEqual({
+      chunk: { x: 3, y: 0, z: 3 },
+      x: 8,
+      y: 1,
+      z: 4,
+      voxelType: 2,
+      state: 'AA==',
+    });
   });
 
   it('decodes an empty grid to no rows', () => {

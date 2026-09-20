@@ -53,8 +53,9 @@ export function helpLines(scene: HelpScene): string[] {
     ];
   }
   return [
-    'Click canvas — lock mouse look',
-    'Hold right mouse — look (no lock)',
+    'Hold right mouse — look',
+    'Left click — grid mods (click-to-charge)',
+    'Amber box — your claimed chunk',
     'Scroll — zoom camera',
     'E — activate a pad',
     ...shared,

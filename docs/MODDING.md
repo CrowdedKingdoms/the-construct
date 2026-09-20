@@ -28,12 +28,16 @@ walkthrough and the security story, in that order.
    **required** CLIENT companion — and that pairing is what makes the CLIENT
    half run for visitors, not just for you (a lone CLIENT project is a private
    tool: Test/Run in your own tab only).
-3. In **Files → Common files**, add all four starters to the project:
-   *Presence beacon entrypoint* + *Presence beacon Cargo.toml* (SERVER),
-   *HUD greeter entrypoint* + *HUD greeter Cargo.toml* (CLIENT). Each import
-   proposes the right destination path; accept it. The Cargo.toml matters: the
-   blank project declares only `crowdy-compute-sdk`, and `host_call` takes a
-   `serde_json::Value`.
+3. In **Files → Common files**, add the starters you need:
+   *Presence beacon* (SERVER) + *HUD greeter* (CLIENT) for a hello-world
+   full stack; *Spinning child* or *Pool cue* (SERVER) for a replicated 3D
+   scene everyone on the grid can see. Each import proposes the right
+   destination path; accept it. The Cargo.toml matters: the blank project
+   declares only `crowdy-compute-sdk`, and `host_call` takes a
+   `serde_json::Value`. CLIENT crates also declare
+   `[package.metadata.crowdy] tick_interval_ms` (default `1000` for HUD;
+   use `50` for physics minigames, `16` for shooters). Studio Test/Deploy
+   reads it when starting that mod's browser worker.
 4. **Test draft.** Both targets compile on the platform (`cargo build
    --offline`, then metering and optimisation). The console shows the build;
    the greeter starts in your sandbox and writes to the mod HUD:
@@ -59,10 +63,11 @@ walkthrough and the security story, in that order.
 ## What a CLIENT mod can do here
 
 The SDK's `PlayerCodeBroker` allowlists and rate-limits every host call and
-clamps chunk coordinates to the mod's grid. Two calls it answers itself:
-`grid_info` (the grid's bounds) and `hud_set` (presentation — rendered by the
-game as text, never HTML). Everything else reaches this game's router,
-`src/platform/studio/clientModHost.ts`, which offers exactly:
+clamps chunk coordinates to the mod's grid. Calls it answers itself:
+`grid_info` (the grid's bounds), `hud_set` (text HUD), and `overlay_draw`
+(3D gizmos the holodeck renders from the same construct.scene.v1 schema —
+still data, never HTML). Everything else reaches this game's router,
+`src/platform/studio/clientModHost.ts`, which offers:
 
 | Host call | Answer |
 | --- | --- |
@@ -70,11 +75,34 @@ game as text, never HTML). Everything else reaches this game's router,
 | `actors_list_radius(x,y,z,r)` | The same across a box, clamped to the grid and r ≤ 8 |
 | `chunk_get(x,y,z)` | The cached dense voxel grid, base64 |
 | `voxels_list(x,y,z)` | The non-zero cells as rows |
+| `voxel_set` | One voxel write through World Stores `chunks.setVoxel` + `markDirty`. Replicates to other players and persists. Args: `chunkX/Y/Z` (or `chunk`) plus in-chunk `x,y,z` (0–15) and `voxelType`. |
+| `pointer_clicks` | Drain holodeck mouse clicks since the last call. `{ nowMs, buttons, holdingMs, clicks }`. `clicks` is `{ t:"down"\|"up", button, atMs, heldMs?, nx, ny }` (canvas NDC, +ny up). `holdingMs["0"]` is left-button charge time. Studio chrome is omitted. Call every `on_tick`. |
+
+`voxel_set` is occupancy: floors, walls, claim-aligned blocks. Voxels cannot
+rotate. `overlay_draw` is **local** presentation (aim assist, author preview)
+for whoever is running the CLIENT companion — it is not a second replication
+path.
+
+The shared 3D world is a **SERVER-owned scene graph** (`construct.scene.v1`).
+A SERVER module writes a mesh catalog and node list, then emits packed poses.
+The holodeck renders those instances for **every visitor on the grid**, even
+if they declined CLIENT mods. Caps: 16 meshes, 64 nodes, 256 verts / 768
+indices per procedural mesh, catalog ≤ 48 KiB. Nodes have parent, quaternion,
+scale, optional `bindActor` (follow a player's pose), and `kind`
+`box|sphere|cylinder|capsule|plane|mesh`.
+
+Wire (SERVER `emit_spatial("server_event")`, payload `[u16 eventType LE][state]`):
+
+- `0xC501` — chunked UTF-8 JSON catalog (`{ v:1, revision, meshes, nodes }`)
+- `0xC502` — packed poses (u32 catalogRev, u8 count, then 24 bytes per node)
+
+Starters **Spinning child** and **Pool cue** show the path. Replace `CHUNK`
+with your claim's low corner.
 
 Anything else is refused with `host call '<fn>' is not offered by this game`.
-To let mods do more (write voxels, invoke model functions), add a case that
-goes through the same player-authorised SDK path the human UI uses. Never hand
-a mod the client object.
+To let mods invoke model functions, add a case that goes through the same
+player-authorised SDK path the human UI uses. Never hand a mod the client
+object.
 
 ## What a SERVER mod can do
 

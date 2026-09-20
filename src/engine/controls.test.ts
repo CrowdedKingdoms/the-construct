@@ -19,6 +19,7 @@ describe('controls', () => {
     expect(holodeck).toMatch(/right mouse/);
     expect(holodeck).toMatch(/Scroll/);
     expect(holodeck).toMatch(/E — activate/);
+    expect(holodeck).toMatch(/claimed chunk/);
     expect(paint).toMatch(/middle-drag/);
     expect(paint).not.toMatch(/activate a pad/);
   });
