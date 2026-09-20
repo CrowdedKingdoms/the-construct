@@ -31,7 +31,8 @@ package and the public API only.
 
 ## Branches and the SDK pin
 
-`dev`, `test`, `prod`; work lands on `dev` via pull request; promotion is a
+`dev`, `test`, `prod`; work lands on `dev` via pull request (you merge your own
+PR on `dev`; `test` and `prod` need an org admin). Promotion is a
 merge forward. The CrowdyJS pin is **exact** and **per tier**:
 `dev` → `X.Y.Z-dev.N`, `test` → `X.Y.Z-test.N`, `prod` → `X.Y.Z`. Each published
 build carries its tier's API origin, so a wrong pin dials the wrong

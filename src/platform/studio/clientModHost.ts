@@ -4,15 +4,12 @@
  *
  * The SDK's `PlayerCodeBroker` has already validated every call against the
  * platform allowlist, clamped chunk coordinates to the mod's grid AABB, rate-
- * limited it, and answered `grid_info` / `hud_set` itself. What reaches
- * `routeClientHostCall` is the `world_read` family, and this router returns
- * only what the running player can already lawfully see — in-grid actors and
- * the cached voxel view — so a client mod can never read beyond its grid or
- * act as anyone but the player running it. Anything else is refused.
- *
- * A game that wants mods to do more (write voxels, invoke model functions)
- * adds cases here that go through the same player-authorized SDK paths the
- * human UI uses. Never hand a mod the raw client.
+ * limited it, and answered `grid_info` / `hud_set` / `overlay_draw` itself.
+ * What reaches `routeClientHostCall` is world_read, `voxel_set`, and
+ * `pointer_clicks`. Reads return only what the running player can already
+ * lawfully see. Writes go through ChunkStore.setVoxel (optimistic + UDP) and
+ * markDirty (durable write-back), the same route Paint uses. Never hand a mod
+ * the raw client.
  */
 import {
   PlayerCodeBroker,
@@ -22,10 +19,26 @@ import {
   type PlayerCodePresentation,
 } from '@crowdedkingdoms/crowdyjs';
 import type { CrowdyStudioTextHud } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
+import type { ModOverlayStore } from '@/platform/studio/modOverlay';
 
 export interface ClientModHostReads {
   actorsInChunk(x: bigint, y: bigint, z: bigint): Array<Record<string, unknown>>;
   chunkVoxels(x: bigint, y: bigint, z: bigint): { voxelsBase64: string | null } | null;
+}
+
+export interface ClientModHostWrites {
+  setVoxel(input: {
+    chunk: { x: number; y: number; z: number };
+    x: number;
+    y: number;
+    z: number;
+    voxelType: number;
+    state?: string;
+  }): Promise<boolean>;
+}
+
+export interface ClientModHostInput {
+  drainPointerClicks(): unknown;
 }
 
 /** The host calls this game answers. Exported so the docs and tests agree. */
@@ -34,7 +47,12 @@ export const OFFERED_HOST_CALLS = [
   'actors_list_radius',
   'chunk_get',
   'voxels_list',
+  'voxel_set',
+  'pointer_clicks',
 ] as const;
+
+/** One zero byte, base64: the smallest non-empty voxel state the API accepts. */
+export const DEFAULT_VOXEL_STATE = 'AA==';
 
 const MAX_RADIUS = 8;
 
@@ -53,6 +71,8 @@ export async function routeClientHostCall(
   call: PlayerCodeHostCall,
   reads: ClientModHostReads,
   grid?: PlayerCodeGridBounds,
+  writes?: ClientModHostWrites,
+  input?: ClientModHostInput,
 ): Promise<unknown> {
   const { fn, args } = call;
   switch (fn) {
@@ -92,9 +112,105 @@ export async function routeClientHostCall(
         ? { voxelsBase64: chunk.voxelsBase64 }
         : { voxels: voxelsFromBase64(chunk.voxelsBase64) };
     }
+    case 'voxel_set': {
+      if (!writes) throw new HostCallRefusedError(fn);
+      const parsed = parseVoxelSetArgs(args);
+      if (!parsed) return { ok: false, error: 'invalid voxel_set arguments' };
+      const ok = await writes.setVoxel({
+        chunk: parsed.chunk,
+        x: parsed.x,
+        y: parsed.y,
+        z: parsed.z,
+        voxelType: parsed.voxelType,
+        state: parsed.state,
+      });
+      return { ok };
+    }
+    case 'pointer_clicks': {
+      if (!input) throw new HostCallRefusedError(fn);
+      return input.drainPointerClicks();
+    }
     default:
       throw new HostCallRefusedError(fn);
   }
+}
+
+function intInRange(value: unknown, min: number, max: number): number | null {
+  const n =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^-?\d+$/.test(value)
+        ? Number(value)
+        : typeof value === 'bigint'
+          ? Number(value)
+          : NaN;
+  if (!Number.isInteger(n) || n < min || n > max) return null;
+  return n;
+}
+
+function coordField(record: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (record[key] !== undefined) return record[key];
+  }
+  return undefined;
+}
+
+function asCoord3(value: unknown): { x: unknown; y: unknown; z: unknown } | null {
+  if (Array.isArray(value) && value.length >= 3) {
+    return { x: value[0], y: value[1], z: value[2] };
+  }
+  if (value && typeof value === 'object') {
+    const rec = value as Record<string, unknown>;
+    return { x: rec.x, y: rec.y, z: rec.z };
+  }
+  return null;
+}
+
+/** Accept the SDK tuple shape and the flattened host-call JSON the broker clamps. */
+export function parseVoxelSetArgs(args: Record<string, unknown>): {
+  chunk: { x: number; y: number; z: number };
+  x: number;
+  y: number;
+  z: number;
+  voxelType: number;
+  state: string;
+} | null {
+  const chunkRaw =
+    asCoord3(args.chunk) ??
+    ({
+      x: coordField(args, 'chunkX', 'chunk_x'),
+      y: coordField(args, 'chunkY', 'chunk_y'),
+      z: coordField(args, 'chunkZ', 'chunk_z'),
+    } as { x: unknown; y: unknown; z: unknown });
+  const voxelRaw =
+    asCoord3(args.voxel) ??
+    ({
+      x: coordField(args, 'x', 'vx'),
+      y: coordField(args, 'y', 'vy'),
+      z: coordField(args, 'z', 'vz'),
+    } as { x: unknown; y: unknown; z: unknown });
+  const cx = intInRange(chunkRaw.x, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
+  const cy = intInRange(chunkRaw.y, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
+  const cz = intInRange(chunkRaw.z, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
+  const x = intInRange(voxelRaw.x, 0, 15);
+  const y = intInRange(voxelRaw.y, 0, 15);
+  const z = intInRange(voxelRaw.z, 0, 15);
+  const voxelType = intInRange(coordField(args, 'voxelType', 'voxel_type', 'type'), 0, 255);
+  if (
+    cx === null ||
+    cy === null ||
+    cz === null ||
+    x === null ||
+    y === null ||
+    z === null ||
+    voxelType === null
+  ) {
+    return null;
+  }
+  const stateRaw = coordField(args, 'state', 'state_base64', 'stateBase64');
+  const state =
+    typeof stateRaw === 'string' && stateRaw.length > 0 ? stateRaw : DEFAULT_VOXEL_STATE;
+  return { chunk: { x: cx, y: cy, z: cz }, x, y, z, voxelType, state };
 }
 
 /** Sparse `{x,y,z,voxelType}` rows for the non-zero cells of a dense grid. */
@@ -143,11 +259,17 @@ export async function runConsentedGridMod(options: {
   grid: PlayerCodeGridBounds;
   workerUrl: string;
   reads: ClientModHostReads;
+  writes?: ClientModHostWrites;
   hud: CrowdyStudioTextHud;
+  overlay?: ModOverlayStore;
+  input?: ClientModHostInput;
   /**
    * How often the worker self-drives `on_tick`. Omitted/0 means invoke-only
    * and a HUD mod then never runs (measured 2026-09-07: broker started, HUD
-   * stayed empty). ~1 Hz is right for presentation mods.
+   * stayed empty). Studio Test/Deploy reads `[package.metadata.crowdy]
+   * tick_interval_ms` from the CLIENT Cargo.toml (default 1000, clamped
+   * 16–1000). Pass this only for grid-attached visitors until that field is
+   * stored on the compiled version.
    */
   tickIntervalMs?: number;
 }): Promise<{ stop: () => void } | null> {
@@ -180,7 +302,8 @@ export async function runConsentedGridMod(options: {
     artifactHash: fetched.artifactHash,
     fuelPerDispatch: fetched.fuelPerDispatch != null ? BigInt(fetched.fuelPerDispatch) : undefined,
     tickIntervalMs: options.tickIntervalMs ?? 1000,
-    onHostCall: (call) => routeClientHostCall(call, options.reads, options.grid),
+    onHostCall: (call) =>
+      routeClientHostCall(call, options.reads, options.grid, options.writes, options.input),
     onPresentation: (presentation: PlayerCodePresentation) => {
       if (presentation.channel === 'hud') {
         options.hud.set({
@@ -189,14 +312,21 @@ export async function runConsentedGridMod(options: {
           payload: presentation.payload,
         });
       }
+      if (presentation.channel === 'overlay') {
+        options.overlay?.apply(options.hudSource, presentation.payload, options.grid);
+      }
     },
-    onCircuitOpen: () => options.hud.remove(options.hudSource),
+    onCircuitOpen: () => {
+      options.hud.remove(options.hudSource);
+      options.overlay?.remove(options.hudSource);
+    },
   });
   await broker.start(fetched.bytes);
   return {
     stop: () => {
       broker.stop();
       options.hud.remove(options.hudSource);
+      options.overlay?.remove(options.hudSource);
     },
   };
 }

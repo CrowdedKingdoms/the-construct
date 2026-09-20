@@ -37,9 +37,16 @@ export const CONSTRUCTOR_TIER_KEYS = [
   'use_studio_agent',
 ];
 
-/** Priced ZDR model on hosted tiers; app policy inherits the platform catalog. */
-export const STUDIO_AGENT_MODEL = 'openai/gpt-oss-120b';
-export const STUDIO_AGENT_MODES = ['ASK', 'BUILD', 'PLAY'];
+/** Hosted OpenRouter ZDR catalog. App policy must name every id; empty denies all. */
+export const STUDIO_AGENT_MODELS = [
+  'deepseek/deepseek-v4-flash',
+  'z-ai/glm-5.3-flash',
+  'deepseek/deepseek-v4-pro',
+  'deepseek/deepseek-chat',
+  'openai/gpt-oss-120b',
+];
+export const STUDIO_AGENT_MODEL = STUDIO_AGENT_MODELS[0];
+export const STUDIO_AGENT_MODES = ['ASK', 'BUILD'];
 
 /**
  * What every visitor gets: the default free tier's keys plus permission to RUN
@@ -203,13 +210,27 @@ export async function ensureConstructorTier(identity, { appId, userId }, log = n
 }
 
 /** 4. Players may claim an unowned chunk for themselves (the Claim pad). */
-export async function ensureSelfClaimPolicy(game, { appId }, log = noop) {
-  const current = await game.marketplace.gridClaimPolicy({ appId }).catch(() => null);
-  if (current === 'SELF_CLAIM') {
+export async function ensureSelfClaimPolicy(client, { appId }, log = noop) {
+  const current = await client.marketplace.gridClaimPolicy({ appId }).catch(() => null);
+  const normalized = String(current ?? '')
+    .toUpperCase()
+    .replace(/-/g, '_');
+  if (normalized === 'SELF_CLAIM') {
     log('Grid claim policy already SELF_CLAIM');
     return { policy: 'SELF_CLAIM', changed: false };
   }
-  await game.marketplace.setGridClaimPolicy({ appId, policy: 'SELF_CLAIM' });
+  try {
+    await client.marketplace.setGridClaimPolicy({ appId, policy: 'SELF_CLAIM' });
+  } catch {
+    // Local/single-node ck-api exposes this as manage_apps on the identity
+    // session (`setAppGridClaimPolicy`); an app-scoped token is refused.
+    await client.graphql.query(
+      `mutation ConstructSetClaimPolicy($appId: BigInt!, $policy: GridClaimPolicy!) {
+        setAppGridClaimPolicy(appId: $appId, policy: $policy)
+      }`,
+      { appId, policy: 'SELF_CLAIM' },
+    );
+  }
   log(`Grid claim policy set to SELF_CLAIM${current ? ` (was ${current})` : ''}`);
   return { policy: 'SELF_CLAIM', changed: true };
 }
@@ -309,7 +330,7 @@ const SET_AGENT_APP_POLICY = `mutation ConstructSetAgentPolicy($input: SetCrowdy
   setCrowdyStudioAgentPolicy(input: $input) { ${AGENT_POLICY_CORE} }
 }`;
 
-/** App row is on and allows Ask/Build/Play. Models inherit the platform catalog. */
+/** App row is on and allows Ask/Build. Models inherit the platform catalog. */
 function appPolicyArmed(policy) {
   if (!policy || policy.enabled !== true || policy.killSwitch === true) return false;
   const modes = (policy.allowedModes ?? []).map(String);
@@ -366,11 +387,15 @@ export async function ensureAgentPolicy(identity, { appId }, log = noop) {
           killSwitch: false,
           // Explicit on purpose: unlike tools and risk classes, modes have no
           // inherit-on-omit at the app layer ("there is no inherit-on-empty for
-          // modes" -- SetCrowdyStudioAgentPolicyInput). PLAY is included because
-          // the HUD promises "Play can walk for you".
+          // modes" -- SetCrowdyStudioAgentPolicyInput). The live platform
+          // catalog is ASK + BUILD; PLAY is refused ("can only narrow the
+          // platform list").
           allowedModes: STUDIO_AGENT_MODES,
+          // Empty allowedModelIds denies every model at both layers. Name the
+          // hosted ZDR catalog so DeepSeek / GLM / gpt-oss are all selectable.
+          allowedModelIds: STUDIO_AGENT_MODELS,
           expectedRevision: app?.revision ?? '0',
-          idempotencyKey: `construct-agent-app-${appId}-v2`,
+          idempotencyKey: `construct-agent-app-${appId}-v5`,
         },
       })
     )?.setCrowdyStudioAgentPolicy;
@@ -493,7 +518,7 @@ export async function runOnboarding(options) {
     );
   }
   const game = await step('enter', 'App token', () => enterApp(appId));
-  await step('claims', 'Grid claim policy', () => ensureSelfClaimPolicy(game, { appId }, log));
+  await step('claims', 'Grid claim policy', () => ensureSelfClaimPolicy(identity, { appId }, log));
   await step('model', 'Game model', () => deployModel(game, { appId }, log));
   await step('studio', 'Crowdy Studio starter files', () =>
     publishStarterFiles(game, { appId }, log),

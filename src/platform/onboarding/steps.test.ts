@@ -222,7 +222,7 @@ describe('onboarding steps', () => {
         crowdyStudioAgentEffectivePolicy: {
           enabled: false,
           killSwitch: false,
-          allowedModelIds: [steps.STUDIO_AGENT_MODEL],
+          allowedModelIds: [...steps.STUDIO_AGENT_MODELS],
           allowedModes: [],
         },
       };
@@ -238,15 +238,16 @@ describe('onboarding steps', () => {
         appId: '77',
         enabled: true,
         allowedModes: [...steps.STUDIO_AGENT_MODES],
-        idempotencyKey: 'construct-agent-app-77-v2',
+        allowedModelIds: [...steps.STUDIO_AGENT_MODELS],
+        idempotencyKey: 'construct-agent-app-77-v5',
       }),
     );
-    expect(appInput?.allowedModelIds).toBeUndefined();
+    expect(appInput?.allowedModelIds).toEqual([...steps.STUDIO_AGENT_MODELS]);
     expect(appInput?.allowedToolNames).toBeUndefined();
     expect(appInput?.allowedRiskClasses).toBeUndefined();
   });
 
-  it('skips writes when effective policy already allows Ask/Build/Play', async () => {
+  it('skips writes when effective policy already allows Ask/Build', async () => {
     const ready = {
       enabled: true,
       killSwitch: false,
