@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+SERVER mods can put a replicated 3D scene on a claimed grid. construct.scene.v1
+is a parented node graph with quaternions and procedural meshes; the holodeck
+renders it for every visitor, CLIENT companion or not. `overlay_draw` stays
+local gizmos on the same schema. Voxels remain occupancy. Starters **Spinning
+child** and **Pool cue**. `emit_spatial("server_event")` is Buddy opcode 139
+with `[u16 eventType][state]` framing.
+
+CLIENT mods can place world objects other players see. The broker already
+allowlisted `voxel_set`; this game now routes it through World Stores
+`chunks.setVoxel` + `markDirty` (the Paint path), and the holodeck draws
+non-air voxels as cubes. HUD text is unchanged and still not HTML.
+
+CLIENT mods can poll holodeck mouse clicks with `pointer_clicks` (drained
+each tick). Left down/up plus `holdingMs["0"]` is enough for a click-to-charge
+shot; Studio chrome is omitted so authors can test while the IDE is open.
+
+The holodeck draws an amber wireframe (and a faint floor tint) around every
+grid this player owns so the claimed 16 m cube is visible against the teal
+floor grid.
+
 ## 0.8.2 — 2026-09-14
 
 CrowdyJS `17.3.0-dev.1`: the Studio GitHub card gains "Create repository on

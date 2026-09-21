@@ -1,7 +1,10 @@
 /**
  * The holodeck: a grid-lined void where players arrive, see each other (and
  * each other's webcams, on the avatar's face), chat, and step onto pads to
- * load programs or claim a chunk for Crowdy Studio.
+ * load programs or claim a chunk for Crowdy Studio. Voxel writes from Paint
+ * and from CLIENT `voxel_set` show up here as cubes; SERVER-replicated
+ * construct.scene.v1 instances (and local overlay_draw gizmos) are meshes
+ * on top.
  *
  * This file is the three.js adapter. Everything it knows about other players
  * comes from `context.session.players()`; everything it says about the local
@@ -14,8 +17,13 @@ import type { GameScene, SceneContext, SceneSize } from '@/engine/GameScene';
 import { Controls, helpLines } from '@/engine/controls';
 import { HOLODECK_SPAWN } from '@/platform/programs';
 import { NEUTRAL_POSE, type Pose } from '@/platform/realtime/actorCodec';
+import { instanceStore } from '@/platform/realtime/WorldStores';
+import { toBrokerBounds } from '@/platform/studio/permissions';
 import { AvatarPool } from '@/scenes/holodeck-three/avatars';
+import { ClaimedChunkLayer, claimedChunksToDraw } from '@/scenes/holodeck-three/claimedChunkBox';
+import { InstanceLayer } from '@/scenes/holodeck-three/instanceLayer';
 import { animatePads, buildPads, disposePads, padAt, type Pad } from '@/scenes/holodeck-three/pads';
+import { VoxelLayer } from '@/scenes/holodeck-three/voxels';
 import {
   DEFAULT_CAMERA_DISTANCE,
   HOLODECK_CAMERA_HEIGHT,
@@ -36,7 +44,8 @@ const EYE_HEIGHT = 1.6;
 const WALK_SPEED = 6;
 const RUN_SPEED = 11;
 
-const IDLE_HINT = 'WASD move · click or hold RMB to look · scroll zoom · E on a pad · F1 help';
+const IDLE_HINT =
+  'WASD move · hold RMB to look · LMB for grid mods · scroll zoom · E on a pad · F1 help';
 
 export class HolodeckScene implements GameScene {
   readonly id = 'holodeck';
@@ -47,6 +56,9 @@ export class HolodeckScene implements GameScene {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(70, 1, 0.1, 400);
   private avatars: AvatarPool | null = null;
+  private voxels: VoxelLayer | null = null;
+  private overlay: InstanceLayer | null = null;
+  private claimedChunks: ClaimedChunkLayer | null = null;
   private pads: Pad[] = [];
   private localBody: THREE.Mesh | null = null;
   private disposables: Array<() => void> = [];
@@ -76,6 +88,9 @@ export class HolodeckScene implements GameScene {
     this.buildRoom();
     this.pads = buildPads(this.scene);
     this.avatars = new AvatarPool(this.scene);
+    this.voxels = new VoxelLayer(this.scene);
+    this.overlay = new InstanceLayer(this.scene);
+    this.claimedChunks = new ClaimedChunkLayer(this.scene);
     this.localBody = new THREE.Mesh(
       new THREE.CapsuleGeometry(0.35, 0.9, 6, 12),
       new THREE.MeshStandardMaterial({
@@ -88,6 +103,15 @@ export class HolodeckScene implements GameScene {
     this.scene.add(this.localBody);
 
     const onClick = () => {
+      // LMB is gameplay for CLIENT mods (click-to-charge). Look stays RMB.
+      // Skip pointer-lock while Studio is open or a grid mod is running so
+      // hold-to-charge on the holodeck canvas actually reaches the mod.
+      if (
+        context.session.studio.snapshot.open ||
+        context.session.studio.snapshot.clientModsRunning > 0
+      ) {
+        return;
+      }
       if (!context.input.suppressed && document.pointerLockElement !== renderer.domElement) {
         renderer.domElement.requestPointerLock?.();
       }
@@ -119,6 +143,12 @@ export class HolodeckScene implements GameScene {
     this.disposables = [];
     this.avatars?.clear();
     this.avatars = null;
+    this.voxels?.dispose();
+    this.voxels = null;
+    this.overlay?.dispose();
+    this.overlay = null;
+    this.claimedChunks?.dispose();
+    this.claimedChunks = null;
     disposePads(this.scene, this.pads);
     this.pads = [];
     if (this.localBody) {
@@ -228,6 +258,38 @@ export class HolodeckScene implements GameScene {
 
     // Others (only those standing in the holodeck)
     this.avatars?.sync(session.players(this.programId), nowMs);
+    this.voxels?.sync(session.world.chunks, this.position);
+    if (session.joined) {
+      const overlay = session.studio.overlay.snapshot();
+      const grid = session.studio.grid;
+      this.overlay?.sync(
+        instanceStore().snapshot({
+          overlay: overlay.objects,
+          actors: [
+            ...session.players().map((player) => ({
+              uuid: player.uuid,
+              x: player.pose.x,
+              y: player.pose.y,
+              z: player.pose.z,
+              yaw: player.pose.yaw,
+              pitch: player.pose.pitch,
+            })),
+            {
+              uuid: session.selfUuid,
+              x: this.position.x,
+              y: this.position.y,
+              z: this.position.z,
+              yaw: this.yaw,
+              pitch: this.pitch,
+            },
+          ],
+          grid: grid ? toBrokerBounds(grid.bounds) : undefined,
+        }),
+      );
+    }
+    const claimed = claimedChunksToDraw(session.studio);
+    this.claimedChunks?.sync(claimed);
+    renderer.domElement.dataset.claimedChunks = String(claimed.length);
 
     // Pads
     const pad = padAt(this.pads, this.position.x, this.position.z);

@@ -7,9 +7,12 @@
  *  - `actors` — everyone else, decoded once and routed into lanes. Both scenes
  *               render from `actors.lane('players')`; program-specific actors
  *               would get their own lane.
- *  - `chunks` — the voxel cache the paint program draws on and that CLIENT
- *               mods may read through the host-call router.
+ *  - `chunks` — the voxel cache Paint draws in 2D and the holodeck draws as
+ *               cubes. CLIENT `voxel_set` writes here so other players see
+ *               the same blocks.
  *  - `errors` — server-reported send failures attributed to what we sent.
+ *  - `events` — SERVER `emit_spatial("server_event")` catalog/pose packets
+ *               for the replicated instance layer (construct.scene.v1).
  *  - `host`   — actor heartbeats (keeps presence fresh for server-side gates
  *               such as player-compute occupancy; the elected host is
  *               informational).
@@ -33,6 +36,7 @@ import {
 import { envScopedKey } from '@/platform/envScope';
 import { NetworkManager } from '@/platform/network/NetworkManager';
 import { NEUTRAL_POSE, poseCodec, type Pose } from '@/platform/realtime/actorCodec';
+import { InstanceStore } from '@/platform/studio/instanceStore';
 
 /** What survives between sessions. Deliberately small; add fields freely. */
 export interface SaveState {
@@ -70,6 +74,7 @@ function buildConfig() {
       onMissing: () => ({ voxels: new Uint8Array(4096), writeBack: false }),
     },
     errors: true as const,
+    events: true as const,
     host: {
       intervalMs: 3_000,
       myUserId: () => NetworkManager.instance.user?.userId ?? null,
@@ -85,6 +90,7 @@ export type ConstructWorldSession = WorldSession<ReturnType<typeof buildConfig>>
 
 let session: ConstructWorldSession | null = null;
 let sessionAppId: string | null = null;
+let instances: InstanceStore | null = null;
 
 /** The lazily created shared session for the CURRENT app. */
 export function worldSession(): ConstructWorldSession {
@@ -95,6 +101,7 @@ export function worldSession(): ConstructWorldSession {
   if (!session) {
     session = createWorldSession(network.game, appId, buildConfig());
     sessionAppId = appId;
+    instances = new InstanceStore(session.events);
     session.errors.onError((error) => {
       network.log(`UDP send error ${error.errorCode}${error.send ? ` (${error.send.kind})` : ''}`);
     });
@@ -107,9 +114,18 @@ export function hasWorldSession(): boolean {
 }
 
 export function disposeWorldSession(): void {
+  instances?.dispose();
+  instances = null;
   session?.dispose();
   session = null;
   sessionAppId = null;
+}
+
+/** Replicated construct.scene.v1 instances for the current app. */
+export function instanceStore(): InstanceStore {
+  worldSession();
+  if (!instances) throw new Error('instanceStore() needs a world session');
+  return instances;
 }
 
 /** Remote players as the scenes want them: pose + chunk + freshness. */

@@ -12,7 +12,8 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 | Org / app creation, tiers | `organizations.create`, `apps.create`, `appAccess.createTier` / `grant` | `platform/onboarding/steps.mjs` |
 | Version floor, UDP status | `serverStatus.gameClientBootstrap(appId)` | `NetworkManager#bootstrap` |
 | Presence & movement | World Stores `self` / `actors` over `udp.subscribe`; chunk-addressed fan-out | `platform/realtime/WorldStores.ts`, `engine/GameLoop.ts` |
-| Terrain / shared canvas | World Stores `chunks` (cache + realtime merge), `markDirty` → `chunks.update` for durability | `scenes/program-pixi/PaintScene.ts` |
+| Terrain / shared canvas / mod-placed blocks | World Stores `chunks` (cache + realtime merge), `markDirty` → `chunks.update` for durability. CLIENT `voxel_set` uses this path. The holodeck draws cubes; Paint draws the y=0 layer in 2D. | `scenes/holodeck-three/voxels.ts`, `scenes/program-pixi/PaintScene.ts`, `platform/studio/clientModHost.ts` |
+| Replicated 3D instances (quats, procedural meshes) | SERVER `emit_spatial("server_event")` eventTypes `0xC501`/`0xC502`; World Stores `events` + `InstanceStore`. `overlay_draw` is local gizmos on the same schema. | `platform/studio/instanceSchema.ts`, `platform/studio/instanceStore.ts`, `scenes/holodeck-three/instanceLayer.ts` |
 | Save game | World Stores `save` (per-user `state.*` blob) | `GameSession#loadSave` / `rememberPosition` |
 | Chat | `udp.sendTextPacket` + `text` notifications (proximity); `channels.*` for named rooms | `platform/social/ChatService.ts` |
 | Server-side rules | Game model containers/properties/functions with invoke policies; Game Kit blueprints | `model/blueprints.mjs`, `platform/model/ModelService.ts` |
@@ -23,6 +24,7 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 | Crowdy Agent | `client.crowdyStudioAgent` + `context.playerHost`; Constructor `use_studio_agent`; **app** policy (`setCrowdyStudioAgentPolicy`) | `platform/studio/StudioService.ts`, `ConstructPlayerHostAdapter.ts`. Setup writes the app row only — never `cp*` / platform catalog. Model usage is metered to the player wallet by default (or the app's org wallet); no provider key in the game. |
 | Player wallet | Studio `/account/wallet` (grid / player-compute billing, not agent tokens) | HUD **Wallet**; origin from `VITE_AUTHORIZE_URL` / `VITE_STUDIO_URL` |
 | CLIENT mods for visitors | `marketplace.gridClientMods` → `trustGridAuthor` → `clientArtifactBytes` → `PlayerCodeBroker` | `platform/studio/clientModHost.ts` |
+| CLIENT mouse clicks | Host call `pointer_clicks` (broker `input` family); Construct drains holodeck canvas down/up each tick | `platform/studio/pointerClicks.ts`, `clientModHost.ts` |
 | Starter mod files | `crowdyStudioCommonPublish` (common-file catalog) | `mods/templates/`, `steps.mjs#publishStarterFiles` |
 | Progression, leaderboards | `kit.progression`, `kit.leaderboards` | `ModelService#progress` |
 | Webcam | `udp.sendVideoFrame` (fragments a JPEG into `sendVideoPacket`s) / `video` notifications + `VideoFrameAssembler`; `use_video_chat` | `platform/media/WebcamService.ts`; holodeck draws the face plane (`avatars.ts#setFace`), Paint shows a camera-on ring — a 2D game decides whether to draw video |
