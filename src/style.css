@@ -396,13 +396,43 @@ label {
 /* ---------- Crowdy Studio mod HUD (SDK layer; restyled by class override) ---------- */
 
 /* The SDK places the text HUD at top-left where our chips live. Move it below
-   them; the SDK keeps ownership of its contents (text only, never HTML). */
+   them; the SDK keeps ownership of its contents (text only, never HTML).
+   z-index sits above fullscreen Studio (pointer-events stay none) so a Test
+   draft table is not hidden behind the editor. !important beats the SDK's
+   280px max-width so an ASCII table can actually render as a table. */
 .ck-crowdy-studio-hud-layer {
-  top: 190px;
+  top: 72px;
   left: 14px;
   right: auto;
-  width: min(360px, calc(100vw - 28px));
+  width: min(280px, calc(100vw - 28px)) !important;
+  max-width: min(280px, calc(100vw - 28px)) !important;
+  z-index: 80;
   pointer-events: none;
+}
+
+.ck-crowdy-studio-hud-card {
+  padding: 10px 12px 12px;
+  border: 6px solid #6b3a1f;
+  border-radius: 10px;
+  color: #f4efe2;
+  background: #14532d !important;
+  box-shadow:
+    inset 0 0 0 2px #3f7d4e,
+    0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+.ck-crowdy-studio-hud-title {
+  color: #fde68a;
+  letter-spacing: 0.04em;
+}
+
+.ck-crowdy-studio-hud-payload {
+  white-space: pre !important;
+  overflow: auto;
+  max-height: min(28vh, 220px);
+  font-size: 11px;
+  line-height: 1.2;
+  overflow-wrap: normal !important;
 }
 
 /* ---------- chat ---------- */
