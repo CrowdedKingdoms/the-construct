@@ -5,9 +5,9 @@
  */
 import * as THREE from 'three';
 
-import { CHUNK_SIZE } from '@/platform/config';
-import type { ChunkCoord } from '@/platform/realtime/space';
-import { chunkKey, worldToChunk } from '@/platform/realtime/space';
+import { CHUNK_SIZE } from '@crowdedkingdoms/construct/platform/config';
+import type { ChunkCoord } from '@crowdedkingdoms/construct/platform/realtime/space';
+import { chunkKey, worldToChunk } from '@crowdedkingdoms/construct/platform/realtime/space';
 import { TINT_COLORS } from '@/scenes/shared/interpolate';
 
 const DRAW_RADIUS = 2;
