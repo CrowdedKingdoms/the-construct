@@ -22,9 +22,9 @@ export interface GridProgramRunnerOptions {
   /** The page's client (holds the player's app token); resolved per call. */
   client: () => CrowdyClient;
   appId: () => string;
-  /** ck-api GraphQL endpoints the relay dials. */
-  graphqlUrl: string;
-  graphqlWsUrl: string;
+  /** ck-api GraphQL endpoints the relay dials (a function follows endpoint changes). */
+  graphqlUrl: string | (() => string);
+  graphqlWsUrl: string | (() => string);
   /** URL of the sandbox page, usually `${import.meta.env.BASE_URL}grid-program.html`. */
   sandboxUrl: string;
   /** Where the hidden iframes are attached (default document.body). */
@@ -180,8 +180,8 @@ export class GridProgramRunner implements CrowdyStudioDshGridHost {
     program.host = await hostGridProgram({
       port: channel.port1,
       scope: this.options.client().grid(this.options.appId(), gridId),
-      graphqlUrl: this.options.graphqlUrl,
-      graphqlWsUrl: this.options.graphqlWsUrl,
+      graphqlUrl: endpoint(this.options.graphqlUrl),
+      graphqlWsUrl: endpoint(this.options.graphqlWsUrl),
       onRefused: (reason) => {
         program.status = {
           ...program.status,
@@ -198,4 +198,8 @@ export class GridProgramRunner implements CrowdyStudioDshGridHost {
     await new Promise((resolve) => setTimeout(resolve, 750));
     return { ...program.status, log: [...program.status.log] };
   }
+}
+
+function endpoint(value: string | (() => string)): string {
+  return typeof value === 'function' ? value() : value;
 }

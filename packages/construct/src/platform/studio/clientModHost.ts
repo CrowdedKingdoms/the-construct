@@ -256,6 +256,8 @@ export async function runConsentedGridMod(options: {
   artifactCacheKey: string;
   hudSource: string;
   hudLabel: string;
+  /** The module's name, which addressed grid events target (default `hudLabel`). */
+  moduleName?: string;
   grid: PlayerCodeGridBounds;
   workerUrl: string;
   reads: ClientModHostReads;
@@ -307,7 +309,7 @@ export async function runConsentedGridMod(options: {
     artifactHash: fetched.artifactHash,
     fuelPerDispatch: fetched.fuelPerDispatch != null ? BigInt(fetched.fuelPerDispatch) : undefined,
     tickIntervalMs: options.tickIntervalMs ?? 1000,
-    moduleName: options.hudLabel,
+    moduleName: options.moduleName ?? options.hudLabel,
     onHostCall: (call) =>
       routeWithFallback(
         call,

@@ -71,18 +71,23 @@ function sandboxModuleCorsPlugin() {
 }
 
 /**
- * @param {{ dshHeaders: Record<string, string>, gridProgramHeaders?: Record<string, string> }} options
+ * Omit `dshHeaders` when the game already serves `/dsh/*` under its own policy.
+ *
+ * @param {{ dshHeaders?: Record<string, string>, gridProgramHeaders?: Record<string, string> }} options
  * @returns {import('vite').Plugin[]}
  */
 export function constructHeaderPlugins({ dshHeaders, gridProgramHeaders }) {
-  const plugins = [
-    pathHeadersPlugin(
-      'construct-dsh-headers',
-      (p) => p.startsWith('/dsh/') || p === '/dsh',
-      dshHeaders,
-      { keepGzipArchives: true },
-    ),
-  ];
+  const plugins = [];
+  if (dshHeaders) {
+    plugins.push(
+      pathHeadersPlugin(
+        'construct-dsh-headers',
+        (p) => p.startsWith('/dsh/') || p === '/dsh',
+        dshHeaders,
+        { keepGzipArchives: true },
+      ),
+    );
+  }
   if (gridProgramHeaders) {
     plugins.push(
       sandboxModuleCorsPlugin(),
