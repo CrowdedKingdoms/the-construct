@@ -8,8 +8,8 @@
  * older than that, extrapolate along its velocity for a bounded time. Both
  * scenes use this; it is renderer-agnostic on purpose.
  */
-import type { Pose } from '@/platform/realtime/actorCodec';
-import type { RemotePlayer } from '@/platform/realtime/WorldStores';
+import type { Pose } from '@crowdedkingdoms/construct/platform/realtime/actorCodec';
+import type { RemotePlayer } from '@crowdedkingdoms/construct/platform/realtime/WorldStores';
 
 export const RENDER_DELAY_MS = 220;
 const MAX_EXTRAPOLATION_MS = 400;

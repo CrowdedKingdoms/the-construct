@@ -3,9 +3,9 @@
  * banner, and the top-right actions. DOM only; scenes talk to it through the
  * `SceneHud` interface and never reach into it.
  */
-import type { SceneHud } from '@/engine/GameScene';
-import type { GameSession } from '@/platform/GameSession';
-import type { StudioState } from '@/platform/studio/StudioService';
+import type { SceneHud } from '@crowdedkingdoms/construct/engine/GameScene';
+import type { GameSession } from '@crowdedkingdoms/construct/platform/GameSession';
+import type { StudioState } from '@crowdedkingdoms/construct/platform/studio/StudioService';
 import { el } from '@/ui/dom';
 
 export interface HudActions {

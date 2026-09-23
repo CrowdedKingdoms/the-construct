@@ -13,12 +13,16 @@
  */
 import * as THREE from 'three';
 
-import type { GameScene, SceneContext, SceneSize } from '@/engine/GameScene';
-import { Controls, helpLines } from '@/engine/controls';
-import { HOLODECK_SPAWN } from '@/platform/programs';
-import { NEUTRAL_POSE, type Pose } from '@/platform/realtime/actorCodec';
-import { instanceStore } from '@/platform/realtime/WorldStores';
-import { toBrokerBounds } from '@/platform/studio/permissions';
+import type {
+  GameScene,
+  SceneContext,
+  SceneSize,
+} from '@crowdedkingdoms/construct/engine/GameScene';
+import { Controls, helpLines } from '@crowdedkingdoms/construct/engine/controls';
+import { HOLODECK_SPAWN } from '@/game/programs';
+import { NEUTRAL_POSE, type Pose } from '@crowdedkingdoms/construct/platform/realtime/actorCodec';
+import { instanceStore } from '@crowdedkingdoms/construct/platform/realtime/WorldStores';
+import { toBrokerBounds } from '@crowdedkingdoms/construct/platform/studio/permissions';
 import { AvatarPool } from '@/scenes/holodeck-three/avatars';
 import { ClaimedChunkLayer, claimedChunksToDraw } from '@/scenes/holodeck-three/claimedChunkBox';
 import { InstanceLayer } from '@/scenes/holodeck-three/instanceLayer';

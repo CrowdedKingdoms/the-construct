@@ -67,7 +67,7 @@ clamps chunk coordinates to the mod's grid. Calls it answers itself:
 `grid_info` (the grid's bounds), `hud_set` (text HUD), and `overlay_draw`
 (3D gizmos the holodeck renders from the same construct.scene.v1 schema —
 still data, never HTML). Everything else reaches this game's router,
-`src/platform/studio/clientModHost.ts`, which offers:
+`packages/construct/src/platform/studio/clientModHost.ts`, which offers:
 
 | Host call | Answer |
 | --- | --- |
@@ -155,3 +155,27 @@ and the SERVER-only path are here so it can be a deliberate one.
 
 - **Marketplace listings and paid mods** — `marketplace.publishListing` and
   friends. Read [Player marketplace](https://docs.crowdedkingdoms.com/game-api/player-marketplace).
+
+## JS grid programs
+
+Beside Rust modules, a project may carry **JS grid programs**:
+`programs/<name>.js` files (target CLIENT) that run in your grid with the full
+CrowdyJS SDK. The server never compiles or runs them; the Construct loads one
+into a hidden `sandbox="allow-scripts"` iframe (`grid-program.html`, served
+with `connect-src 'none'`), and `GridProgramRunner` relays its CrowdyJS
+traffic with a grid-scoped token. So a program can read and write inside the
+grid, post to the grid's channels, host grid sessions and send spatial
+messages that start in the grid (and reach past it), and nothing else.
+
+```js
+export default async function ({ client, grid, appId, gridId, box, log }) {
+  await grid.send.text({ chunk: { x: String(box.low.x), y: String(box.low.y), z: String(box.low.z) },
+                         uuid: 'f'.repeat(32), text: 'hello from the grid', distance: 2 });
+}
+```
+
+The Studio agent runs one with `grid_program_run` (crowdy-dsh 0.4); the
+starter's Common Files include `programs/fountain.js`. A hosting edge must
+serve `grid-program.html` with `gridProgramSecurityHeaders()` and answer the
+sandbox's `Origin: null` module requests with `Access-Control-Allow-Origin:
+null` (the framework's Vite plugins do both for `vite dev` / `vite preview`).
