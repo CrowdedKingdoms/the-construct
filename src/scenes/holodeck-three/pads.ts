@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three';
 
-import { CLAIM_PAD, PROGRAMS, type ProgramDefinition } from '@/platform/programs';
+import { CLAIM_PAD, PROGRAMS, type ProgramDefinition } from '@/game/programs';
 import { makeNameplate } from '@/scenes/holodeck-three/nameplate';
 
 export type PadKind = { kind: 'program'; program: ProgramDefinition } | { kind: 'claim' };

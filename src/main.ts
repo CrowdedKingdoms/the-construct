@@ -11,22 +11,30 @@
  */
 import '@/style.css';
 
-import { Controls } from '@/engine/controls';
-import { GameLoop } from '@/engine/GameLoop';
-import { Input } from '@/engine/Input';
-import { SceneRouter } from '@/engine/SceneRouter';
-import { AuthService } from '@/platform/auth/AuthService';
+import { Controls } from '@crowdedkingdoms/construct/engine/controls';
+import { GameLoop } from '@crowdedkingdoms/construct/engine/GameLoop';
+import { Input } from '@crowdedkingdoms/construct/engine/Input';
+import { SceneRouter } from '@crowdedkingdoms/construct/engine/SceneRouter';
+import { AuthService } from '@crowdedkingdoms/construct/platform/auth/AuthService';
 import {
   APP_ID_STORAGE_KEY,
   BUILD_APP_ID,
   GAME_NAME,
   STUDIO_WALLET_URL,
   resolveAppId,
-} from '@/platform/config';
-import { ensureEnvScope, readScoped, writeScoped } from '@/platform/envScope';
-import { GameSession } from '@/platform/GameSession';
-import { NetworkManager, messageOf, type AppRoute } from '@/platform/network/NetworkManager';
-import { HOLODECK_SCENE_ID, HOLODECK_SPAWN, programById } from '@/platform/programs';
+} from '@crowdedkingdoms/construct/platform/config';
+import {
+  ensureEnvScope,
+  readScoped,
+  writeScoped,
+} from '@crowdedkingdoms/construct/platform/envScope';
+import { GameSession } from '@crowdedkingdoms/construct/platform/GameSession';
+import {
+  NetworkManager,
+  messageOf,
+  type AppRoute,
+} from '@crowdedkingdoms/construct/platform/network/NetworkManager';
+import { HOLODECK_SCENE_ID, HOLODECK_SPAWN, programById } from '@/game/programs';
 import { HolodeckScene } from '@/scenes/holodeck-three/HolodeckScene';
 import { PaintScene } from '@/scenes/program-pixi/PaintScene';
 import { BootCard } from '@/ui/BootCard';
@@ -34,6 +42,12 @@ import { ChatPanel } from '@/ui/ChatPanel';
 import { Hud } from '@/ui/Hud';
 import { showSignIn } from '@/ui/LoginForm';
 import { showNoApp } from '@/ui/NoAppCard';
+import { configureGameModel } from '@crowdedkingdoms/construct/platform/model/gameModelConfig';
+
+import { MODEL_NAMES, kitOptions } from '../model/blueprints.mjs';
+
+// The framework reads the model back by name; the names live with the blueprints.
+configureGameModel({ names: MODEL_NAMES, kitOptions: kitOptions() });
 
 const gameRoot = document.getElementById('game-root');
 const uiRoot = document.getElementById('ui-root');
@@ -139,6 +153,11 @@ async function enterAndPlay(route: AppRoute): Promise<void> {
 async function startGame(): Promise<void> {
   await stopGame();
   const session = new GameSession(network);
+  // Dev builds only: a handle for the IDE browser and the multiplayer e2e to
+  // drive the session (grid programs, grid channels) without UI clicks.
+  if (import.meta.env.DEV) {
+    (window as unknown as { __construct?: unknown }).__construct = { session, network };
+  }
   card.setStatus('Loading your save…');
   const saved = await session.loadSave();
 
