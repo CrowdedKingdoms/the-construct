@@ -18,7 +18,9 @@
  * Prints the app id at the end; put it in `.env.local` as VITE_APP_ID to pin
  * the checkout to that app. Idempotent: re-running finds instead of creating.
  */
-import { runOnboarding, slugify } from '../src/platform/onboarding/steps.mjs';
+import { constructBlueprints } from '../model/blueprints.mjs';
+import { STARTER_TEMPLATES, commonFilesFor, programCommonFiles } from '../mods/templates/index.mjs';
+import { runOnboarding, slugify } from '@crowdedkingdoms/construct/platform/onboarding/steps';
 import { enterApp, loadDotEnv, messageOf, parseArgs, signIn } from './lib/cli.mjs';
 
 loadDotEnv();
@@ -37,6 +39,8 @@ try {
     appName,
     appSlug: args.slug ?? slugify(appName),
     datacenter: args.datacenter,
+    blueprints: constructBlueprints(),
+    commonFiles: [...STARTER_TEMPLATES.flatMap(commonFilesFor), ...programCommonFiles()],
     redirectOrigins: [
       'http://localhost:5175',
       ...[]

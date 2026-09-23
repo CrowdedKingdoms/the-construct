@@ -19,11 +19,11 @@ Clone it, run it, then replace the demo scenes with your game.
 | --- | --- | --- |
 | Holodeck | A three.js hub where players arrive, see each other, chat, and step on pads | `src/scenes/holodeck-three/` |
 | Paint | A pixi.js program: a shared canvas painted with persisted voxels | `src/scenes/program-pixi/` |
-| Platform layer | Hosted sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B) and voice (V), model, Studio — engine-agnostic | `src/platform/` |
-| Adapter boundary | The small `GameScene` contract both renderers implement | `src/engine/`, [docs/RENDERER-ADAPTER.md](docs/RENDERER-ADAPTER.md) |
-| Crowdy Studio | The in-game IDE: players claim a chunk, write SERVER + CLIENT Rust mods, and use the Ask/Build/Play agent | `src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
+| Platform layer | Hosted sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B) and voice (V), model, Studio — engine-agnostic | `packages/construct/src/platform/` |
+| Adapter boundary | The small `GameScene` contract both renderers implement | `packages/construct/src/engine/`, [docs/RENDERER-ADAPTER.md](docs/RENDERER-ADAPTER.md) |
+| Crowdy Studio | The in-game IDE: players claim a chunk, write SERVER + CLIENT Rust mods, and use the Ask/Build/Play agent | `packages/construct/src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
 | Game model | Kit blueprints (progression, leaderboards) + a hand-authored catalog, seeded idempotently | `model/blueprints.mjs` |
-| Setup | org → free app → access tier → redirect URIs → seed → Studio starter files, from a shell (`npm run setup`) | `src/platform/onboarding/`, `scripts/setup.mjs` |
+| Setup | org → free app → access tier → redirect URIs → seed → Studio starter files, from a shell (`npm run setup`) | `packages/construct/src/platform/onboarding/`, `scripts/setup.mjs` |
 | Security headers | COOP/COEP/CSP that make CLIENT mods possible, plus the Permissions-Policy the camera needs, wired into Vite and documented per host | `security-headers.mjs`, [docs/HOSTING.md](docs/HOSTING.md) |
 
 ## Ten minutes to a running game

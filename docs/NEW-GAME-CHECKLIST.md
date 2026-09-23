@@ -5,8 +5,8 @@ A checklist, in the order that keeps everything working at every step.
 ## 1. Make it yours
 
 - [ ] Rename: `package.json` `name`/`description`, `GAME_NAME` in
-      `src/platform/config.ts`, `index.html` title, `public/favicon.svg`.
-- [ ] Storage prefixes in `src/platform/envScope.ts` and `WorldStores.ts`
+      `packages/construct/src/platform/config.ts`, `index.html` title, `public/favicon.svg`.
+- [ ] Storage prefixes in `packages/construct/src/platform/envScope.ts` and `WorldStores.ts`
       (`construct:*`) — change them if two of your games could share an origin.
 - [ ] `LICENSE` and `README.md`.
 
@@ -17,7 +17,7 @@ A checklist, in the order that keeps everything working at every step.
       chat make sense across them.
 - [ ] Replication radius (`REPLICATION_DISTANCE`) and send cadence
       (`ACTOR_SYNC_INTERVAL_MS`).
-- [ ] The pose struct (`src/platform/realtime/actorCodec.ts`). Add what your
+- [ ] The pose struct (`packages/construct/src/platform/realtime/actorCodec.ts`). Add what your
       renderer needs (animation state, held item); keep it under ~1 KB. Change
       it in one place and every client must update together.
 
@@ -25,7 +25,7 @@ A checklist, in the order that keeps everything working at every step.
 
 - [ ] Implement `GameScene` for your first scene ([RENDERER-ADAPTER.md](RENDERER-ADAPTER.md)).
 - [ ] Register it in `src/main.ts`; decide whether the holodeck stays as a hub.
-- [ ] Update `src/platform/programs.ts` and `PROGRAM_CATALOG` in
+- [ ] Update `src/game/programs.ts` and `PROGRAM_CATALOG` in
       `model/blueprints.mjs` together.
 - [ ] Remove the demo scene folders and unused renderer dependencies.
 

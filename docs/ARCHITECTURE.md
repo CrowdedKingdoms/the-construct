@@ -11,8 +11,8 @@ the game model deployed to it.
 | Layer | Owns | Never does |
 | --- | --- | --- |
 | **Scenes** (`src/scenes/*`) | Rendering, camera, input handling, the local player's position, pads and pickups | Talk to the network, hold a token, decide permissions |
-| **Engine** (`src/engine/`) | The frame loop, the scene router, keyboard/pointer state, feeding the local pose to replication | Know which renderer a scene uses |
-| **Platform** (`src/platform/`) | Hosted sign-in, app entry, tokens, presence, chunks, save, chat, webcam (`media/WebcamService`: capture → `sendVideoFrame`; `video` notifications → per-uuid bitmaps; ended on `actorLeft`), model reads, Studio, onboarding | Render (a bitmap is handed to the scene, which owns drawing and disposal) |
+| **Engine** (`packages/construct/src/engine/`) | The frame loop, the scene router, keyboard/pointer state, feeding the local pose to replication | Know which renderer a scene uses |
+| **Platform** (`packages/construct/src/platform/`) | Hosted sign-in, app entry, tokens, presence, chunks, save, chat, webcam (`media/WebcamService`: capture → `sendVideoFrame`; `video` notifications → per-uuid bitmaps; ended on `actorLeft`), model reads, Studio, onboarding | Render (a bitmap is handed to the scene, which owns drawing and disposal) |
 | **CrowdyJS** | GraphQL + realtime transport, World Stores, Game Kit, Crowdy Studio chrome, the mod sandbox broker | — |
 | **Crowded Kingdoms** | Authorization, grids and claims, the game model, compile + admission of player code, presence, persistence | — |
 
@@ -58,7 +58,7 @@ World Stores (`@crowdedkingdoms/crowdyjs/stores`) run over one shared
   server-side gates (player-compute occupancy, artifact fetches).
 - `save` — a JSON blob per user per app, autosaved.
 
-The pose is a fixed 64-byte struct (`src/platform/realtime/actorCodec.ts`):
+The pose is a fixed 64-byte struct (`packages/construct/src/platform/realtime/actorCodec.ts`):
 position, look, velocity, flags, a `program` byte saying which scene the
 player is in, an avatar tint, and a 24-byte name. Both renderers consume it;
 the holodeck hides players whose `program` is not 0 and Paint shows only its own.
@@ -111,11 +111,11 @@ also covers grid / player-compute billing.
 
 ## Generic versus demo
 
-Keep (or adapt) for any game: everything under `src/platform/`, `src/engine/`,
+Keep (or adapt) for any game: everything under `packages/construct/src/platform/`, `packages/construct/src/engine/`,
 `security-headers.mjs`, `scripts/`, `model/blueprints.mjs` as a pattern, the
 Studio integration, the shell Setup.
 
-Replace with your game: `src/scenes/*` (the holodeck and Paint), `src/platform/programs.ts`
+Replace with your game: `src/scenes/*` (the holodeck and Paint), `src/game/programs.ts`
 (the pad list), the hand-authored part of the model, `mods/templates/` (your
 starter mods), the HUD chrome in `src/ui/`.
 

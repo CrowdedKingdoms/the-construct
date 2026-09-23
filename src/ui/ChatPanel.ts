@@ -2,9 +2,12 @@
  * Proximity chat panel. T or Enter focuses the box (gameplay keys are
  * suppressed while typing); Escape blurs it.
  */
-import { Controls } from '@/engine/controls';
-import type { Input } from '@/engine/Input';
-import type { ChatMessage, ChatService } from '@/platform/social/ChatService';
+import { Controls } from '@crowdedkingdoms/construct/engine/controls';
+import type { Input } from '@crowdedkingdoms/construct/engine/Input';
+import type {
+  ChatMessage,
+  ChatService,
+} from '@crowdedkingdoms/construct/platform/social/ChatService';
 import { el } from '@/ui/dom';
 
 export class ChatPanel {

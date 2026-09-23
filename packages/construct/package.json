@@ -1,0 +1,54 @@
+{
+  "name": "@crowdedkingdoms/construct",
+  "version": "0.1.0",
+  "description": "The Construct framework: the Crowded Kingdoms game platform layer (hosted sign-in, World Stores, voice/webcam/chat, Crowdy Studio dock, app and grid mods, grid programs) and engine loop, shared by the-construct starter and the games built on it. Ships TypeScript source for Vite.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CrowdedKingdoms/the-construct.git",
+    "directory": "packages/construct"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "files": [
+    "src",
+    "node",
+    "sandbox",
+    "README.md"
+  ],
+  "bin": {
+    "construct-copy-dsh": "./node/copy-dsh-web.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./platform/onboarding/steps": {
+      "types": "./src/platform/onboarding/steps.d.mts",
+      "default": "./src/platform/onboarding/steps.mjs"
+    },
+    "./node/security-headers": {
+      "types": "./node/security-headers.d.mts",
+      "default": "./node/security-headers.mjs"
+    },
+    "./node/copy-dsh-web": "./node/copy-dsh-web.mjs",
+    "./node/vite-plugins": {
+      "types": "./node/vite-plugins.d.mts",
+      "default": "./node/vite-plugins.mjs"
+    },
+    "./sandbox/boot": "./sandbox/boot.ts",
+    "./engine/*": "./src/engine/*.ts",
+    "./platform/*": "./src/platform/*.ts",
+    "./grid/*": "./src/grid/*.ts"
+  },
+  "peerDependencies": {
+    "@crowdedkingdoms/crowdyjs": ">=17.7.0-dev.0 <18",
+    "@crowdedkingdoms/crowdy-dsh": ">=0.4.0-dev.0 <1"
+  },
+  "peerDependenciesMeta": {
+    "@crowdedkingdoms/crowdy-dsh": {
+      "optional": true
+    }
+  }
+}
