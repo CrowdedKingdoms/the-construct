@@ -5,11 +5,13 @@
  *
  *   CONSTRUCT_EMAIL=... CONSTRUCT_PASSWORD=... APP_ID=<id> npm run seed
  */
+import { constructBlueprints } from '../model/blueprints.mjs';
+import { STARTER_TEMPLATES, commonFilesFor, programCommonFiles } from '../mods/templates/index.mjs';
 import {
   deployModel,
   ensureSelfClaimPolicy,
   publishStarterFiles,
-} from '../src/platform/onboarding/steps.mjs';
+} from '@crowdedkingdoms/construct/platform/onboarding/steps';
 import { enterApp, loadDotEnv, messageOf, requireEnv, signIn } from './lib/cli.mjs';
 
 loadDotEnv();
@@ -22,8 +24,12 @@ try {
   const { identity } = await signIn(log);
   const game = await enterApp(identity, appId, log);
   await ensureSelfClaimPolicy(game, { appId }, log);
-  await deployModel(game, { appId }, log);
-  await publishStarterFiles(game, { appId }, log);
+  await deployModel(game, { appId, blueprints: constructBlueprints() }, log);
+  await publishStarterFiles(
+    game,
+    { appId, commonFiles: [...STARTER_TEMPLATES.flatMap(commonFilesFor), ...programCommonFiles()] },
+    log,
+  );
   console.log('\nSeed complete.');
   game.close();
   identity.close();

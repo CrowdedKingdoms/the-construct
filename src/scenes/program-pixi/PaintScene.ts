@@ -17,12 +17,21 @@
 import 'pixi.js/unsafe-eval';
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 
-import type { GameScene, SceneContext, SceneSize } from '@/engine/GameScene';
-import { Controls, helpLines } from '@/engine/controls';
-import { CHUNK_SIZE } from '@/platform/config';
-import { HOLODECK_SCENE_ID, programBySceneId } from '@/platform/programs';
-import { NEUTRAL_POSE, type Pose } from '@/platform/realtime/actorCodec';
-import { chunkKey, worldToChunk, worldToVoxel, type ChunkCoord } from '@/platform/realtime/space';
+import type {
+  GameScene,
+  SceneContext,
+  SceneSize,
+} from '@crowdedkingdoms/construct/engine/GameScene';
+import { Controls, helpLines } from '@crowdedkingdoms/construct/engine/controls';
+import { CHUNK_SIZE } from '@crowdedkingdoms/construct/platform/config';
+import { HOLODECK_SCENE_ID, programBySceneId } from '@/game/programs';
+import { NEUTRAL_POSE, type Pose } from '@crowdedkingdoms/construct/platform/realtime/actorCodec';
+import {
+  chunkKey,
+  worldToChunk,
+  worldToVoxel,
+  type ChunkCoord,
+} from '@crowdedkingdoms/construct/platform/realtime/space';
 import {
   PAINT_CELL_DEFAULT,
   PAINT_CELL_MAX,

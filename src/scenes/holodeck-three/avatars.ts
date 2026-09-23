@@ -7,8 +7,11 @@
  */
 import * as THREE from 'three';
 
-import { FLAG_STUDIO_OPEN, type Pose } from '@/platform/realtime/actorCodec';
-import type { RemotePlayer } from '@/platform/realtime/WorldStores';
+import {
+  FLAG_STUDIO_OPEN,
+  type Pose,
+} from '@crowdedkingdoms/construct/platform/realtime/actorCodec';
+import type { RemotePlayer } from '@crowdedkingdoms/construct/platform/realtime/WorldStores';
 import { displayPose, tintColor } from '@/scenes/shared/interpolate';
 import { disposeNameplate, makeNameplate } from '@/scenes/holodeck-three/nameplate';
 

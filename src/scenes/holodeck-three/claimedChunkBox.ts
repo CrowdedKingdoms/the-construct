@@ -4,8 +4,14 @@
  */
 import * as THREE from 'three';
 
-import { toBrokerBounds, type GridBounds } from '@/platform/studio/permissions';
-import { gridWorldBounds, type WorldAabb } from '@/platform/studio/instanceSchema';
+import {
+  toBrokerBounds,
+  type GridBounds,
+} from '@crowdedkingdoms/construct/platform/studio/permissions';
+import {
+  gridWorldBounds,
+  type WorldAabb,
+} from '@crowdedkingdoms/construct/platform/studio/instanceSchema';
 
 /** Lift the floor so the box does not z-fight the holodeck grid. */
 const FLOOR_LIFT = 0.05;
