@@ -17,7 +17,7 @@ import type { GameScene, SceneContext, SceneSize } from '@/engine/GameScene';
 import { Controls, helpLines } from '@/engine/controls';
 import { HOLODECK_SPAWN } from '@/platform/programs';
 import { NEUTRAL_POSE, type Pose } from '@/platform/realtime/actorCodec';
-import { instanceStore } from '@/platform/realtime/WorldStores';
+import { instanceStore, type RemotePlayer } from '@/platform/realtime/WorldStores';
 import { toBrokerBounds } from '@/platform/studio/permissions';
 import { AvatarPool } from '@/scenes/holodeck-three/avatars';
 import { ClaimedChunkLayer, claimedChunksToDraw } from '@/scenes/holodeck-three/claimedChunkBox';
@@ -37,7 +37,10 @@ import {
   wishOnGround,
   zoomDistance,
 } from '@/scenes/shared/cameraLook';
-import { tintColor } from '@/scenes/shared/interpolate';
+import { displayPose, tintColor } from '@/scenes/shared/interpolate';
+import { hullHitSegment, LASER_LIFE_S, LASER_SPEED, laserPoint } from '@/scenes/holodeck-three/chunkCombat';
+import { ChunkFlight, inRangeChunk } from '@/scenes/holodeck-three/chunkFlight';
+import { buildHull, disposeHull } from '@/scenes/holodeck-three/shipHull';
 
 const ROOM_HALF = 60;
 const EYE_HEIGHT = 1.6;
@@ -45,7 +48,10 @@ const WALK_SPEED = 6;
 const RUN_SPEED = 11;
 
 const IDLE_HINT =
-  'WASD move · hold RMB to look · LMB for grid mods · scroll zoom · E on a pad · F1 help';
+  'Click the world to capture the mouse · then move to aim · left-click shoots · Esc releases · WASD moves';
+const DECK_HINT = 'Range deck · F fly · left click fires the laser · WASD walk';
+const FLY_HINT = 'Flying the hull · mouse aims · W/S speed · left click lasers · F near the floor to land';
+const BUDDY_CONTROL = '/local-buddy';
 
 export class HolodeckScene implements GameScene {
   readonly id = 'holodeck';
@@ -60,7 +66,17 @@ export class HolodeckScene implements GameScene {
   private overlay: InstanceLayer | null = null;
   private claimedChunks: ClaimedChunkLayer | null = null;
   private pads: Pad[] = [];
-  private localBody: THREE.Mesh | null = null;
+  private localRig: THREE.Group | null = null;
+  private localCapsule: THREE.Mesh | null = null;
+  private localShip: THREE.Group | null = null;
+  private readonly flight = new ChunkFlight();
+  private flyHeld = false;
+  private readonly bolts = new Map<
+    number,
+    { mesh: THREE.Mesh; x: number; y: number; z: number; dx: number; dy: number; dz: number; born: number }
+  >();
+  private nextBolt = 1;
+  private readonly ejected = new Set<string>();
   private disposables: Array<() => void> = [];
 
   private readonly position = new THREE.Vector3(HOLODECK_SPAWN.x, 0, HOLODECK_SPAWN.z);
@@ -91,33 +107,43 @@ export class HolodeckScene implements GameScene {
     this.voxels = new VoxelLayer(this.scene);
     this.overlay = new InstanceLayer(this.scene);
     this.claimedChunks = new ClaimedChunkLayer(this.scene);
-    this.localBody = new THREE.Mesh(
+    const tint = tintColor(context.session.tint);
+    const rig = new THREE.Group();
+    const capsule = new THREE.Mesh(
       new THREE.CapsuleGeometry(0.35, 0.9, 6, 12),
       new THREE.MeshStandardMaterial({
-        color: tintColor(context.session.tint),
-        emissive: tintColor(context.session.tint),
+        color: tint,
+        emissive: tint,
         emissiveIntensity: 0.25,
       }),
     );
-    this.localBody.position.y = 0.8;
-    this.scene.add(this.localBody);
+    const ship = buildHull('arwing', tint, 0xffd166);
+    ship.visible = false;
+    rig.add(capsule, ship);
+    this.scene.add(rig);
+    this.localRig = rig;
+    this.localCapsule = capsule;
+    this.localShip = ship;
 
-    const onClick = () => {
-      // LMB is gameplay for CLIENT mods (click-to-charge). Look stays RMB.
-      // Skip pointer-lock while Studio is open or a grid mod is running so
-      // hold-to-charge on the holodeck canvas actually reaches the mod.
-      if (
-        context.session.studio.snapshot.open ||
-        context.session.studio.snapshot.clientModsRunning > 0
-      ) {
-        return;
+    const onPointerDown = (event: PointerEvent) => {
+      // The docked Studio panel used to block this, so aim died as soon as
+      // the cursor left the preview. A press on the world captures the
+      // mouse; Esc (exitLook) gives it back to the editor. Fullscreen
+      // Studio still suppresses input and drops the lock itself.
+      // Call requestPointerLock with no options: an unsupported option
+      // rejects the whole lock, and a retry from the rejection is no
+      // longer a user gesture so the browser ignores it.
+      if (event.button !== 0 || context.input.suppressed) return;
+      const element = renderer.domElement;
+      if (document.pointerLockElement !== element) {
+        element.requestPointerLock?.();
       }
-      if (!context.input.suppressed && document.pointerLockElement !== renderer.domElement) {
-        renderer.domElement.requestPointerLock?.();
-      }
+      element.setPointerCapture?.(event.pointerId);
     };
-    renderer.domElement.addEventListener('click', onClick);
-    this.disposables.push(() => renderer.domElement.removeEventListener('click', onClick));
+    renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    this.disposables.push(() =>
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown),
+    );
     this.disposables.push(context.input.onKeys(Controls.activate, () => this.activate()));
     // Webcam frames land on the avatar's face; the server's actor-left notice
     // (or the idle fallback) clears it. Players in another program are not in
@@ -151,11 +177,24 @@ export class HolodeckScene implements GameScene {
     this.claimedChunks = null;
     disposePads(this.scene, this.pads);
     this.pads = [];
-    if (this.localBody) {
-      this.scene.remove(this.localBody);
-      this.localBody.geometry.dispose();
-      (this.localBody.material as THREE.Material).dispose();
-      this.localBody = null;
+    for (const bolt of this.bolts.values()) {
+      this.scene.remove(bolt.mesh);
+      bolt.mesh.geometry.dispose();
+      (bolt.mesh.material as THREE.Material).dispose();
+    }
+    this.bolts.clear();
+    this.flight.disembark();
+    this.ejected.clear();
+    if (this.localRig) {
+      this.scene.remove(this.localRig);
+      if (this.localCapsule) {
+        this.localCapsule.geometry.dispose();
+        (this.localCapsule.material as THREE.Material).dispose();
+      }
+      if (this.localShip) disposeHull(this.localShip);
+      this.localRig = null;
+      this.localCapsule = null;
+      this.localShip = null;
     }
     this.scene.clear();
     if (this.renderer) {
@@ -205,14 +244,19 @@ export class HolodeckScene implements GameScene {
     const renderer = this.renderer;
     if (!context || !renderer) return;
     const { input, session } = context;
+    const onDeck = inRangeChunk(this.position.x, this.position.y, this.position.z);
+    const flyDown = !input.suppressed && input.isDown('KeyF');
+    const flyEdge = flyDown && !this.flyHeld;
+    this.flyHeld = flyDown;
 
     // Look: pointer lock or RMB drag. Wheel zooms the follow camera.
-    if (input.isLooking()) {
+    // In the air the quaternion step consumes the delta instead.
+    if (!this.flight.flying && input.isLooking()) {
       const { dx, dy } = input.takePointerDelta();
       const next = applyLook(this.yaw, this.pitch, dx, dy, LOOK_SENSITIVITY);
       this.yaw = next.yaw;
       this.pitch = next.pitch;
-    } else {
+    } else if (!this.flight.flying) {
       input.takePointerDelta();
     }
     const wheel = input.takeWheel();
@@ -225,26 +269,65 @@ export class HolodeckScene implements GameScene {
       );
     }
 
-    // Move relative to the camera yaw. Agent Play adds the same axes a human
-    // WASD would, plus LOOK deltas (degrees converted to radians upstream).
-    const agent = session.studio.locomotion.sample(nowMs);
-    this.yaw += agent.yaw;
-    this.pitch = Math.max(LOOK_PITCH_MIN, Math.min(LOOK_PITCH_MAX, this.pitch + agent.pitch));
-    const human = input.suppressed ? { x: 0, y: 0 } : input.axes();
-    const axes = { x: clampAxis(human.x + agent.x), y: clampAxis(human.y + agent.y) };
-    const speed = input.isRun() ? RUN_SPEED : WALK_SPEED;
-    const dir = wishOnGround(this.yaw, axes);
-    const wish = new THREE.Vector3(dir.x, 0, dir.z);
-    if (wish.lengthSq() > 0) wish.multiplyScalar(speed);
-    this.velocity.lerp(wish, Math.min(1, dt * 12));
-    this.position.addScaledVector(this.velocity, dt);
-    this.position.x = clamp(this.position.x);
-    this.position.z = clamp(this.position.z);
+    if (this.flight.flying) {
+      const look = input.isLooking() ? input.takePointerDelta() : { dx: 0, dy: 0 };
+      if (!input.isLooking()) input.takePointerDelta();
+      const throttle = input.suppressed ? 0 : input.axes().y;
+      const stepped = this.flight.step(
+        dt,
+        -look.dx * LOOK_SENSITIVITY,
+        -look.dy * LOOK_SENSITIVITY,
+        throttle,
+      );
+      this.position.set(stepped.x, stepped.y, stepped.z);
+      this.yaw = stepped.yaw;
+      this.pitch = stepped.pitch;
+      this.velocity.set(stepped.vx, stepped.vy, stepped.vz);
+      if (flyEdge && stepped.y < 2) {
+        this.flight.disembark();
+        this.position.y = 0;
+        this.velocity.set(0, 0, 0);
+      }
+    } else {
+      if (flyEdge && onDeck) {
+        this.flight.embark(this.position.x, this.position.y, this.position.z, this.yaw, 0);
+      }
+      // Move relative to the camera yaw. Agent Play adds the same axes a human
+      // WASD would, plus LOOK deltas (degrees converted to radians upstream).
+      const agent = session.studio.locomotion.sample(nowMs);
+      this.yaw += agent.yaw;
+      this.pitch = Math.max(LOOK_PITCH_MIN, Math.min(LOOK_PITCH_MAX, this.pitch + agent.pitch));
+      const human = input.suppressed ? { x: 0, y: 0 } : input.axes();
+      const axes = { x: clampAxis(human.x + agent.x), y: clampAxis(human.y + agent.y) };
+      const speed = input.isRun() ? RUN_SPEED : WALK_SPEED;
+      const dir = wishOnGround(this.yaw, axes);
+      const wish = new THREE.Vector3(dir.x, 0, dir.z);
+      if (wish.lengthSq() > 0) wish.multiplyScalar(speed);
+      this.velocity.lerp(wish, Math.min(1, dt * 12));
+      this.position.addScaledVector(this.velocity, dt);
+      this.position.x = clamp(this.position.x);
+      this.position.z = clamp(this.position.z);
+    }
 
-    // Local avatar + camera
-    if (this.localBody) {
-      this.localBody.position.set(this.position.x, 0.8, this.position.z);
-      this.localBody.rotation.y = this.yaw;
+    if (input.takePrimaryClick() && (this.flight.flying || onDeck)) this.fire(nowMs);
+    this.drawBolts(nowMs, dt, session.players(this.programId));
+
+    // Local avatar + camera. The pill is the holodeck body. On the range
+    // deck it is the built interceptor hull.
+    if (this.localRig && this.localCapsule && this.localShip) {
+      const aboard = this.flight.flying || onDeck;
+      this.localCapsule.visible = !aboard;
+      this.localShip.visible = aboard;
+      if (this.flight.flying) {
+        this.localRig.position.set(this.position.x, this.position.y, this.position.z);
+        this.localRig.quaternion.copy(this.flight.attitude);
+      } else if (onDeck) {
+        this.localRig.position.set(this.position.x, 1.15, this.position.z);
+        this.localRig.rotation.set(0, this.yaw, 0);
+      } else {
+        this.localRig.position.set(this.position.x, 0.8, this.position.z);
+        this.localRig.rotation.set(0, this.yaw, 0);
+      }
     }
     const off = followCameraOffset(
       this.yaw,
@@ -254,7 +337,11 @@ export class HolodeckScene implements GameScene {
     );
     const camOffset = new THREE.Vector3(off.x, off.y, off.z);
     this.camera.position.copy(this.position).add(camOffset);
-    this.camera.lookAt(this.position.x, EYE_HEIGHT, this.position.z);
+    this.camera.lookAt(
+      this.position.x,
+      this.flight.flying ? this.position.y : EYE_HEIGHT,
+      this.position.z,
+    );
 
     // Others (only those standing in the holodeck)
     this.avatars?.sync(session.players(this.programId), nowMs);
@@ -293,14 +380,19 @@ export class HolodeckScene implements GameScene {
 
     // Pads
     const pad = padAt(this.pads, this.position.x, this.position.z);
-    if (pad !== this.activePad) {
-      this.activePad = pad;
-      const hint = pad ? `Press E — ${pad.label}` : IDLE_HINT;
-      if (hint !== this.lastHint) {
-        this.lastHint = hint;
-        context.hud.setHint(hint);
-      }
+    const onDeckNow = inRangeChunk(this.position.x, this.position.y, this.position.z);
+    const hint = pad
+      ? `Press E — ${pad.label}`
+      : this.flight.flying
+        ? FLY_HINT
+        : onDeckNow
+          ? DECK_HINT
+          : IDLE_HINT;
+    if (hint !== this.lastHint) {
+      this.lastHint = hint;
+      context.hud.setHint(hint);
     }
+    this.activePad = pad;
     animatePads(this.pads, this.activePad, nowMs);
 
     renderer.render(this.scene, this.camera);
@@ -324,6 +416,87 @@ export class HolodeckScene implements GameScene {
         context.hud.toast(messageOf(error), 'error');
       });
     }
+  }
+
+  private fire(nowMs: number): void {
+    const dir = new THREE.Vector3(0, 0, -1);
+    if (this.flight.flying) dir.applyQuaternion(this.flight.attitude);
+    else dir.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    dir.normalize();
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.045, 0.045, 1.6, 6),
+      new THREE.MeshBasicMaterial({ color: 0x9bfff4 }),
+    );
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    const originY = this.flight.flying ? this.position.y : 1.15;
+    const origin = {
+      x: this.position.x + dir.x * 1.8,
+      y: originY + dir.y * 1.8,
+      z: this.position.z + dir.z * 1.8,
+    };
+    mesh.position.set(origin.x, origin.y, origin.z);
+    this.scene.add(mesh);
+    this.bolts.set(this.nextBolt++, {
+      mesh,
+      x: origin.x,
+      y: origin.y,
+      z: origin.z,
+      dx: dir.x,
+      dy: dir.y,
+      dz: dir.z,
+      born: nowMs,
+    });
+  }
+
+  private drawBolts(nowMs: number, dt: number, players: RemotePlayer[]): void {
+    for (const player of players) {
+      const pose = displayPose(player, nowMs);
+      if (!inRangeChunk(pose.x, pose.y, pose.z)) this.ejected.delete(player.uuid);
+    }
+    for (const [id, bolt] of this.bolts) {
+      const age = (nowMs - bolt.born) / 1000;
+      if (age > LASER_LIFE_S) {
+        this.removeBolt(id, bolt);
+        continue;
+      }
+      const origin = { x: bolt.x, y: bolt.y, z: bolt.z };
+      const direction = { x: bolt.dx, y: bolt.dy, z: bolt.dz };
+      const from = laserPoint(origin, direction, Math.max(0, age - dt));
+      const point = laserPoint(origin, direction, age);
+      bolt.mesh.position.set(point.x, point.y, point.z);
+      for (const player of players) {
+        if (this.ejected.has(player.uuid)) continue;
+        const pose = displayPose(player, nowMs);
+        if (!inRangeChunk(pose.x, pose.y, pose.z)) continue;
+        if (!hullHitSegment(from, point, pose)) continue;
+        this.ejectPilot(player.uuid);
+        this.removeBolt(id, bolt);
+        break;
+      }
+    }
+  }
+
+  private removeBolt(
+    id: number,
+    bolt: { mesh: THREE.Mesh },
+  ): void {
+    this.scene.remove(bolt.mesh);
+    bolt.mesh.geometry.dispose();
+    (bolt.mesh.material as THREE.Material).dispose();
+    this.bolts.delete(id);
+  }
+
+  /** Ask the local Buddy stand-in to fly this pilot out of the range chunk. */
+  private ejectPilot(uuid: string): void {
+    if (this.ejected.has(uuid)) return;
+    this.ejected.add(uuid);
+    void fetch(`${BUDDY_CONTROL}/players/${encodeURIComponent(uuid)}/eject`, { method: 'POST' })
+      .then((response) => {
+        if (!response.ok) this.ejected.delete(uuid);
+      })
+      .catch(() => {
+        this.ejected.delete(uuid);
+      });
   }
 
   private buildRoom(): void {

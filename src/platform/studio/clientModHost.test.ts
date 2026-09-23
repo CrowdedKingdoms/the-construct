@@ -9,7 +9,9 @@ const {
   bytesToBase64,
   parseVoxelSetArgs,
   routeClientHostCall,
+  voxelStateToWire,
   voxelsFromBase64,
+  voxelsListRows,
 } = await import('@/platform/studio/clientModHost');
 
 const grid = { low: { x: -1n, y: 0n, z: -1n }, high: { x: 1n, y: 0n, z: 1n } };
@@ -130,10 +132,7 @@ describe('routeClientHostCall', () => {
     const r = reads();
     await expect(
       routeClientHostCall(
-        {
-          fn: 'voxel_set',
-          args: { chunkX: 0, chunkY: 0, chunkZ: 0, x: 1, y: 0, z: 2, voxelType: 3 },
-        } as never,
+        { fn: 'voxel_set', args: { chunkX: 0, chunkY: 0, chunkZ: 0, x: 1, y: 0, z: 2, voxelType: 3 } } as never,
         r.reads,
         grid,
       ),
@@ -170,6 +169,28 @@ describe('routeClientHostCall', () => {
     ]);
   });
 
+  it('parses the SDK voxel_set shape (voxelX/stateBase64)', () => {
+    expect(
+      parseVoxelSetArgs({
+        chunkX: -1,
+        chunkY: 0,
+        chunkZ: -1,
+        voxelX: 4,
+        voxelY: 15,
+        voxelZ: 15,
+        voxelType: 1,
+        stateBase64: '{"u":"abc","shot":1}',
+      }),
+    ).toEqual({
+      chunk: { x: -1, y: 0, z: -1 },
+      x: 4,
+      y: 15,
+      z: 15,
+      voxelType: 1,
+      state: '{"u":"abc","shot":1}',
+    });
+  });
+
   it('parses flattened chunkX host-call args the broker clamps', () => {
     expect(
       parseVoxelSetArgs({
@@ -195,5 +216,16 @@ describe('routeClientHostCall', () => {
   it('decodes an empty grid to no rows', () => {
     expect(voxelsFromBase64(null)).toEqual([]);
     expect(voxelsFromBase64(bytesToBase64(new Uint8Array(4096)))).toEqual([]);
+  });
+
+  it('attaches sparse voxel state onto voxels_list rows', () => {
+    const packed = new Uint8Array(4096);
+    packed[2 + 15 * 16 + 0 * 256] = 1;
+    const json = '{"players":[{"uuid":"fake1","name":"Alice"}]}';
+    expect(voxelStateToWire(json)).toBe(bytesToBase64(new TextEncoder().encode(json)));
+    expect(voxelStateToWire('AA==')).toBe('AA==');
+    expect(
+      voxelsListRows(bytesToBase64(packed), [{ x: 2, y: 15, z: 0, state: json }]),
+    ).toEqual([{ x: 2, y: 15, z: 0, voxelType: 1, state: json }]);
   });
 });

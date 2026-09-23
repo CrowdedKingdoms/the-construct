@@ -53,8 +53,8 @@ export function helpLines(scene: HelpScene): string[] {
     ];
   }
   return [
-    'Hold right mouse — look',
-    'Left click — grid mods (click-to-charge)',
+    'Click the world — capture the mouse and aim (Esc releases it)',
+    'Left click — shoot / grid mods',
     'Amber box — your claimed chunk',
     'Scroll — zoom camera',
     'E — activate a pad',

@@ -1,3 +1,4 @@
+import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,6 +50,40 @@ function dshHeadersPlugin(dshHeaders: Record<string, string>): Plugin {
   };
 }
 
+/** Same-origin door to the local Buddy stand-in. Page CSP connect-src is only 'self'. */
+function localBuddyProxy(): Plugin {
+  const forward: Plugin['configureServer'] = (server) => {
+    server.middlewares.use((req, res, next) => {
+      const url = req.url ?? '';
+      if (!url.startsWith('/local-buddy')) {
+        next();
+        return;
+      }
+      const targetPath = url.slice('/local-buddy'.length) || '/';
+      const headers = { ...req.headers, host: '127.0.0.1:8787' };
+      const proxyReq = http.request(
+        {
+          hostname: '127.0.0.1',
+          port: 8787,
+          path: targetPath,
+          method: req.method,
+          headers,
+        },
+        (proxyRes) => {
+          res.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers);
+          proxyRes.pipe(res);
+        },
+      );
+      proxyReq.on('error', () => {
+        if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain' });
+        res.end('local buddy unavailable');
+      });
+      req.pipe(proxyReq);
+    });
+  };
+  return { name: 'construct-local-buddy', configureServer: forward };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, rootDir, '');
   // The CSP must admit whichever API the bundle will actually dial: an explicit
@@ -66,7 +101,7 @@ export default defineConfig(({ mode }) => {
   const dshHeaders = dshSecurityHeaders({ apiOrigins: [apiOrigin], frameAncestors });
 
   return {
-    plugins: [dshHeadersPlugin(dshHeaders)],
+    plugins: [localBuddyProxy(), dshHeadersPlugin(dshHeaders)],
     resolve: {
       alias: { '@': path.resolve(rootDir, 'src') },
     },

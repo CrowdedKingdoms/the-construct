@@ -58,8 +58,13 @@ export class Input {
   private detach: (() => void) | null = null;
   private attachedRoot: HTMLElement | null = null;
   private wheelY = 0;
+  private primaryHeld = false;
   /** Escape cancels RMB look until the button is released. */
   private lookCancelled = false;
+  /** Pointer is over the holodeck canvas, so mouse movement aims. */
+  private overScene = false;
+  /** A client position has been seen, so the next move can be a delta. */
+  private hasClient = false;
 
   attach(target: HTMLElement): void {
     if (this.detach) return;
@@ -81,8 +86,24 @@ export class Input {
     const onBlur = () => this.keys.clear();
     const onPointerMove = (event: PointerEvent) => {
       if (this.suppressed) return;
-      this.pointerState.dx += event.movementX;
-      this.pointerState.dy += event.movementY;
+      const overScene =
+        event.target instanceof Element && Boolean(event.target.closest('.scene-canvas'));
+      this.overScene = overScene;
+      let dx = event.movementX;
+      let dy = event.movementY;
+      // The IDE browser reports movementX/Y as 0 unless the pointer is locked.
+      // Fall back to the cursor position so dragging on the canvas still aims.
+      if (!this.pointerState.locked && dx === 0 && dy === 0 && this.hasClient) {
+        dx = event.clientX - this.pointerState.x;
+        dy = event.clientY - this.pointerState.y;
+      }
+      this.hasClient = true;
+      const aiming =
+        overScene || this.pointerState.locked || (this.pointerState.buttons & 2) !== 0;
+      if (aiming) {
+        this.pointerState.dx += dx;
+        this.pointerState.dy += dy;
+      }
       this.pointerState.x = event.clientX;
       this.pointerState.y = event.clientY;
       this.pointerState.buttons = event.buttons;
@@ -198,6 +219,7 @@ export class Input {
   isLooking(): boolean {
     if (this.suppressed) return false;
     if (this.pointerState.locked) return true;
+    if (this.overScene) return true;
     if (this.lookCancelled) return false;
     return (this.pointerState.buttons & 2) !== 0;
   }
@@ -253,5 +275,16 @@ export class Input {
     const y = this.wheelY;
     this.wheelY = 0;
     return y;
+  }
+
+  /**
+   * True once per left-button press. Held buttons do not repeat, so a shot
+   * is one click.
+   */
+  takePrimaryClick(): boolean {
+    const down = !this.suppressed && (this.pointerState.buttons & 1) !== 0;
+    const edge = down && !this.primaryHeld;
+    this.primaryHeld = down;
+    return edge;
   }
 }

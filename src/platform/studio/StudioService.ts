@@ -40,6 +40,7 @@ import {
   DEFAULT_VOXEL_STATE,
   routeClientHostCall,
   runConsentedGridMod,
+  voxelStateToWire,
   type ClientModHostReads,
   type ClientModHostWrites,
 } from '@/platform/studio/clientModHost';
@@ -85,8 +86,19 @@ function createConstructTextHud(): CrowdyStudioTextHud {
     describe(payload: unknown) {
       if (typeof payload === 'string') return payload;
       if (payload && typeof payload === 'object') {
-        const greeting = (payload as { greeting?: unknown }).greeting;
-        if (typeof greeting === 'string' && greeting.length > 0) return greeting;
+        const rec = payload as {
+          greeting?: unknown;
+          turn?: unknown;
+          scores?: unknown;
+          state?: unknown;
+          who?: unknown;
+        };
+        const lines: string[] = [];
+        for (const key of ['greeting', 'turn', 'scores', 'state', 'who'] as const) {
+          const value = rec[key];
+          if (typeof value === 'string' && value.length > 0) lines.push(value);
+        }
+        if (lines.length > 0) return lines.join('\n');
       }
       try {
         return JSON.stringify(payload);
@@ -132,6 +144,12 @@ export class StudioService {
   private lastModsReadAt = 0;
   private modsInFlight = false;
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Last GraphQL-persisted mailbox payload per cell, so roster ticks do not hammer updateVoxel. */
+  private lastDurableVoxel = new Map<string, string>();
+  private voxelUpdateCache = new Map<
+    string,
+    { at: number; states: Array<{ x: number; y: number; z: number; state: string }> }
+  >();
 
   constructor(private readonly session: GameSession) {
     this.grids = new GridService(session.network);
@@ -410,6 +428,8 @@ export class StudioService {
             x: s.x,
             y: s.y,
             z: s.z,
+            yaw: s.yaw,
+            pitch: s.pitch,
             program: s.program,
           });
         }
@@ -421,16 +441,39 @@ export class StudioService {
               x: p.pose.x,
               y: p.pose.y,
               z: p.pose.z,
+              yaw: p.pose.yaw,
+              pitch: p.pose.pitch,
               program: p.pose.program,
             });
           }
         }
         return rows;
       },
-      chunkVoxels: (x, y, z) => {
+      chunkVoxels: async (x, y, z) => {
         const cached = this.session.world.chunks.get({ x: Number(x), y: Number(y), z: Number(z) });
-        if (!cached?.voxels) return { voxelsBase64: null };
-        return { voxelsBase64: bytesToBase64(cached.voxels) };
+        const states: Array<{ x: number; y: number; z: number; state: string }> = [];
+        if (cached) {
+          for (const [index, state] of cached.voxelStates) {
+            if (typeof state !== 'string' || state.length === 0) continue;
+            states.push({
+              x: index & 15,
+              y: (index >> 4) & 15,
+              z: (index >> 8) & 15,
+              state,
+            });
+          }
+        }
+        const durable = await this.listDurableVoxelStates(Number(x), Number(y), Number(z));
+        for (const extra of durable) {
+          const row = states.find((s) => s.x === extra.x && s.y === extra.y && s.z === extra.z);
+          if (row) row.state = extra.state;
+          else states.push(extra);
+        }
+        if (!cached?.voxels && states.length === 0) return { voxelsBase64: null };
+        return {
+          voxelsBase64: bytesToBase64(cached?.voxels ?? new Uint8Array(4096)),
+          states,
+        };
       },
     };
   }
@@ -447,10 +490,90 @@ export class StudioService {
           voxelType: input.voxelType,
           state: input.state ?? DEFAULT_VOXEL_STATE,
         });
-        if (ok) chunks.markDirty(input.chunk);
+        if (ok) {
+          chunks.markDirty(input.chunk);
+          void this.persistVoxelUpdate(input);
+        }
         return ok;
       },
     };
+  }
+
+  /**
+   * Draft SERVER voxel_set writes Postgres but suppresses Buddy fan-out, so the
+   * live chunk cache never sees BOARD/SHOT mailboxes. Pull those states from
+   * listVoxels (cached ~250ms) so the author's CLIENT can read them.
+   */
+  private async listDurableVoxelStates(
+    x: number,
+    y: number,
+    z: number,
+  ): Promise<Array<{ x: number; y: number; z: number; state: string }>> {
+    const game = this.session.network.game;
+    if (!game?.voxels?.list) return [];
+    const key = `${x},${y},${z}`;
+    const hit = this.voxelUpdateCache.get(key);
+    const now = Date.now();
+    if (hit && now - hit.at < 250) return hit.states;
+    try {
+      const rows = await game.voxels.list({
+        appId: this.session.appId,
+        coordinates: { x: String(x), y: String(y), z: String(z) },
+      });
+      const states: Array<{ x: number; y: number; z: number; state: string }> = [];
+      for (const row of rows ?? []) {
+        const loc = row.location;
+        if (!loc) continue;
+        const raw = row.state;
+        if (typeof raw !== 'string' || raw.length === 0) continue;
+        let decoded = raw;
+        try {
+          decoded = new TextDecoder().decode(
+            Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)),
+          );
+        } catch {
+          decoded = raw;
+        }
+        states.push({ x: loc.x, y: loc.y, z: loc.z, state: decoded });
+      }
+      this.voxelUpdateCache.set(key, { at: now, states });
+      return states;
+    } catch (error) {
+      this.session.network.log(`voxel list failed: ${messageOf(error)}`);
+      return hit?.states ?? [];
+    }
+  }
+  private async persistVoxelUpdate(input: {
+    chunk: { x: number; y: number; z: number };
+    x: number;
+    y: number;
+    z: number;
+    voxelType: number;
+    state?: string;
+  }): Promise<void> {
+    const game = this.session.network.game;
+    if (!game?.voxels?.update) return;
+    const wire = voxelStateToWire(input.state ?? DEFAULT_VOXEL_STATE);
+    const cell = `${input.chunk.x},${input.chunk.y},${input.chunk.z}:${input.x},${input.y},${input.z}`;
+    const payload = `${input.voxelType}:${wire}`;
+    if (this.lastDurableVoxel.get(cell) === payload) return;
+    this.lastDurableVoxel.set(cell, payload);
+    try {
+      await game.voxels.update({
+        appId: this.session.appId,
+        coordinates: {
+          x: String(input.chunk.x),
+          y: String(input.chunk.y),
+          z: String(input.chunk.z),
+        },
+        location: { x: input.x, y: input.y, z: input.z },
+        voxelType: input.voxelType,
+        state: wire,
+      });
+    } catch (error) {
+      this.lastDurableVoxel.delete(cell);
+      this.session.network.log(`voxel persist failed: ${messageOf(error)}`);
+    }
   }
 
   private adoptGrid(grid: GridSnapshot | null, chunk: ChunkCoord): void {
@@ -500,7 +623,6 @@ export class StudioService {
     if (
       this.state.clientModsAvailable &&
       this.currentGrid &&
-      !this.currentGrid.owned &&
       now - this.gridEnteredAt >= GRID_SETTLE_MS
     ) {
       await this.syncGridClientMods(this.currentGrid);
@@ -508,9 +630,10 @@ export class StudioService {
   }
 
   /**
-   * Visitor path: fetch the grid's attached CLIENT mods, ask once per author
-   * whether to trust them, and run the trusted/consented ones. Re-run on a
-   * cadence so a hash change stops the old worker.
+   * Fetch the grid's attached CLIENT mods and run the trusted ones, including
+   * for the owner. Studio's Test draft broker dies on reload, so the owner
+   * has to run the same attachment or their clicks never reach the mod.
+   * Re-run on a cadence so a hash change stops the old worker.
    */
   private async syncGridClientMods(grid: GridSnapshot): Promise<void> {
     const now = Date.now();
@@ -530,6 +653,8 @@ export class StudioService {
         if (mod.callerTrustsAuthor) continue;
         const authorKey = `${mod.authorKind}:${mod.authorRef}:${mod.authorCapabilityHash}`;
         if (this.declinedAuthors.has(authorKey)) continue;
+        const selfAuthored = String(mod.authorRef) === this.session.userId;
+        if (selfAuthored) this.approvedAuthors.add(authorKey);
         if (!this.approvedAuthors.has(authorKey)) {
           const approved = await this.confirmTrust(
             `Trust ${String(mod.authorKind).toLowerCase()} ${mod.authorRef}'s mods on this grid?\n\n` +

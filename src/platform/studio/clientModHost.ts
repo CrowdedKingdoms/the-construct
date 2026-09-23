@@ -7,8 +7,9 @@
  * limited it, and answered `grid_info` / `hud_set` / `overlay_draw` itself.
  * What reaches `routeClientHostCall` is world_read, `voxel_set`, and
  * `pointer_clicks`. Reads return only what the running player can already
- * lawfully see. Writes go through ChunkStore.setVoxel (optimistic + UDP) and
- * markDirty (durable write-back), the same route Paint uses. Never hand a mod
+ * lawfully see. Writes go through ChunkStore.setVoxel (optimistic + UDP),
+ * markDirty (packed-chunk write-back), and GraphQL updateVoxel so SERVER
+ * voxels_list can read mailbox JSON from voxel_updates. Never hand a mod
  * the raw client.
  */
 import {
@@ -21,9 +22,23 @@ import {
 import type { CrowdyStudioTextHud } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
 import type { ModOverlayStore } from '@/platform/studio/modOverlay';
 
+export interface ClientVoxelState {
+  x: number;
+  y: number;
+  z: number;
+  state: string;
+}
+
 export interface ClientModHostReads {
   actorsInChunk(x: bigint, y: bigint, z: bigint): Array<Record<string, unknown>>;
-  chunkVoxels(x: bigint, y: bigint, z: bigint): { voxelsBase64: string | null } | null;
+  chunkVoxels(
+    x: bigint,
+    y: bigint,
+    z: bigint,
+  ):
+    | { voxelsBase64: string | null; states?: ClientVoxelState[] }
+    | null
+    | Promise<{ voxelsBase64: string | null; states?: ClientVoxelState[] } | null>;
 }
 
 export interface ClientModHostWrites {
@@ -106,11 +121,11 @@ export async function routeClientHostCall(
     }
     case 'chunk_get':
     case 'voxels_list': {
-      const chunk = reads.chunkVoxels(toBigInt(args.x), toBigInt(args.y), toBigInt(args.z));
+      const chunk = await reads.chunkVoxels(toBigInt(args.x), toBigInt(args.y), toBigInt(args.z));
       if (!chunk) return fn === 'chunk_get' ? { voxelsBase64: null } : { voxels: [] };
       return fn === 'chunk_get'
         ? { voxelsBase64: chunk.voxelsBase64 }
-        : { voxels: voxelsFromBase64(chunk.voxelsBase64) };
+        : { voxels: voxelsListRows(chunk.voxelsBase64, chunk.states) };
     }
     case 'voxel_set': {
       if (!writes) throw new HostCallRefusedError(fn);
@@ -148,7 +163,10 @@ function intInRange(value: unknown, min: number, max: number): number | null {
   return n;
 }
 
-function coordField(record: Record<string, unknown>, ...keys: string[]): unknown {
+function coordField(
+  record: Record<string, unknown>,
+  ...keys: string[]
+): unknown {
   for (const key of keys) {
     if (record[key] !== undefined) return record[key];
   }
@@ -185,9 +203,9 @@ export function parseVoxelSetArgs(args: Record<string, unknown>): {
   const voxelRaw =
     asCoord3(args.voxel) ??
     ({
-      x: coordField(args, 'x', 'vx'),
-      y: coordField(args, 'y', 'vy'),
-      z: coordField(args, 'z', 'vz'),
+      x: coordField(args, 'voxelX', 'voxel_x', 'x', 'vx'),
+      y: coordField(args, 'voxelY', 'voxel_y', 'y', 'vy'),
+      z: coordField(args, 'voxelZ', 'voxel_z', 'z', 'vz'),
     } as { x: unknown; y: unknown; z: unknown });
   const cx = intInRange(chunkRaw.x, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
   const cy = intInRange(chunkRaw.y, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
@@ -196,36 +214,51 @@ export function parseVoxelSetArgs(args: Record<string, unknown>): {
   const y = intInRange(voxelRaw.y, 0, 15);
   const z = intInRange(voxelRaw.z, 0, 15);
   const voxelType = intInRange(coordField(args, 'voxelType', 'voxel_type', 'type'), 0, 255);
-  if (
-    cx === null ||
-    cy === null ||
-    cz === null ||
-    x === null ||
-    y === null ||
-    z === null ||
-    voxelType === null
-  ) {
+  if (cx === null || cy === null || cz === null || x === null || y === null || z === null || voxelType === null) {
     return null;
   }
   const stateRaw = coordField(args, 'state', 'state_base64', 'stateBase64');
-  const state =
-    typeof stateRaw === 'string' && stateRaw.length > 0 ? stateRaw : DEFAULT_VOXEL_STATE;
+  const state = typeof stateRaw === 'string' && stateRaw.length > 0 ? stateRaw : DEFAULT_VOXEL_STATE;
   return { chunk: { x: cx, y: cy, z: cz }, x, y, z, voxelType, state };
 }
 
 /** Sparse `{x,y,z,voxelType}` rows for the non-zero cells of a dense grid. */
 export function voxelsFromBase64(
   voxelsBase64: string | null,
-): Array<{ x: number; y: number; z: number; voxelType: number }> {
+): Array<{ x: number; y: number; z: number; voxelType: number; state?: string }> {
   if (!voxelsBase64) return [];
   const binary = atob(voxelsBase64);
-  const out: Array<{ x: number; y: number; z: number; voxelType: number }> = [];
+  const out: Array<{ x: number; y: number; z: number; voxelType: number; state?: string }> = [];
   for (let i = 0; i < binary.length && i < 4096; i++) {
     const type = binary.charCodeAt(i);
     if (type === 0) continue;
     out.push({ x: i & 15, y: (i >> 4) & 15, z: (i >> 8) & 15, voxelType: type });
   }
   return out;
+}
+
+/** Dense types plus sparse per-cell state so mailbox voxels can carry JSON. */
+export function voxelsListRows(
+  voxelsBase64: string | null,
+  states?: ClientVoxelState[],
+): Array<{ x: number; y: number; z: number; voxelType: number; state?: string }> {
+  const rows = voxelsFromBase64(voxelsBase64);
+  if (!states?.length) return rows;
+  for (const extra of states) {
+    const row = rows.find((v) => v.x === extra.x && v.y === extra.y && v.z === extra.z);
+    if (row) row.state = extra.state;
+    else rows.push({ x: extra.x, y: extra.y, z: extra.z, voxelType: 0, state: extra.state });
+  }
+  return rows;
+}
+
+/** JSON mailbox payloads become base64; values that are already base64 pass through. */
+export function voxelStateToWire(state: string): string {
+  const trimmed = state.trimStart();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return bytesToBase64(new TextEncoder().encode(state));
+  }
+  return state;
 }
 
 export function bytesToBase64(bytes: Uint8Array): string {
