@@ -20,6 +20,16 @@ import { NEUTRAL_POSE, type Pose } from '@/platform/realtime/actorCodec';
 import { instanceStore } from '@/platform/realtime/WorldStores';
 import { toBrokerBounds } from '@/platform/studio/permissions';
 import { AvatarPool } from '@/scenes/holodeck-three/avatars';
+import {
+  bindModInput,
+  modAppearance,
+  modHoldsLocomotion,
+  modOwnedActors,
+  modPoseHold,
+  modProjectiles,
+  positionInModGrid,
+  stepModPose,
+} from '@/platform/studio/modChunkRuntime';
 import { ClaimedChunkLayer, claimedChunksToDraw } from '@/scenes/holodeck-three/claimedChunkBox';
 import { InstanceLayer } from '@/scenes/holodeck-three/instanceLayer';
 import { animatePads, buildPads, disposePads, padAt, type Pad } from '@/scenes/holodeck-three/pads';
@@ -61,6 +71,7 @@ export class HolodeckScene implements GameScene {
   private claimedChunks: ClaimedChunkLayer | null = null;
   private pads: Pad[] = [];
   private localBody: THREE.Mesh | null = null;
+  private readonly bolts = new Map<number, THREE.Mesh>();
   private disposables: Array<() => void> = [];
 
   private readonly position = new THREE.Vector3(HOLODECK_SPAWN.x, 0, HOLODECK_SPAWN.z);
@@ -88,6 +99,7 @@ export class HolodeckScene implements GameScene {
     this.buildRoom();
     this.pads = buildPads(this.scene);
     this.avatars = new AvatarPool(this.scene);
+    bindModInput(context.input);
     this.voxels = new VoxelLayer(this.scene);
     this.overlay = new InstanceLayer(this.scene);
     this.claimedChunks = new ClaimedChunkLayer(this.scene);
@@ -141,6 +153,13 @@ export class HolodeckScene implements GameScene {
     const context = this.context;
     for (const dispose of this.disposables) dispose();
     this.disposables = [];
+    bindModInput(null);
+    for (const bolt of this.bolts.values()) {
+      this.scene?.remove(bolt);
+      bolt.geometry.dispose();
+      (bolt.material as THREE.Material).dispose();
+    }
+    this.bolts.clear();
     this.avatars?.clear();
     this.avatars = null;
     this.voxels?.dispose();
@@ -194,6 +213,7 @@ export class HolodeckScene implements GameScene {
       z: this.position.z,
       yaw: this.yaw,
       pitch: this.pitch,
+      roll: modPoseHold()?.roll ?? 0,
       vx: this.velocity.x,
       vy: this.velocity.y,
       vz: this.velocity.z,
@@ -207,12 +227,14 @@ export class HolodeckScene implements GameScene {
     const { input, session } = context;
 
     // Look: pointer lock or RMB drag. Wheel zooms the follow camera.
-    if (input.isLooking()) {
+    // While a mod holds the body, input_look consumes the delta instead.
+    const held = modHoldsLocomotion();
+    if (!held && input.isLooking()) {
       const { dx, dy } = input.takePointerDelta();
       const next = applyLook(this.yaw, this.pitch, dx, dy, LOOK_SENSITIVITY);
       this.yaw = next.yaw;
       this.pitch = next.pitch;
-    } else {
+    } else if (!held) {
       input.takePointerDelta();
     }
     const wheel = input.takeWheel();
@@ -227,25 +249,42 @@ export class HolodeckScene implements GameScene {
 
     // Move relative to the camera yaw. Agent Play adds the same axes a human
     // WASD would, plus LOOK deltas (degrees converted to radians upstream).
-    const agent = session.studio.locomotion.sample(nowMs);
-    this.yaw += agent.yaw;
-    this.pitch = Math.max(LOOK_PITCH_MIN, Math.min(LOOK_PITCH_MAX, this.pitch + agent.pitch));
-    const human = input.suppressed ? { x: 0, y: 0 } : input.axes();
-    const axes = { x: clampAxis(human.x + agent.x), y: clampAxis(human.y + agent.y) };
-    const speed = input.isRun() ? RUN_SPEED : WALK_SPEED;
-    const dir = wishOnGround(this.yaw, axes);
-    const wish = new THREE.Vector3(dir.x, 0, dir.z);
-    if (wish.lengthSq() > 0) wish.multiplyScalar(speed);
-    this.velocity.lerp(wish, Math.min(1, dt * 12));
-    this.position.addScaledVector(this.velocity, dt);
-    this.position.x = clamp(this.position.x);
-    this.position.z = clamp(this.position.z);
+    if (held) {
+      const stepped = stepModPose(dt);
+      if (stepped && positionInModGrid(stepped.x, stepped.y, stepped.z)) {
+        this.position.set(stepped.x, stepped.y, stepped.z);
+        this.yaw = stepped.yaw;
+        this.pitch = stepped.pitch;
+        this.velocity.set(stepped.vx, stepped.vy, stepped.vz);
+      }
+    } else {
+      const agent = session.studio.locomotion.sample(nowMs);
+      this.yaw += agent.yaw;
+      this.pitch = Math.max(LOOK_PITCH_MIN, Math.min(LOOK_PITCH_MAX, this.pitch + agent.pitch));
+      const human = input.suppressed ? { x: 0, y: 0 } : input.axes();
+      const axes = { x: clampAxis(human.x + agent.x), y: clampAxis(human.y + agent.y) };
+      const speed = input.isRun() ? RUN_SPEED : WALK_SPEED;
+      const dir = wishOnGround(this.yaw, axes);
+      const wish = new THREE.Vector3(dir.x, 0, dir.z);
+      if (wish.lengthSq() > 0) wish.multiplyScalar(speed);
+      this.velocity.lerp(wish, Math.min(1, dt * 12));
+      this.position.addScaledVector(this.velocity, dt);
+      this.position.x = clamp(this.position.x);
+      this.position.z = clamp(this.position.z);
+    }
 
     // Local avatar + camera
+    const look = modAppearance();
+    const inGrid = positionInModGrid(this.position.x, this.position.y, this.position.z);
     if (this.localBody) {
-      this.localBody.position.set(this.position.x, 0.8, this.position.z);
-      this.localBody.rotation.y = this.yaw;
+      this.localBody.position.set(this.position.x, this.position.y + 0.8, this.position.z);
+      this.localBody.rotation.order = 'YXZ';
+      this.localBody.rotation.set(held ? this.pitch : 0, this.yaw, held ? (modPoseHold()?.roll ?? 0) : 0);
+      const material = this.localBody.material as THREE.MeshStandardMaterial;
+      material.color.setHex(look && inGrid ? look.color : tintColor(session.tint));
     }
+    this.avatars?.setModColor(look && inGrid ? look.color : null);
+    this.drawBolts(nowMs);
     const off = followCameraOffset(
       this.yaw,
       this.pitch,
@@ -257,7 +296,31 @@ export class HolodeckScene implements GameScene {
     this.camera.lookAt(this.position.x, EYE_HEIGHT, this.position.z);
 
     // Others (only those standing in the holodeck)
-    this.avatars?.sync(session.players(this.programId), nowMs);
+    this.avatars?.sync(
+      [
+        ...session.players(this.programId),
+        ...modOwnedActors().map((actor) => ({
+          uuid: actor.uuid,
+          pose: {
+            x: actor.x,
+            y: actor.y,
+            z: actor.z,
+            yaw: actor.yaw,
+            pitch: actor.pitch,
+            roll: actor.roll,
+            vx: 0,
+            vy: 0,
+            vz: 0,
+            flags: 0,
+            program: this.programId,
+            tint: 0,
+            name: 'mod',
+          },
+          lastSeenMs: nowMs,
+        })),
+      ] as never,
+      nowMs,
+    );
     this.voxels?.sync(session.world.chunks, this.position);
     if (session.joined) {
       const overlay = session.studio.overlay.snapshot();
@@ -323,6 +386,35 @@ export class HolodeckScene implements GameScene {
       void context.session.studio.claimHereAndOpen(this.position).catch((error) => {
         context.hud.toast(messageOf(error), 'error');
       });
+    }
+  }
+
+  private drawBolts(nowMs: number): void {
+    const live = new Set<number>();
+    for (const shot of modProjectiles(nowMs)) {
+      live.add(shot.id);
+      const t = Math.max(0, (nowMs - shot.startMs) / 1000);
+      let bolt = this.bolts.get(shot.id);
+      if (!bolt) {
+        bolt = new THREE.Mesh(
+          new THREE.SphereGeometry(0.12, 8, 8),
+          new THREE.MeshBasicMaterial({ color: 0x7dfff2 }),
+        );
+        this.scene.add(bolt);
+        this.bolts.set(shot.id, bolt);
+      }
+      bolt.position.set(
+        shot.x + shot.dx * shot.speed * t,
+        shot.y + shot.dy * shot.speed * t,
+        shot.z + shot.dz * shot.speed * t,
+      );
+    }
+    for (const [id, bolt] of this.bolts) {
+      if (live.has(id)) continue;
+      this.scene.remove(bolt);
+      bolt.geometry.dispose();
+      (bolt.material as THREE.Material).dispose();
+      this.bolts.delete(id);
     }
   }
 

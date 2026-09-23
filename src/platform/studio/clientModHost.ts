@@ -20,6 +20,7 @@ import {
 } from '@crowdedkingdoms/crowdyjs';
 import type { CrowdyStudioTextHud } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
 import type { ModOverlayStore } from '@/platform/studio/modOverlay';
+import { routeModGameplay } from '@/platform/studio/modChunkRuntime';
 
 export interface ClientModHostReads {
   actorsInChunk(x: bigint, y: bigint, z: bigint): Array<Record<string, unknown>>;
@@ -49,6 +50,24 @@ export const OFFERED_HOST_CALLS = [
   'voxels_list',
   'voxel_set',
   'pointer_clicks',
+  'input_axes',
+  'input_look',
+  'events_poll',
+  'voice_set',
+  'video_set',
+  'send_client_event',
+  'send_text',
+  'send_actor_message',
+  'send_channel_message',
+  'pose_get',
+  'pose_set',
+  'pose_release',
+  'actor_spawn',
+  'actor_pose',
+  'actor_despawn',
+  'avatar_appearance',
+  'avatar_state_set',
+  'teleport_request',
 ] as const;
 
 /** One zero byte, base64: the smallest non-empty voxel state the API accepts. */
@@ -130,8 +149,18 @@ export async function routeClientHostCall(
       if (!input) throw new HostCallRefusedError(fn);
       return input.drainPointerClicks();
     }
-    default:
-      throw new HostCallRefusedError(fn);
+    default: {
+      const answered = await routeModGameplay(call);
+      if (
+        answered &&
+        typeof answered === 'object' &&
+        'error' in answered &&
+        String((answered as { error: unknown }).error).startsWith('unrouted')
+      ) {
+        throw new HostCallRefusedError(fn);
+      }
+      return answered;
+    }
   }
 }
 

@@ -45,6 +45,11 @@ import {
 } from '@/platform/studio/clientModHost';
 import { PointerClickBuffer } from '@/platform/studio/pointerClicks';
 import { ModOverlayStore } from '@/platform/studio/modOverlay';
+import {
+  bindModGrid,
+  bindModSession,
+  releaseModChunk,
+} from '@/platform/studio/modChunkRuntime';
 import { GridService, type GridSnapshot } from '@/platform/studio/GridService';
 import { hasAnyStudioPermission, toBrokerBounds } from '@/platform/studio/permissions';
 import { Emitter } from '@/platform/util/Emitter';
@@ -306,6 +311,7 @@ export class StudioService {
     this.pointerClicks.dispose();
     this.hud.destroy();
     this.overlay.clear();
+    releaseModChunk();
   }
 
   // ---------------------------------------------------------------------------
@@ -572,6 +578,7 @@ export class StudioService {
     } finally {
       this.modsInFlight = false;
       this.state = { ...this.state, clientModsRunning: this.lifecycle.runningCount };
+      if (this.lifecycle.runningCount === 0) releaseModChunk();
       this.emit();
     }
   }
@@ -586,6 +593,26 @@ export class StudioService {
     grid: GridSnapshot,
     scope: ClientModScope,
   ): Promise<void> {
+    const bounds = toBrokerBounds(grid.bounds);
+    bindModGrid(bounds);
+    bindModSession({
+      client: this.session.network.game,
+      appId: this.session.appId,
+      gridId: grid.gridId,
+      selfUuid: this.session.selfUuid,
+      userId: this.session.userId,
+      moveTo: (chunk) => this.session.moveTo(chunk),
+      players: () =>
+        this.session.players().map((player) => ({
+          uuid: player.uuid,
+          pose: { x: player.pose.x, y: player.pose.y, z: player.pose.z },
+        })),
+      voiceStart: () => this.session.voice.start(),
+      voiceStop: () => this.session.voice.stop(),
+      videoStart: () => this.session.webcam.start(),
+      videoStop: () => this.session.webcam.stop(),
+    });
+    const tick = (mod as { clientTickIntervalMs?: number }).clientTickIntervalMs;
     const handle = await runConsentedGridMod({
       client: this.session.network.game,
       appId: this.session.appId,
@@ -593,13 +620,14 @@ export class StudioService {
       artifactCacheKey: mod.clientArtifactHash,
       hudSource: `grid:${mod.attachmentId}`,
       hudLabel: mod.listingName || 'Grid mod',
-      grid: toBrokerBounds(grid.bounds),
+      grid: bounds,
       workerUrl: glueWorkerAssetUrl,
       reads: this.reads(),
       writes: this.writes(),
       hud: this.hud,
       overlay: this.overlay,
       input: this.pointerClicks,
+      tickIntervalMs: typeof tick === 'number' && tick > 0 ? tick : 1000,
     });
     if (handle) {
       this.lifecycle.track(scope, descriptorOf(mod), handle);
