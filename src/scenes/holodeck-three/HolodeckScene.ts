@@ -23,6 +23,7 @@ import { HOLODECK_SPAWN } from '@/game/programs';
 import { NEUTRAL_POSE, type Pose } from '@crowdedkingdoms/construct/platform/realtime/actorCodec';
 import { instanceStore } from '@crowdedkingdoms/construct/platform/realtime/WorldStores';
 import { toBrokerBounds } from '@crowdedkingdoms/construct/platform/studio/permissions';
+import { noteWalkerPose } from '@crowdedkingdoms/construct/platform/studio/modPose';
 import { AvatarPool } from '@/scenes/holodeck-three/avatars';
 import {
   bindModInput,
@@ -119,16 +120,11 @@ export class HolodeckScene implements GameScene {
     this.scene.add(this.localBody);
 
     const onClick = () => {
-      // LMB is gameplay for CLIENT mods (click-to-charge). Look stays RMB.
-      // Skip pointer-lock while Studio is open or a grid mod is running so
-      // hold-to-charge on the holodeck canvas actually reaches the mod.
-      if (
-        context.session.studio.snapshot.open ||
-        context.session.studio.snapshot.clientModsRunning > 0
-      ) {
-        return;
-      }
-      if (!context.input.suppressed && document.pointerLockElement !== renderer.domElement) {
+      // A client mod cannot call requestPointerLock; the browser only accepts
+      // it from this click. Studio keeps the cursor. The click itself still
+      // reaches the mod as pointer_clicks, and the locked deltas as input_look.
+      if (context.session.studio.snapshot.open || context.input.suppressed) return;
+      if (document.pointerLockElement !== renderer.domElement) {
         renderer.domElement.requestPointerLock?.();
       }
     };
@@ -274,13 +270,15 @@ export class HolodeckScene implements GameScene {
       this.velocity.lerp(wish, Math.min(1, dt * 12));
       this.position.addScaledVector(this.velocity, dt);
       this.position.x = clamp(this.position.x);
+      this.position.y = 0;
       this.position.z = clamp(this.position.z);
     }
 
-    // Local avatar + camera
+    // Local avatar + camera. Hidden while a client mod is drawing the body.
     const look = modAppearance();
     const inGrid = positionInModGrid(this.position.x, this.position.y, this.position.z);
     if (this.localBody) {
+      this.localBody.visible = !held;
       this.localBody.position.set(this.position.x, this.position.y + 0.8, this.position.z);
       this.localBody.rotation.order = 'YXZ';
       this.localBody.rotation.set(
@@ -301,7 +299,16 @@ export class HolodeckScene implements GameScene {
     );
     const camOffset = new THREE.Vector3(off.x, off.y, off.z);
     this.camera.position.copy(this.position).add(camOffset);
-    this.camera.lookAt(this.position.x, EYE_HEIGHT, this.position.z);
+    if (!held) {
+      noteWalkerPose({
+        x: this.position.x,
+        y: this.position.y,
+        z: this.position.z,
+        yaw: this.yaw,
+        pitch: this.pitch,
+      });
+    }
+    this.camera.lookAt(this.position.x, held ? this.position.y : EYE_HEIGHT, this.position.z);
 
     // Others (only those standing in the holodeck)
     this.avatars?.sync(
@@ -328,6 +335,7 @@ export class HolodeckScene implements GameScene {
         })),
       ] as never,
       nowMs,
+      session.studio.scene.boundActors(),
     );
     this.voxels?.sync(session.world.chunks, this.position);
     if (session.joined) {
@@ -335,7 +343,8 @@ export class HolodeckScene implements GameScene {
       const grid = session.studio.grid;
       this.overlay?.sync(
         instanceStore().snapshot({
-          overlay: overlay.objects,
+          overlay: [...session.studio.scene.expand(), ...overlay.objects],
+          meshes: session.studio.scene.meshes(),
           actors: [
             ...session.players().map((player) => ({
               uuid: player.uuid,

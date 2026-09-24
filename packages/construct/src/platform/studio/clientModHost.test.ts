@@ -13,7 +13,9 @@ const {
   bytesToBase64,
   parseVoxelSetArgs,
   routeClientHostCall,
+  voxelStateToWire,
   voxelsFromBase64,
+  voxelsListRows,
 } = await import('./clientModHost');
 
 const grid = { low: { x: -1n, y: 0n, z: -1n }, high: { x: 1n, y: 0n, z: 1n } };
@@ -39,12 +41,36 @@ function sampleGrid(): Uint8Array {
 }
 
 describe('routeClientHostCall', () => {
-  it('offers world_read plus voxel_set, pointer input, and chunk gameplay', () => {
-    expect(OFFERED_HOST_CALLS).toContain('pointer_clicks');
-    expect(OFFERED_HOST_CALLS).toContain('pose_set');
-    expect(OFFERED_HOST_CALLS).toContain('send_client_event');
-    expect(OFFERED_HOST_CALLS).toContain('voice_set');
-    expect(OFFERED_HOST_CALLS).toContain('avatar_appearance');
+  it('offers world_read, scene catalog, and chunk gameplay', () => {
+    expect([...OFFERED_HOST_CALLS]).toEqual([
+      'actors_list',
+      'actors_list_radius',
+      'chunk_get',
+      'voxels_list',
+      'voxel_set',
+      'pointer_clicks',
+      'input_axes',
+      'input_look',
+      'input_key',
+      'events_poll',
+      'voice_set',
+      'video_set',
+      'send_client_event',
+      'send_text',
+      'send_actor_message',
+      'send_channel_message',
+      'pose_get',
+      'pose_set',
+      'pose_release',
+      'actor_spawn',
+      'actor_pose',
+      'actor_despawn',
+      'avatar_appearance',
+      'avatar_state_set',
+      'teleport_request',
+      'scene_catalog',
+      'scene_instances',
+    ]);
   });
 
   it('answers actors_list for one chunk', async () => {
@@ -171,6 +197,28 @@ describe('routeClientHostCall', () => {
     ]);
   });
 
+  it('parses the SDK voxel_set shape (voxelX/stateBase64)', () => {
+    expect(
+      parseVoxelSetArgs({
+        chunkX: -1,
+        chunkY: 0,
+        chunkZ: -1,
+        voxelX: 4,
+        voxelY: 15,
+        voxelZ: 15,
+        voxelType: 1,
+        stateBase64: '{"u":"abc","shot":1}',
+      }),
+    ).toEqual({
+      chunk: { x: -1, y: 0, z: -1 },
+      x: 4,
+      y: 15,
+      z: 15,
+      voxelType: 1,
+      state: '{"u":"abc","shot":1}',
+    });
+  });
+
   it('parses flattened chunkX host-call args the broker clamps', () => {
     expect(
       parseVoxelSetArgs({
@@ -281,5 +329,52 @@ describe('routeClientHostCall', () => {
   it('decodes an empty grid to no rows', () => {
     expect(voxelsFromBase64(null)).toEqual([]);
     expect(voxelsFromBase64(bytesToBase64(new Uint8Array(4096)))).toEqual([]);
+  });
+
+  it('attaches sparse voxel state onto voxels_list rows', () => {
+    const packed = new Uint8Array(4096);
+    packed[2 + 15 * 16 + 0 * 256] = 1;
+    const json = '{"players":[{"uuid":"fake1","name":"Alice"}]}';
+    expect(voxelStateToWire(json)).toBe(bytesToBase64(new TextEncoder().encode(json)));
+    expect(voxelStateToWire('AA==')).toBe('AA==');
+    expect(voxelsListRows(bytesToBase64(packed), [{ x: 2, y: 15, z: 0, state: json }])).toEqual([
+      { x: 2, y: 15, z: 0, voxelType: 1, state: json },
+    ]);
+  });
+
+  it('stores a scene catalog for the running module', async () => {
+    const { ModSceneStore } = await import('./modScene');
+    const store = new ModSceneStore();
+    const target = { source: 'mod', store };
+    const catalog = await routeClientHostCall(
+      { fn: 'scene_catalog', args: { v: 1, revision: 3, nodes: [] } } as never,
+      reads().reads,
+      grid,
+      undefined,
+      undefined,
+      target,
+    );
+    expect(catalog).toEqual({ ok: true, revision: 3 });
+    const again = await routeClientHostCall(
+      { fn: 'scene_catalog', args: { v: 1, revision: 3, nodes: [] } } as never,
+      reads().reads,
+      grid,
+      undefined,
+      undefined,
+      target,
+    );
+    expect(again).toEqual({ ok: true, revision: 3, ignored: true });
+    const instances = await routeClientHostCall(
+      {
+        fn: 'scene_instances',
+        args: { instances: [{ id: 'me', template: 'body' }] },
+      } as never,
+      reads().reads,
+      grid,
+      undefined,
+      undefined,
+      target,
+    );
+    expect(instances).toEqual({ ok: true, count: 1 });
   });
 });

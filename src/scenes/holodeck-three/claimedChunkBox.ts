@@ -67,6 +67,7 @@ interface Entry {
   group: THREE.Group;
   lines: THREE.LineSegments;
   floor: THREE.Mesh;
+  shell: THREE.Mesh;
 }
 
 export class ClaimedChunkLayer {
@@ -90,11 +91,17 @@ export class ClaimedChunkLayer {
     side: THREE.DoubleSide,
     fog: false,
   });
+  /** Outward faces only: solid from outside, open once the camera is inside. */
+  private readonly shellGeometry = new THREE.BoxGeometry(1, 1, 1);
+  private readonly shellMaterial = new THREE.MeshBasicMaterial({
+    color: 0x141820,
+    side: THREE.FrontSide,
+    depthWrite: true,
+    fog: false,
+  });
 
   constructor(scene: THREE.Scene) {
-    const cube = new THREE.BoxGeometry(1, 1, 1);
-    this.edgeGeometry = new THREE.EdgesGeometry(cube);
-    cube.dispose();
+    this.edgeGeometry = new THREE.EdgesGeometry(this.shellGeometry);
     this.group.name = 'claimed-chunks';
     this.group.renderOrder = 10;
     scene.add(this.group);
@@ -113,15 +120,19 @@ export class ClaimedChunkLayer {
       if (!entry) {
         const chunk = new THREE.Group();
         chunk.name = `claimed-chunk:${grid.gridId}`;
+        const shell = new THREE.Mesh(this.shellGeometry, this.shellMaterial);
         const lines = new THREE.LineSegments(this.edgeGeometry, this.lineMaterial);
         const floor = new THREE.Mesh(this.floorGeometry, this.floorMaterial);
         floor.rotation.x = -Math.PI / 2;
+        chunk.add(shell);
         chunk.add(lines);
         chunk.add(floor);
         this.group.add(chunk);
-        entry = { group: chunk, lines, floor };
+        entry = { group: chunk, lines, floor, shell };
         this.entries.set(grid.gridId, entry);
       }
+      entry.shell.position.set(0, 0, 0);
+      entry.shell.scale.set(t.sx, t.sy, t.sz);
       entry.lines.position.set(0, 0, 0);
       entry.lines.scale.set(t.sx, t.sy, t.sz);
       entry.floor.position.set(0, -t.sy / 2, 0);
@@ -135,8 +146,10 @@ export class ClaimedChunkLayer {
     this.group.removeFromParent();
     this.entries.clear();
     this.edgeGeometry.dispose();
+    this.shellGeometry.dispose();
     this.floorGeometry.dispose();
     this.lineMaterial.dispose();
+    this.shellMaterial.dispose();
     this.floorMaterial.dispose();
   }
 }

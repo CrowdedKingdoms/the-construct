@@ -184,6 +184,7 @@ async function startGame(): Promise<void> {
   const loop = new GameLoop(gameRoot!, router, session);
   router.bind({ root: gameRoot!, session, input, router, hud }, loop.size());
 
+  session.studio.bindGameplayInput(input);
   session.studio.attach({
     suppressGameplayInput: () => input.suppress(),
     onLayoutChange: (rightInset) => loop.setRightInset(rightInset),
