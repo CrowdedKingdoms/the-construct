@@ -90,11 +90,23 @@ describe('Input', () => {
     const { input, canvas } = attach();
     canvas.className = 'scene-canvas';
     window.dispatchEvent(
-      new PointerEvent('pointermove', { clientX: 10, clientY: 10, movementX: 0, movementY: 0, bubbles: true }),
+      new PointerEvent('pointermove', {
+        clientX: 10,
+        clientY: 10,
+        movementX: 0,
+        movementY: 0,
+        bubbles: true,
+      }),
     );
     Object.defineProperty(canvas, 'closest', { value: () => canvas });
     canvas.dispatchEvent(
-      new PointerEvent('pointermove', { clientX: 30, clientY: 14, movementX: 0, movementY: 0, bubbles: true }),
+      new PointerEvent('pointermove', {
+        clientX: 30,
+        clientY: 14,
+        movementX: 0,
+        movementY: 0,
+        bubbles: true,
+      }),
     );
     expect(input.isLooking()).toBe(true);
     expect(input.takePointerDelta()).toEqual({ dx: 20, dy: 4 });

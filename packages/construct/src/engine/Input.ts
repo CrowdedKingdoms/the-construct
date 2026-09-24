@@ -97,8 +97,7 @@ export class Input {
         dy = event.clientY - this.pointerState.y;
       }
       this.hasClient = true;
-      const aiming =
-        overScene || this.pointerState.locked || (this.pointerState.buttons & 2) !== 0;
+      const aiming = overScene || this.pointerState.locked || (this.pointerState.buttons & 2) !== 0;
       if (aiming) {
         this.pointerState.dx += dx;
         this.pointerState.dy += dy;

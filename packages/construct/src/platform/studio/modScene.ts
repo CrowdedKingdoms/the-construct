@@ -209,7 +209,15 @@ function bake(source: string, instance: SceneInstance, part: FlatPart): ModOverl
   let y = ly;
   let z = lz;
   if (!instance.bindActor) {
-    const [rx, ry, rz] = rotateByQuat(instance.qx, instance.qy, instance.qz, instance.qw, lx, ly, lz);
+    const [rx, ry, rz] = rotateByQuat(
+      instance.qx,
+      instance.qy,
+      instance.qz,
+      instance.qw,
+      lx,
+      ly,
+      lz,
+    );
     x = instance.x + rx;
     y = instance.y + ry;
     z = instance.z + rz;
@@ -253,7 +261,10 @@ export class ModSceneStore {
     return this.revisionValue;
   }
 
-  setCatalog(source: string, payload: unknown): { ok: boolean; revision?: number; ignored?: boolean } {
+  setCatalog(
+    source: string,
+    payload: unknown,
+  ): { ok: boolean; revision?: number; ignored?: boolean } {
     const catalog = parseSceneCatalog(payloadOf(payload));
     if (!catalog) return { ok: false };
     const prev = this.bySource.get(source);

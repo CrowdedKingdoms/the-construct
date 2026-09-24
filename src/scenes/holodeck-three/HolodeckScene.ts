@@ -23,7 +23,11 @@ import { HOLODECK_SPAWN } from '@/game/programs';
 import { NEUTRAL_POSE, type Pose } from '@crowdedkingdoms/construct/platform/realtime/actorCodec';
 import { instanceStore } from '@crowdedkingdoms/construct/platform/realtime/WorldStores';
 import { toBrokerBounds } from '@crowdedkingdoms/construct/platform/studio/permissions';
-import { currentModPose, noteWalkerPose, stepModPose } from '@crowdedkingdoms/construct/platform/studio/modPose';
+import {
+  currentModPose,
+  noteWalkerPose,
+  stepModPose,
+} from '@crowdedkingdoms/construct/platform/studio/modPose';
 import { AvatarPool } from '@/scenes/holodeck-three/avatars';
 import { ClaimedChunkLayer, claimedChunksToDraw } from '@/scenes/holodeck-three/claimedChunkBox';
 import { InstanceLayer } from '@/scenes/holodeck-three/instanceLayer';

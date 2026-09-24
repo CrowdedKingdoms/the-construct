@@ -207,9 +207,10 @@ export class StudioService {
   private hostInput() {
     return {
       drainPointerClicks: () => this.pointerClicks.drainPointerClicks(),
-      axes: () => (this.gameplay && !this.gameplay.suppressed ? this.gameplay.axes() : { x: 0, y: 0 }),
+      axes: () =>
+        this.gameplay && !this.gameplay.suppressed ? this.gameplay.axes() : { x: 0, y: 0 },
       look: () => this.gameplay?.takePointerDelta() ?? { dx: 0, dy: 0 },
-      keyDown: (code: string) => (this.gameplay?.isDown(code) ?? false),
+      keyDown: (code: string) => this.gameplay?.isDown(code) ?? false,
     };
   }
 
@@ -587,9 +588,7 @@ export class StudioService {
         if (typeof raw !== 'string' || raw.length === 0) continue;
         let decoded = raw;
         try {
-          decoded = new TextDecoder().decode(
-            Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)),
-          );
+          decoded = new TextDecoder().decode(Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)));
         } catch {
           decoded = raw;
         }

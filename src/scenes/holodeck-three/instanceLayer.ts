@@ -42,7 +42,12 @@ export class InstanceLayer {
       let entry = this.entries.get(instance.id);
       const meshId = instance.mesh?.id;
       const materialKey = materialKeyOf(instance);
-      if (!entry || entry.kind !== instance.kind || entry.meshId !== meshId || entry.materialKey !== materialKey) {
+      if (
+        !entry ||
+        entry.kind !== instance.kind ||
+        entry.meshId !== meshId ||
+        entry.materialKey !== materialKey
+      ) {
         if (entry) this.disposeEntry(instance.id, entry);
         entry = this.makeEntry(instance);
         this.group.add(entry.mesh);
@@ -128,7 +133,8 @@ export class InstanceLayer {
   }
 }
 
-type SceneMaterial = THREE.MeshStandardMaterial | THREE.MeshLambertMaterial | THREE.MeshBasicMaterial;
+type SceneMaterial =
+  THREE.MeshStandardMaterial | THREE.MeshLambertMaterial | THREE.MeshBasicMaterial;
 
 function shadingOf(instance: ComposedInstance): 'standard' | 'lambert' | 'basic' {
   return instance.shading ?? (instance.unlit ? 'basic' : 'standard');

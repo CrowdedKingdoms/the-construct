@@ -1,6 +1,12 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 
-import { applyPoseSet, clearModPose, positionInModGrid, setModPoseGrid, stepModPose } from './modPose';
+import {
+  applyPoseSet,
+  clearModPose,
+  positionInModGrid,
+  setModPoseGrid,
+  stepModPose,
+} from './modPose';
 
 describe('mod pose hold', () => {
   beforeEach(() => {

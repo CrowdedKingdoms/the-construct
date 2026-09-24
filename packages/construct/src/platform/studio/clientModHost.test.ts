@@ -144,7 +144,10 @@ describe('routeClientHostCall', () => {
     const r = reads();
     await expect(
       routeClientHostCall(
-        { fn: 'voxel_set', args: { chunkX: 0, chunkY: 0, chunkZ: 0, x: 1, y: 0, z: 2, voxelType: 3 } } as never,
+        {
+          fn: 'voxel_set',
+          args: { chunkX: 0, chunkY: 0, chunkZ: 0, x: 1, y: 0, z: 2, voxelType: 3 },
+        } as never,
         r.reads,
         grid,
       ),
@@ -236,9 +239,9 @@ describe('routeClientHostCall', () => {
     const json = '{"players":[{"uuid":"fake1","name":"Alice"}]}';
     expect(voxelStateToWire(json)).toBe(bytesToBase64(new TextEncoder().encode(json)));
     expect(voxelStateToWire('AA==')).toBe('AA==');
-    expect(
-      voxelsListRows(bytesToBase64(packed), [{ x: 2, y: 15, z: 0, state: json }]),
-    ).toEqual([{ x: 2, y: 15, z: 0, voxelType: 1, state: json }]);
+    expect(voxelsListRows(bytesToBase64(packed), [{ x: 2, y: 15, z: 0, state: json }])).toEqual([
+      { x: 2, y: 15, z: 0, voxelType: 1, state: json },
+    ]);
   });
 
   it('stores a scene catalog for the running module', async () => {

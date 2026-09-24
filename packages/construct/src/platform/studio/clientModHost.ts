@@ -201,10 +201,7 @@ function intInRange(value: unknown, min: number, max: number): number | null {
   return n;
 }
 
-function coordField(
-  record: Record<string, unknown>,
-  ...keys: string[]
-): unknown {
+function coordField(record: Record<string, unknown>, ...keys: string[]): unknown {
   for (const key of keys) {
     if (record[key] !== undefined) return record[key];
   }
@@ -252,11 +249,20 @@ export function parseVoxelSetArgs(args: Record<string, unknown>): {
   const y = intInRange(voxelRaw.y, 0, 15);
   const z = intInRange(voxelRaw.z, 0, 15);
   const voxelType = intInRange(coordField(args, 'voxelType', 'voxel_type', 'type'), 0, 255);
-  if (cx === null || cy === null || cz === null || x === null || y === null || z === null || voxelType === null) {
+  if (
+    cx === null ||
+    cy === null ||
+    cz === null ||
+    x === null ||
+    y === null ||
+    z === null ||
+    voxelType === null
+  ) {
     return null;
   }
   const stateRaw = coordField(args, 'state', 'state_base64', 'stateBase64');
-  const state = typeof stateRaw === 'string' && stateRaw.length > 0 ? stateRaw : DEFAULT_VOXEL_STATE;
+  const state =
+    typeof stateRaw === 'string' && stateRaw.length > 0 ? stateRaw : DEFAULT_VOXEL_STATE;
   return { chunk: { x: cx, y: cy, z: cz }, x, y, z, voxelType, state };
 }
 
