@@ -8,7 +8,10 @@
  */
 import { MODEL_NAMES } from '../model/blueprints.mjs';
 import { STARTER_TEMPLATES, commonFilesFor } from '../mods/templates/index.mjs';
-import { CONSTRUCTOR_TIER_KEYS, CONSTRUCTOR_TIER_NAME } from '../src/platform/onboarding/steps.mjs';
+import {
+  CONSTRUCTOR_TIER_KEYS,
+  CONSTRUCTOR_TIER_NAME,
+} from '@crowdedkingdoms/construct/platform/onboarding/steps';
 import { enterApp, loadDotEnv, messageOf, requireEnv, signIn } from './lib/cli.mjs';
 
 loadDotEnv();

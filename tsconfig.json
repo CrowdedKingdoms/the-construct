@@ -18,11 +18,20 @@
     "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@crowdedkingdoms/construct": ["packages/construct/src/index.ts"],
+      "@crowdedkingdoms/construct/platform/onboarding/steps": [
+        "packages/construct/src/platform/onboarding/steps.mjs"
+      ],
+      "@crowdedkingdoms/construct/node/*": ["packages/construct/node/*"],
+      "@crowdedkingdoms/construct/sandbox/*": ["packages/construct/sandbox/*"],
+      "@crowdedkingdoms/construct/*": ["packages/construct/src/*"]
     }
   },
   "include": [
     "src",
+    "packages/construct/src",
+    "packages/construct/sandbox",
     "model",
     "mods",
     "tests/e2e",

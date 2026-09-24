@@ -495,3 +495,59 @@ export function commonFilesFor(template) {
 export function commonFileFor(template) {
   return commonFilesFor(template)[0];
 }
+
+/**
+ * JS grid programs (DN-10): plain JavaScript a player runs INSIDE their grid
+ * with the full CrowdyJS SDK. The Studio agent runs one with
+ * `grid_program_run`; the Construct loads it into a network-less sandbox whose
+ * only way out is a grid-scoped relay. A program is a module whose default
+ * export receives `{ client, grid, appId, gridId, box, log }`.
+ */
+export const PROGRAM_TEMPLATES = [
+  {
+    id: 'construct-fountain-program',
+    title: 'Fountain (JS grid program)',
+    description:
+      'Speaks from the middle of your grid every few seconds (heard up to two chunks past its edge) ' +
+      'and notices wishes said nearby.',
+    path: 'programs/fountain.js',
+    content: `// A JS grid program: it runs in YOUR grid, with the full CrowdyJS SDK.
+// Everything it sends starts inside the grid; the server refuses the rest.
+export default async function ({ client, grid, appId, box, log }) {
+  log(\`fountain running in grid \${grid.gridId}\`);
+  const uuid = 'f'.repeat(32);
+  const centre = { x: String(box.low.x), y: String(box.low.y), z: String(box.low.z) };
+
+  // Heard by anyone within two chunks, even outside the grid.
+  setInterval(() => {
+    grid.send
+      .text({ chunk: centre, uuid, text: 'the fountain gurgles', distance: 2 })
+      .catch((error) => log('send failed:', error.message));
+  }, 5_000);
+
+  // Chat said near the grid reaches the program too.
+  client.udp.subscribe(
+    {
+      text: (note) => {
+        if (/wish/i.test(note.text ?? '')) log('someone made a wish:', note.text);
+      },
+    },
+    appId,
+  );
+}
+`,
+  },
+];
+
+/** Common Files for the JS grid program templates (target CLIENT, under programs/). */
+export function programCommonFiles() {
+  return PROGRAM_TEMPLATES.map((program) => ({
+    slug: program.id,
+    title: program.title,
+    description: `${program.description} Add it to a project as ${program.path}, then ask the agent to run it.`,
+    path: program.path,
+    target: 'CLIENT',
+    tags: ['crowdy-studio', 'the-construct', 'grid-program', 'starter'],
+    content: program.content,
+  }));
+}
