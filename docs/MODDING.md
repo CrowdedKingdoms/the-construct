@@ -136,6 +136,8 @@ re-run `npm run seed`; publishing is idempotent by content.
   capabilities re-prompts every visitor.
 - **A build switch exists.** `VITE_CONSTRUCT_CLIENT_MODS=0` ships SERVER-only
   Studio for a fork that does not want browser execution.
+- **Custom shaders are not a scene option.** See the sign-off gate under
+  Not wired. Do not add one in a feature PR without that gate being lifted.
 
 ### Platform status note
 
@@ -146,6 +148,18 @@ docs point at. Whether to keep them on in *your* game is your call; the switch
 and the SERVER-only path are here so it can be a deliberate one.
 
 ## Not wired (and where it lives)
+
+- **Custom shaders — later, and blocked on sign-off.** A shader string is
+  arbitrary GPU code. `construct.scene.v1` is drawn on every nearby client,
+  including visitors who only accepted the mod's capability summary, and a
+  SERVER catalog is drawn even for visitors who declined CLIENT mods. Letting
+  a grid mod supply shader source would run code that player did not write on
+  everyone else's GPU: it can hang a tab, read timing, or depend on one
+  driver. Named looks the page implements (`lambert`, `flat`, `basic`) stay
+  on this side of the line. Do not add `shader`, GLSL, WGSL, or a material
+  plugin hook until the people who own this security posture sign off in a
+  change to this section that names what was accepted and who accepted it.
+  Until that note exists, treat a shader pass-through as out of scope.
 
 - **The camera, for mods.** Webcam video is a host-side feature
   (`WebcamService`, `Permissions-Policy: camera=(self)`); there is no host call

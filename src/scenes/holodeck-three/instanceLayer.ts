@@ -23,6 +23,7 @@ interface Entry {
   kind: MeshKind;
   meshId?: string;
   ownedGeometry: boolean;
+  materialKey: string;
 }
 
 export class InstanceLayer {
@@ -40,7 +41,8 @@ export class InstanceLayer {
       seen.add(instance.id);
       let entry = this.entries.get(instance.id);
       const meshId = instance.mesh?.id;
-      if (!entry || entry.kind !== instance.kind || entry.meshId !== meshId) {
+      const materialKey = materialKeyOf(instance);
+      if (!entry || entry.kind !== instance.kind || entry.meshId !== meshId || entry.materialKey !== materialKey) {
         if (entry) this.disposeEntry(instance.id, entry);
         entry = this.makeEntry(instance);
         this.group.add(entry.mesh);
@@ -61,11 +63,24 @@ export class InstanceLayer {
 
   private makeEntry(instance: ComposedInstance): Entry {
     const built = this.geometryFor(instance);
-    const material = new THREE.MeshStandardMaterial({
-      color: instance.color,
-      roughness: 0.35,
-      metalness: 0.05,
-    });
+    const shading = shadingOf(instance);
+    const flat = instance.flat === true;
+    const material =
+      shading === 'basic'
+        ? new THREE.MeshBasicMaterial({ color: instance.color, toneMapped: false })
+        : shading === 'lambert'
+          ? new THREE.MeshLambertMaterial({
+              color: instance.color,
+              flatShading: flat,
+              emissive: instance.emissive ?? 0,
+            })
+          : new THREE.MeshStandardMaterial({
+              color: instance.color,
+              roughness: 0.35,
+              metalness: 0.05,
+              flatShading: flat,
+              emissive: instance.emissive ?? 0,
+            });
     const mesh = new THREE.Mesh(built.geometry, material);
     mesh.frustumCulled = false;
     return {
@@ -73,6 +88,7 @@ export class InstanceLayer {
       kind: instance.kind,
       meshId: instance.mesh?.id,
       ownedGeometry: built.owned,
+      materialKey: materialKeyOf(instance),
     };
   }
 
@@ -101,8 +117,7 @@ export class InstanceLayer {
     entry.mesh.position.set(instance.x, instance.y, instance.z);
     entry.mesh.quaternion.set(instance.qx, instance.qy, instance.qz, instance.qw);
     entry.mesh.scale.set(instance.sx, instance.sy, instance.sz);
-    const material = entry.mesh.material as THREE.MeshStandardMaterial;
-    material.color.setHex(instance.color);
+    paintMaterial(entry.mesh.material as SceneMaterial, instance);
   }
 
   private disposeEntry(id: string, entry: Entry): void {
@@ -111,6 +126,34 @@ export class InstanceLayer {
     if (entry.ownedGeometry) entry.mesh.geometry.dispose();
     this.entries.delete(id);
   }
+}
+
+type SceneMaterial = THREE.MeshStandardMaterial | THREE.MeshLambertMaterial | THREE.MeshBasicMaterial;
+
+function shadingOf(instance: ComposedInstance): 'standard' | 'lambert' | 'basic' {
+  return instance.shading ?? (instance.unlit ? 'basic' : 'standard');
+}
+
+function paintMaterial(material: SceneMaterial, instance: ComposedInstance): void {
+  const shading = shadingOf(instance);
+  const opacity = instance.opacity ?? 1;
+  const additive = instance.blend === 'additive';
+  material.color.setHex(instance.color);
+  material.opacity = opacity;
+  material.transparent = additive || opacity < 1;
+  material.blending = additive ? THREE.AdditiveBlending : THREE.NormalBlending;
+  material.depthWrite = instance.depthWrite !== false;
+  material.side = instance.side === 'double' ? THREE.DoubleSide : THREE.FrontSide;
+  material.fog = instance.fog !== undefined ? instance.fog : shading !== 'basic';
+  if ('emissive' in material && instance.emissive !== undefined) {
+    material.emissive.setHex(instance.emissive);
+  }
+  material.needsUpdate = true;
+}
+
+function materialKeyOf(instance: ComposedInstance): string {
+  const shading = instance.shading ?? (instance.unlit ? 'basic' : 'standard');
+  return `${shading}:${instance.flat === true ? 1 : 0}`;
 }
 
 function bufferGeometryFrom(mesh: SceneMesh): THREE.BufferGeometry {
