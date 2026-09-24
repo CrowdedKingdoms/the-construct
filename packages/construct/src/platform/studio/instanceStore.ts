@@ -18,6 +18,7 @@ import {
   type ActorXform,
   type ComposedInstance,
   type SceneCatalog,
+  type SceneMesh,
   type SceneNode,
 } from './instanceSchema';
 import type { ModOverlayObject } from './modOverlay';
@@ -31,6 +32,7 @@ export interface InstanceSnapshotInput {
   overlay?: readonly ModOverlayObject[];
   actors?: readonly ActorXform[];
   grid?: PlayerCodeGridBounds;
+  meshes?: readonly SceneMesh[];
 }
 
 export class InstanceStore {
@@ -71,7 +73,7 @@ export class InstanceStore {
     const overlay = input.overlay ?? [];
     const overlayIds = new Set(overlay.map((n) => n.id));
     const nodes: SceneNode[] = [...catalogNodes.filter((n) => !overlayIds.has(n.id)), ...overlay];
-    const meshes = this.catalog?.meshes ?? [];
+    const meshes = [...(this.catalog?.meshes ?? []), ...(input.meshes ?? [])];
     return {
       revision: this.revisionValue,
       instances: composeScene(nodes, meshes, input.actors ?? [], input.grid),

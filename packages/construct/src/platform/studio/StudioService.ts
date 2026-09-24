@@ -47,7 +47,10 @@ import {
   type ClientModHostWrites,
 } from './clientModHost';
 import { PointerClickBuffer } from './pointerClicks';
+import { clearModPose, setModPoseGrid } from './modPose';
+import type { Input } from '../../engine/Input';
 import { ModOverlayStore } from './modOverlay';
+import { ModSceneStore } from './modScene';
 import { GridService, type GridSnapshot } from './GridService';
 import { hasAnyStudioPermission, toBrokerBounds } from './permissions';
 import { Emitter } from '../util/Emitter';
@@ -129,6 +132,8 @@ export class StudioService {
   readonly locomotion = new AgentLocomotion();
   /** CLIENT overlay_draw gizmos; the holodeck merges these onto instances. */
   readonly overlay = new ModOverlayStore();
+  /** CLIENT scene_catalog / scene_instances. Templates are cloned in the page. */
+  readonly scene = new ModSceneStore();
   private readonly hud = createConstructTextHud();
   private readonly lifecycle = new ClientModLifecycle();
   private readonly declinedAuthors = new Set<string>();
@@ -138,6 +143,7 @@ export class StudioService {
   private readonly pointerClicks = new PointerClickBuffer();
   /** JS grid programs the agent (or the player) runs on the current grid. */
   readonly programs: GridProgramRunner;
+  private gameplay: Input | null = null;
   private gridEnteredAt = 0;
   private embed: CrowdyStudioEmbed | null = null;
   private hooks: StudioHooks | null = null;
@@ -191,6 +197,20 @@ export class StudioService {
   /** Grid the local player is standing on, if known. */
   get grid(): GridSnapshot | null {
     return this.currentGrid;
+  }
+
+  /** Gameplay keys and stick for generic client-mod input calls. */
+  bindGameplayInput(input: Input): void {
+    this.gameplay = input;
+  }
+
+  private hostInput() {
+    return {
+      drainPointerClicks: () => this.pointerClicks.drainPointerClicks(),
+      axes: () => (this.gameplay && !this.gameplay.suppressed ? this.gameplay.axes() : { x: 0, y: 0 }),
+      look: () => this.gameplay?.takePointerDelta() ?? { dx: 0, dy: 0 },
+      keyDown: (code: string) => (this.gameplay?.isDown(code) ?? false),
+    };
   }
 
   /** Wire the engine-side hooks; call once after the loop exists. */
@@ -255,6 +275,7 @@ export class StudioService {
         if (this.currentGrid) {
           const source = `studio:${this.currentGrid.gridId}`;
           this.overlay.remove(source);
+          this.scene.remove(source);
           this.hud.remove(source);
         }
         this.setOpen(false);
@@ -321,6 +342,7 @@ export class StudioService {
     if (this.currentGrid) {
       const source = `studio:${this.currentGrid.gridId}`;
       this.overlay.remove(source);
+      this.scene.remove(source);
       this.hud.remove(source);
     }
   }
@@ -337,6 +359,7 @@ export class StudioService {
     this.pointerClicks.dispose();
     this.hud.destroy();
     this.overlay.clear();
+    this.scene.clear();
   }
 
   // ---------------------------------------------------------------------------
@@ -370,12 +393,18 @@ export class StudioService {
       ...(clientOk
         ? {
             workerUrl: glueWorkerAssetUrl,
-            onHostCall: (call: PlayerCodeHostCall) =>
-              routeWithFallback(
+            onHostCall: (call: PlayerCodeHostCall) => {
+              setModPoseGrid(bounds);
+              return routeWithFallback(
                 call,
-                () => routeClientHostCall(call, reads, bounds, writes, this.pointerClicks),
+                () =>
+                  routeClientHostCall(call, reads, bounds, writes, this.hostInput(), {
+                    source: overlaySource,
+                    store: this.scene,
+                  }),
                 serverCalls,
-              ),
+              );
+            },
             onPresentation: (presentation) => {
               if (presentation.channel === 'hud') {
                 this.hud.set({
@@ -616,8 +645,14 @@ export class StudioService {
       this.lastModsReadAt = 0;
       this.gridEnteredAt = Date.now();
       this.overlay.clear();
+      this.scene.clear();
+      clearModPose();
     }
-    this.state = { ...this.state, grid };
+    this.state = {
+      ...this.state,
+      grid,
+      clientModsRunning: this.lifecycle.runningCount,
+    };
     this.emit();
   }
 
@@ -755,7 +790,8 @@ export class StudioService {
       writes: this.writes(),
       hud: this.hud,
       overlay: this.overlay,
-      input: this.pointerClicks,
+      scene: this.scene,
+      input: this.hostInput(),
     });
     if (handle) {
       this.lifecycle.track(scope, descriptorOf(mod), handle);

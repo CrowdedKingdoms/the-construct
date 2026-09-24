@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@crowdedkingdoms/crowdyjs', () => ({ PlayerCodeBroker: class {} }));
+vi.mock('@crowdedkingdoms/crowdyjs', () => ({
+  PlayerCodeBroker: class {},
+  CROWDY_DEFAULT_HTTP_ORIGIN: 'https://api.example.test',
+  CROWDY_DEFAULT_TIER: 'dev',
+}));
 
 const {
   DEFAULT_VOXEL_STATE,
@@ -45,6 +49,14 @@ describe('routeClientHostCall', () => {
       'voxels_list',
       'voxel_set',
       'pointer_clicks',
+      'input_axes',
+      'input_look',
+      'input_key',
+      'pose_get',
+      'pose_set',
+      'pose_release',
+      'scene_catalog',
+      'scene_instances',
     ]);
   });
 
@@ -227,5 +239,41 @@ describe('routeClientHostCall', () => {
     expect(
       voxelsListRows(bytesToBase64(packed), [{ x: 2, y: 15, z: 0, state: json }]),
     ).toEqual([{ x: 2, y: 15, z: 0, voxelType: 1, state: json }]);
+  });
+
+  it('stores a scene catalog for the running module', async () => {
+    const { ModSceneStore } = await import('./modScene');
+    const store = new ModSceneStore();
+    const target = { source: 'mod', store };
+    const catalog = await routeClientHostCall(
+      { fn: 'scene_catalog', args: { v: 1, revision: 3, nodes: [] } } as never,
+      reads().reads,
+      grid,
+      undefined,
+      undefined,
+      target,
+    );
+    expect(catalog).toEqual({ ok: true, revision: 3 });
+    const again = await routeClientHostCall(
+      { fn: 'scene_catalog', args: { v: 1, revision: 3, nodes: [] } } as never,
+      reads().reads,
+      grid,
+      undefined,
+      undefined,
+      target,
+    );
+    expect(again).toEqual({ ok: true, revision: 3, ignored: true });
+    const instances = await routeClientHostCall(
+      {
+        fn: 'scene_instances',
+        args: { instances: [{ id: 'me', template: 'body' }] },
+      } as never,
+      reads().reads,
+      grid,
+      undefined,
+      undefined,
+      target,
+    );
+    expect(instances).toEqual({ ok: true, count: 1 });
   });
 });

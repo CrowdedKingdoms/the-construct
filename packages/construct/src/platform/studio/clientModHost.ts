@@ -5,8 +5,8 @@
  * The SDK's `PlayerCodeBroker` has already validated every call against the
  * platform allowlist, clamped chunk coordinates to the mod's grid AABB, rate-
  * limited it, and answered `grid_info` / `hud_set` / `overlay_draw` itself.
- * What reaches `routeClientHostCall` is world_read, `voxel_set`, and
- * `pointer_clicks`. Reads return only what the running player can already
+ * What reaches `routeClientHostCall` is world_read, `voxel_set`,
+ * `pointer_clicks`, pose, and scene_catalog / scene_instances. Reads return only what the running player can already
  * lawfully see. Writes go through ChunkStore.setVoxel (optimistic + UDP),
  * markDirty (packed-chunk write-back), and GraphQL updateVoxel so SERVER
  * voxels_list can read mailbox JSON from voxel_updates. Never hand a mod
@@ -21,6 +21,8 @@ import {
 } from '@crowdedkingdoms/crowdyjs';
 import type { CrowdyStudioTextHud } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
 import type { ModOverlayStore } from './modOverlay';
+import type { ModSceneStore } from './modScene';
+import { applyPoseSet, clearModPose, poseSnapshot, setModPoseGrid } from './modPose';
 
 export interface ClientVoxelState {
   x: number;
@@ -54,6 +56,9 @@ export interface ClientModHostWrites {
 
 export interface ClientModHostInput {
   drainPointerClicks(): unknown;
+  axes?: () => { x: number; y: number };
+  look?: () => { dx: number; dy: number };
+  keyDown?: (code: string) => boolean;
 }
 
 /** The host calls this game answers. Exported so the docs and tests agree. */
@@ -64,6 +69,14 @@ export const OFFERED_HOST_CALLS = [
   'voxels_list',
   'voxel_set',
   'pointer_clicks',
+  'input_axes',
+  'input_look',
+  'input_key',
+  'pose_get',
+  'pose_set',
+  'pose_release',
+  'scene_catalog',
+  'scene_instances',
 ] as const;
 
 /** One zero byte, base64: the smallest non-empty voxel state the API accepts. */
@@ -82,12 +95,18 @@ export class HostCallRefusedError extends Error {
   }
 }
 
+export interface ClientModSceneTarget {
+  source: string;
+  store: ModSceneStore;
+}
+
 export async function routeClientHostCall(
   call: PlayerCodeHostCall,
   reads: ClientModHostReads,
   grid?: PlayerCodeGridBounds,
   writes?: ClientModHostWrites,
   input?: ClientModHostInput,
+  scene?: ClientModSceneTarget,
 ): Promise<unknown> {
   const { fn, args } = call;
   switch (fn) {
@@ -145,6 +164,25 @@ export async function routeClientHostCall(
       if (!input) throw new HostCallRefusedError(fn);
       return input.drainPointerClicks();
     }
+    case 'input_axes':
+      return input?.axes?.() ?? { x: 0, y: 0 };
+    case 'input_look':
+      return input?.look?.() ?? { dx: 0, dy: 0 };
+    case 'input_key':
+      return { down: input?.keyDown?.(String(args.code ?? '')) ?? false };
+    case 'pose_get':
+      return poseSnapshot();
+    case 'pose_set':
+      return applyPoseSet(args);
+    case 'pose_release':
+      clearModPose();
+      return { ok: true };
+    case 'scene_catalog':
+      if (!scene) return { ok: false };
+      return scene.store.setCatalog(scene.source, args);
+    case 'scene_instances':
+      if (!scene) return { ok: false };
+      return scene.store.setInstances(scene.source, args);
     default:
       throw new HostCallRefusedError(fn);
   }
@@ -297,6 +335,7 @@ export async function runConsentedGridMod(options: {
   writes?: ClientModHostWrites;
   hud: CrowdyStudioTextHud;
   overlay?: ModOverlayStore;
+  scene?: ModSceneStore;
   input?: ClientModHostInput;
   /**
    * Answers the host calls this game does not route itself (DN-10: the rest
@@ -341,14 +380,24 @@ export async function runConsentedGridMod(options: {
     grid: options.grid,
     artifactHash: fetched.artifactHash,
     fuelPerDispatch: fetched.fuelPerDispatch != null ? BigInt(fetched.fuelPerDispatch) : undefined,
-    tickIntervalMs: options.tickIntervalMs ?? 1000,
+    tickIntervalMs: options.tickIntervalMs ?? 50,
     moduleName: options.moduleName ?? options.hudLabel,
-    onHostCall: (call) =>
-      routeWithFallback(
+    onHostCall: (call) => {
+      setModPoseGrid(options.grid);
+      return routeWithFallback(
         call,
-        () => routeClientHostCall(call, options.reads, options.grid, options.writes, options.input),
+        () =>
+          routeClientHostCall(
+            call,
+            options.reads,
+            options.grid,
+            options.writes,
+            options.input,
+            options.scene ? { source: options.hudSource, store: options.scene } : undefined,
+          ),
         options.serverCalls,
-      ),
+      );
+    },
     onPresentation: (presentation: PlayerCodePresentation) => {
       if (presentation.channel === 'hud') {
         options.hud.set({
@@ -364,6 +413,7 @@ export async function runConsentedGridMod(options: {
     onCircuitOpen: () => {
       options.hud.remove(options.hudSource);
       options.overlay?.remove(options.hudSource);
+      options.scene?.remove(options.hudSource);
     },
   });
   await broker.start(fetched.bytes);
@@ -372,6 +422,7 @@ export async function runConsentedGridMod(options: {
       broker.stop();
       options.hud.remove(options.hudSource);
       options.overlay?.remove(options.hudSource);
+      options.scene?.remove(options.hudSource);
     },
   };
 }

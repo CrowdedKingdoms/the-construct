@@ -58,7 +58,6 @@ export class Input {
   private detach: (() => void) | null = null;
   private attachedRoot: HTMLElement | null = null;
   private wheelY = 0;
-  private primaryHeld = false;
   /** Escape cancels RMB look until the button is released. */
   private lookCancelled = false;
   /** Pointer is over the holodeck canvas, so mouse movement aims. */
@@ -275,16 +274,5 @@ export class Input {
     const y = this.wheelY;
     this.wheelY = 0;
     return y;
-  }
-
-  /**
-   * True once per left-button press. Held buttons do not repeat, so a shot
-   * is one click.
-   */
-  takePrimaryClick(): boolean {
-    const down = !this.suppressed && (this.pointerState.buttons & 1) !== 0;
-    const edge = down && !this.primaryHeld;
-    this.primaryHeld = down;
-    return edge;
   }
 }

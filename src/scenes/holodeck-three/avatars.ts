@@ -13,15 +13,11 @@ import {
 } from '@crowdedkingdoms/construct/platform/realtime/actorCodec';
 import type { RemotePlayer } from '@crowdedkingdoms/construct/platform/realtime/WorldStores';
 import { displayPose, tintColor } from '@/scenes/shared/interpolate';
-import { inRangeChunk } from '@/scenes/holodeck-three/chunkFlight';
 import { disposeNameplate, makeNameplate } from '@/scenes/holodeck-three/nameplate';
-import { buildHull, disposeHull, hullForName, type HullId } from '@/scenes/holodeck-three/shipHull';
 
 interface AvatarEntry {
   group: THREE.Group;
   body: THREE.Mesh;
-  ship: THREE.Group | null;
-  hullId: HullId | null;
   marker: THREE.Mesh;
   plate: THREE.Sprite;
   face: THREE.Mesh;
@@ -30,12 +26,6 @@ interface AvatarEntry {
   name: string;
   tint: number;
 }
-
-const HULL_ACCENT: Record<HullId, number> = {
-  arwing: 0xffd166,
-  wolfen: 0x7dfff2,
-  pod: 0xff6b4a,
-};
 
 const BODY_GEOMETRY = new THREE.CapsuleGeometry(0.35, 0.9, 6, 12);
 const MARKER_GEOMETRY = new THREE.OctahedronGeometry(0.18);
@@ -49,7 +39,7 @@ export class AvatarPool {
   constructor(private readonly scene: THREE.Scene) {}
 
   /** Bring the pool in line with the players list and animate each one. */
-  sync(players: RemotePlayer[], nowMs: number): void {
+  sync(players: RemotePlayer[], nowMs: number, hideBody?: ReadonlySet<string>): void {
     const seen = new Set<string>();
     for (const player of players) {
       seen.add(player.uuid);
@@ -62,18 +52,18 @@ export class AvatarPool {
         this.restyle(entry, pose);
       }
       entry.group.position.set(pose.x, pose.y, pose.z);
-      const aboard = inRangeChunk(pose.x, pose.y, pose.z);
-      this.wearHull(entry, pose, aboard);
-      if (!aboard) {
-        entry.body.rotation.y = pose.yaw;
-        // The face turns with the body so it faces where the player looks.
-        entry.face.rotation.y = pose.yaw;
-        entry.face.position.set(
-          Math.sin(pose.yaw) * 0.37,
-          FACE_EYE_HEIGHT,
-          Math.cos(pose.yaw) * 0.37,
-        );
-      }
+      entry.body.rotation.y = pose.yaw;
+      // The face turns with the body so it faces where the player looks.
+      entry.face.rotation.y = pose.yaw;
+      entry.face.position.set(
+        Math.sin(pose.yaw) * 0.37,
+        FACE_EYE_HEIGHT,
+        Math.cos(pose.yaw) * 0.37,
+      );
+      const skinned = hideBody?.has(player.uuid) ?? false;
+      entry.body.visible = !skinned;
+      if (skinned) entry.face.visible = false;
+      else if (entry.faceTexture) entry.face.visible = true;
       entry.marker.visible = (pose.flags & FLAG_STUDIO_OPEN) !== 0;
       entry.marker.rotation.y = nowMs / 400;
       entry.marker.position.y = 2.15 + Math.sin(nowMs / 300) * 0.05;
@@ -121,8 +111,6 @@ export class AvatarPool {
     return {
       group,
       body,
-      ship: null,
-      hullId: null,
       marker,
       plate,
       face,
@@ -180,32 +168,6 @@ export class AvatarPool {
     entry.faceBitmap = null;
   }
 
-  /** Inside the range chunk the pill becomes that pilot's built hull. */
-  private wearHull(entry: AvatarEntry, pose: Pose, aboard: boolean): void {
-    if (!aboard) {
-      if (entry.ship) entry.ship.visible = false;
-      entry.body.visible = true;
-      entry.plate.position.y = 1.9;
-      return;
-    }
-    const hullId = hullForName(pose.name);
-    if (!entry.ship || entry.hullId !== hullId) {
-      if (entry.ship) {
-        entry.group.remove(entry.ship);
-        disposeHull(entry.ship);
-      }
-      entry.ship = buildHull(hullId, tintColor(pose.tint), HULL_ACCENT[hullId]);
-      entry.hullId = hullId;
-      entry.group.add(entry.ship);
-    }
-    entry.body.visible = false;
-    entry.face.visible = false;
-    entry.ship.visible = true;
-    entry.ship.rotation.order = 'YXZ';
-    entry.ship.rotation.set(pose.pitch, pose.yaw, 0);
-    entry.plate.position.y = 1.7;
-  }
-
   private restyle(entry: AvatarEntry, pose: Pose): void {
     const color = tintColor(pose.tint);
     const material = entry.body.material as THREE.MeshStandardMaterial;
@@ -223,7 +185,6 @@ export class AvatarPool {
   private dispose(entry: AvatarEntry): void {
     this.scene.remove(entry.group);
     this.disposeFace(entry);
-    if (entry.ship) disposeHull(entry.ship);
     (entry.body.material as THREE.Material).dispose();
     (entry.marker.material as THREE.Material).dispose();
     (entry.face.material as THREE.Material).dispose();

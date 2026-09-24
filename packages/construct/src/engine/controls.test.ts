@@ -16,7 +16,7 @@ describe('controls', () => {
   it('lists holodeck look/zoom and paint pan without mixing them', () => {
     const holodeck = helpLines('holodeck').join('\n');
     const paint = helpLines('paint').join('\n');
-    expect(holodeck).toMatch(/capture the mouse/);
+    expect(holodeck).toMatch(/right mouse/);
     expect(holodeck).toMatch(/Scroll/);
     expect(holodeck).toMatch(/E — activate/);
     expect(holodeck).toMatch(/claimed chunk/);
