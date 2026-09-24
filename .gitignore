@@ -14,6 +14,9 @@ public/dsh/
 .env.local
 .env.*.local
 
+# local runners and scratch (fake buddy, one-off prompts). Not part of the app.
+/local/
+
 # test artifacts
 test-results/
 playwright-report/
