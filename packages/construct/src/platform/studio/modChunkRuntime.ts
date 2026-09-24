@@ -125,7 +125,7 @@ export function modProjectiles(nowMs: number): ModProjectile[] {
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const shot = projectiles[i]!;
     const t = (nowMs - shot.startMs) / 1000;
-    if (t * shot.speed > shot.lifeMs / 1000 * shot.speed || nowMs - shot.startMs > shot.lifeMs) {
+    if (t * shot.speed > (shot.lifeMs / 1000) * shot.speed || nowMs - shot.startMs > shot.lifeMs) {
       projectiles.splice(i, 1);
     }
   }
@@ -242,12 +242,7 @@ function poseSet(args: Record<string, unknown>): { ok: boolean; error?: string }
     vz: num(args.vz),
     atMs: performance.now(),
   };
-  if (
-    !previous ||
-    previous.x !== chunk.x ||
-    previous.y !== chunk.y ||
-    previous.z !== chunk.z
-  ) {
+  if (!previous || previous.x !== chunk.x || previous.y !== chunk.y || previous.z !== chunk.z) {
     void port?.moveTo(chunk);
   }
   return { ok: true };
@@ -261,7 +256,10 @@ async function actorPose(args: Record<string, unknown>, spawn: boolean): Promise
   const x = num(args.x);
   const y = num(args.y);
   const z = num(args.z);
-  if (!positionInModGrid(x, y, z) && !chunkInModGrid(num(args.chunkX), num(args.chunkY), num(args.chunkZ))) {
+  if (
+    !positionInModGrid(x, y, z) &&
+    !chunkInModGrid(num(args.chunkX), num(args.chunkY), num(args.chunkZ))
+  ) {
     return { ok: false, error: 'outside the player grid' };
   }
   const actor: ModOwnedActor = {
@@ -347,9 +345,7 @@ async function teleport(args: Record<string, unknown>): Promise<unknown> {
   if (uuid !== port.selfUuid && !owned.has(uuid)) {
     return { ok: false, error: 'refusing another player uuid' };
   }
-  if (
-    !chunkInModGrid(num(args.destChunkX), num(args.destChunkY), num(args.destChunkZ))
-  ) {
+  if (!chunkInModGrid(num(args.destChunkX), num(args.destChunkY), num(args.destChunkZ))) {
     return { ok: false, error: 'outside the player grid' };
   }
   const response = await port.client.teleport.request({
@@ -413,7 +409,9 @@ async function restoreAvatar(): Promise<void> {
   const state = avatarSnapshot;
   avatarId = null;
   avatarSnapshot = null;
-  await port.client.avatars.updateAppState({ appId: port.appId, avatarId: id, state }).catch(() => undefined);
+  await port.client.avatars
+    .updateAppState({ appId: port.appId, avatarId: id, state })
+    .catch(() => undefined);
 }
 
 const PASS_SDK = new Set([
@@ -485,23 +483,42 @@ async function passSdk(fn: string, args: Record<string, unknown>): Promise<unkno
   const client = port.client;
   switch (fn) {
     case 'actors_create':
-      return client.actors.create({ appId: port.appId, state: String(args.stateBase64 ?? '') } as never);
+      return client.actors.create({
+        appId: port.appId,
+        state: String(args.stateBase64 ?? ''),
+      } as never);
     case 'actors_update':
-      return client.actors.update(String(args.uuid), { publicState: String(args.stateBase64 ?? '') } as never);
+      return client.actors.update(String(args.uuid), {
+        publicState: String(args.stateBase64 ?? ''),
+      } as never);
     case 'actors_delete':
       return client.actors.delete(String(args.uuid) as never);
     case 'actors_update_state':
-      return client.actors.updateState(String(args.uuid) as never, String(args.stateBase64 ?? '') as never);
+      return client.actors.updateState(
+        String(args.uuid) as never,
+        String(args.stateBase64 ?? '') as never,
+      );
     case 'chunk_update':
-      return client.chunks.update({ appId: port.appId, coordinates: coords(args), voxels: args.stateBase64 } as never);
+      return client.chunks.update({
+        appId: port.appId,
+        coordinates: coords(args),
+        voxels: args.stateBase64,
+      } as never);
     case 'chunk_update_state':
-      return client.chunks.updateState({ appId: port.appId, coordinates: coords(args), chunkState: args.stateBase64 } as never);
+      return client.chunks.updateState({
+        appId: port.appId,
+        coordinates: coords(args),
+        chunkState: args.stateBase64,
+      } as never);
     case 'chunk_lods':
       return client.chunks.getLods({ appId: port.appId, coordinates: coords(args) } as never);
     case 'voxels_history':
       return client.voxels.history({ appId: port.appId } as never);
     case 'voxels_rollback':
-      return client.voxels.rollback({ appId: port.appId, voxelUpdateId: args.voxelUpdateId } as never);
+      return client.voxels.rollback({
+        appId: port.appId,
+        voxelUpdateId: args.voxelUpdateId,
+      } as never);
     case 'channel_list':
       return client.channels.list(port.appId);
     case 'channel_get':
@@ -511,9 +528,15 @@ async function passSdk(fn: string, args: Record<string, unknown>): Promise<unkno
     case 'channel_leave':
       return client.channels.leave(String(args.id));
     case 'channel_create':
-      return client.channels.create({ appId: port.appId, name: String(args.name ?? 'mod') } as never);
+      return client.channels.create({
+        appId: port.appId,
+        name: String(args.name ?? 'mod'),
+      } as never);
     case 'channel_update':
-      return client.channels.update({ groupId: String(args.id), name: String(args.name ?? '') } as never);
+      return client.channels.update({
+        groupId: String(args.id),
+        name: String(args.name ?? ''),
+      } as never);
     case 'channel_remove':
       return client.channels.remove(String(args.id));
     case 'channel_set_policy':
@@ -541,7 +564,10 @@ async function passSdk(fn: string, args: Record<string, unknown>): Promise<unkno
     case 'team_create':
       return client.teams.create({ appId: port.appId, name: String(args.name ?? 'mod') } as never);
     case 'team_update':
-      return client.teams.update({ groupId: String(args.id), name: String(args.name ?? '') } as never);
+      return client.teams.update({
+        groupId: String(args.id),
+        name: String(args.name ?? ''),
+      } as never);
     case 'team_remove':
       return client.teams.remove(String(args.id));
     case 'team_set_policy':
@@ -551,37 +577,49 @@ async function passSdk(fn: string, args: Record<string, unknown>): Promise<unkno
     case 'inventory_stacks':
       return client.kit(port.appId).inventory.stacks(port.userId);
     case 'inventory_grant':
-      return client.kit(port.appId).inventory.grant(String(args.stackId ?? args.itemId ?? ''), num(args.quantity) || 1);
+      return client
+        .kit(port.appId)
+        .inventory.grant(String(args.stackId ?? args.itemId ?? ''), num(args.quantity) || 1);
     case 'inventory_consume':
-      return client.kit(port.appId).inventory.consume(String(args.stackId ?? args.itemId ?? ''), num(args.quantity) || 1);
+      return client
+        .kit(port.appId)
+        .inventory.consume(String(args.stackId ?? args.itemId ?? ''), num(args.quantity) || 1);
     case 'inventory_move':
-      return client.kit(port.appId).inventory.move(String(args.stackId ?? args.itemId ?? ''), num(args.slot));
+      return client
+        .kit(port.appId)
+        .inventory.move(String(args.stackId ?? args.itemId ?? ''), num(args.slot));
     case 'inventory_transfer':
       if (args.targetUuid != null && !actorInside(String(args.targetUuid))) {
         return { ok: false, error: 'target is outside the grid' };
       }
-      return client.kit(port.appId).inventory.transfer(
-        String(args.fromStackId ?? args.stackId ?? ''),
-        String(args.toStackId ?? ''),
-        num(args.quantity) || 1,
-      );
+      return client
+        .kit(port.appId)
+        .inventory.transfer(
+          String(args.fromStackId ?? args.stackId ?? ''),
+          String(args.toStackId ?? ''),
+          num(args.quantity) || 1,
+        );
     case 'inventory_craft':
-      return client.kit(port.appId).inventory.craft(
-        String(args.inventoryId ?? ''),
-        String(args.recipeId ?? ''),
-        Array.isArray(args.inputStackIds) ? args.inputStackIds.map(String) : [],
-        String(args.outputStackId ?? ''),
-      );
+      return client
+        .kit(port.appId)
+        .inventory.craft(
+          String(args.inventoryId ?? ''),
+          String(args.recipeId ?? ''),
+          Array.isArray(args.inputStackIds) ? args.inputStackIds.map(String) : [],
+          String(args.outputStackId ?? ''),
+        );
     case 'inventory_barter':
       if (args.targetUuid != null && !actorInside(String(args.targetUuid))) {
         return { ok: false, error: 'target is outside the grid' };
       }
-      return client.kit(port.appId).inventory.barter(
-        String(args.inventoryId ?? ''),
-        String(args.barterId ?? args.recipeId ?? ''),
-        String(args.payStackId ?? ''),
-        String(args.receiveStackId ?? ''),
-      );
+      return client
+        .kit(port.appId)
+        .inventory.barter(
+          String(args.inventoryId ?? ''),
+          String(args.barterId ?? args.recipeId ?? ''),
+          String(args.payStackId ?? ''),
+          String(args.receiveStackId ?? ''),
+        );
     case 'session_create':
       return client.gameModel.createSession({ appId: port.appId, ...args } as never);
     case 'session_join':
@@ -591,13 +629,19 @@ async function passSdk(fn: string, args: Record<string, unknown>): Promise<unkno
     case 'model_traverse':
       return client.gameModel.traverse({ appId: port.appId, ...args } as never);
     case 'model_flow':
-      return client.gameModel.flow({ appId: port.appId, flowId: String(args.flowId ?? '') } as never);
+      return client.gameModel.flow({
+        appId: port.appId,
+        flowId: String(args.flowId ?? ''),
+      } as never);
     case 'model_seed':
       return client.gameModel.seed({ appId: port.appId, ...args } as never);
     case 'timer_schedule':
       return client.gameModel.scheduleInvoke({ appId: port.appId, ...args } as never);
     case 'timer_cancel':
-      return client.gameModel.cancelTimer({ appId: port.appId, timerId: String(args.timerId ?? '') } as never);
+      return client.gameModel.cancelTimer({
+        appId: port.appId,
+        timerId: String(args.timerId ?? ''),
+      } as never);
     case 'sessions_list':
       return client.gameModel.sessions({ appId: port.appId } as never);
     case 'container_get_batch':
@@ -661,7 +705,12 @@ async function passSdk(fn: string, args: Record<string, unknown>): Promise<unkno
 function actorInside(uuid: string): boolean {
   if (!port) return false;
   if (owned.has(uuid)) return true;
-  return port.players().some((player) => player.uuid === uuid && positionInModGrid(player.pose.x, player.pose.y, player.pose.z));
+  return port
+    .players()
+    .some(
+      (player) =>
+        player.uuid === uuid && positionInModGrid(player.pose.x, player.pose.y, player.pose.z),
+    );
 }
 
 function noteProjectile(args: Record<string, unknown>): void {

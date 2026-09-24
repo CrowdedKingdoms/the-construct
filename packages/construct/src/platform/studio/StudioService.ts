@@ -47,11 +47,7 @@ import {
 } from './clientModHost';
 import { PointerClickBuffer } from './pointerClicks';
 import { ModOverlayStore } from './modOverlay';
-import {
-  bindModGrid,
-  bindModSession,
-  releaseModChunk,
-} from './modChunkRuntime';
+import { bindModGrid, bindModSession, releaseModChunk } from './modChunkRuntime';
 import { GridService, type GridSnapshot } from './GridService';
 import { hasAnyStudioPermission, toBrokerBounds } from './permissions';
 import { Emitter } from '../util/Emitter';

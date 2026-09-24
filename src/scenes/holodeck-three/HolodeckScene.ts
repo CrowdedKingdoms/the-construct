@@ -283,7 +283,11 @@ export class HolodeckScene implements GameScene {
     if (this.localBody) {
       this.localBody.position.set(this.position.x, this.position.y + 0.8, this.position.z);
       this.localBody.rotation.order = 'YXZ';
-      this.localBody.rotation.set(held ? this.pitch : 0, this.yaw, held ? (modPoseHold()?.roll ?? 0) : 0);
+      this.localBody.rotation.set(
+        held ? this.pitch : 0,
+        this.yaw,
+        held ? (modPoseHold()?.roll ?? 0) : 0,
+      );
       const material = this.localBody.material as THREE.MeshStandardMaterial;
       material.color.setHex(look && inGrid ? look.color : tintColor(session.tint));
     }

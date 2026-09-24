@@ -194,9 +194,7 @@ describe('routeClientHostCall', () => {
   });
 
   it('refuses a pose outside the grid and returns input axes', async () => {
-    const { bindModGrid, bindModInput, releaseModChunk } = await import(
-      './modChunkRuntime'
-    );
+    const { bindModGrid, bindModInput, releaseModChunk } = await import('./modChunkRuntime');
     bindModGrid(grid);
     bindModInput({ axes: () => ({ x: 1, y: 0 }) } as never);
     const { bindModSession } = await import('./modChunkRuntime');
@@ -235,13 +233,19 @@ describe('routeClientHostCall', () => {
     );
     expect(other).toEqual({ ok: false, error: 'refusing a live player uuid' });
     const kit = await routeClientHostCall(
-      { fn: 'inventory_transfer', args: { targetUuid: 'bob', fromStackId: 'a', toStackId: 'b' } } as never,
+      {
+        fn: 'inventory_transfer',
+        args: { targetUuid: 'bob', fromStackId: 'a', toStackId: 'b' },
+      } as never,
       reads().reads,
       grid,
     );
     expect(kit).toEqual({ ok: false, error: 'target is outside the grid' });
     const far = await routeClientHostCall(
-      { fn: 'teleport_request', args: { destChunkX: 9, destChunkY: 0, destChunkZ: 0, uuid: 'self' } } as never,
+      {
+        fn: 'teleport_request',
+        args: { destChunkX: 9, destChunkY: 0, destChunkZ: 0, uuid: 'self' },
+      } as never,
       reads().reads,
       grid,
     );
