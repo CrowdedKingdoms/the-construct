@@ -43,6 +43,10 @@ direction changed last. Repin with `npm install --save-exact
 @crowdedkingdoms/crowdyjs@<version>`, or promote with
 `infra-control-plane/scripts/ops/promote.mjs --repo the-construct --from <tier> --to <tier>`, which re-pins to the destination
 tier's registry artifact, runs `check:pin` and opens the PR.
+`packages/construct` peers on the SDK with one comparator per minor line
+(`>=17.9.0-dev.0 <18`, …): npm admits a prerelease only against a comparator
+naming the same `X.Y.Z`, so a repin to a new minor adds its line there first,
+or `npm install` refuses the root pin with `ERESOLVE`.
 
 There is no deploy workflow in this repo, deliberately. Hosting is the
 developer's -- and since 0.8.0 one of the developer's options is
