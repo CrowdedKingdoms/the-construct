@@ -21,8 +21,9 @@ import {
 } from '@crowdedkingdoms/crowdyjs';
 import type { CrowdyStudioTextHud } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
 import type { ModOverlayStore } from './modOverlay';
+import { routeModGameplay } from './modChunkRuntime';
 import type { ModSceneStore } from './modScene';
-import { applyPoseSet, clearModPose, poseSnapshot, setModPoseGrid } from './modPose';
+import { setModPoseGrid } from './modPose';
 
 export interface ClientVoxelState {
   x: number;
@@ -72,9 +73,22 @@ export const OFFERED_HOST_CALLS = [
   'input_axes',
   'input_look',
   'input_key',
+  'events_poll',
+  'voice_set',
+  'video_set',
+  'send_client_event',
+  'send_text',
+  'send_actor_message',
+  'send_channel_message',
   'pose_get',
   'pose_set',
   'pose_release',
+  'actor_spawn',
+  'actor_pose',
+  'actor_despawn',
+  'avatar_appearance',
+  'avatar_state_set',
+  'teleport_request',
   'scene_catalog',
   'scene_instances',
 ] as const;
@@ -164,27 +178,26 @@ export async function routeClientHostCall(
       if (!input) throw new HostCallRefusedError(fn);
       return input.drainPointerClicks();
     }
-    case 'input_axes':
-      return input?.axes?.() ?? { x: 0, y: 0 };
-    case 'input_look':
-      return input?.look?.() ?? { dx: 0, dy: 0 };
     case 'input_key':
       return { down: input?.keyDown?.(String(args.code ?? '')) ?? false };
-    case 'pose_get':
-      return poseSnapshot();
-    case 'pose_set':
-      return applyPoseSet(args);
-    case 'pose_release':
-      clearModPose();
-      return { ok: true };
     case 'scene_catalog':
       if (!scene) return { ok: false };
       return scene.store.setCatalog(scene.source, args);
     case 'scene_instances':
       if (!scene) return { ok: false };
       return scene.store.setInstances(scene.source, args);
-    default:
-      throw new HostCallRefusedError(fn);
+    default: {
+      const answered = await routeModGameplay(call);
+      if (
+        answered &&
+        typeof answered === 'object' &&
+        'error' in answered &&
+        String((answered as { error: unknown }).error).startsWith('unrouted')
+      ) {
+        throw new HostCallRefusedError(fn);
+      }
+      return answered;
+    }
   }
 }
 

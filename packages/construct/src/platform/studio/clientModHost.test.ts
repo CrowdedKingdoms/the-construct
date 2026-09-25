@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@crowdedkingdoms/crowdyjs', () => ({
   PlayerCodeBroker: class {},
-  CROWDY_DEFAULT_HTTP_ORIGIN: 'https://api.example.test',
+  CROWDY_DEFAULT_HTTP_ORIGIN: 'http://127.0.0.1:3000',
   CROWDY_DEFAULT_TIER: 'dev',
 }));
 
@@ -41,7 +41,7 @@ function sampleGrid(): Uint8Array {
 }
 
 describe('routeClientHostCall', () => {
-  it('offers world_read plus voxel_set and pointer_clicks', () => {
+  it('offers world_read, scene catalog, and chunk gameplay', () => {
     expect([...OFFERED_HOST_CALLS]).toEqual([
       'actors_list',
       'actors_list_radius',
@@ -52,9 +52,22 @@ describe('routeClientHostCall', () => {
       'input_axes',
       'input_look',
       'input_key',
+      'events_poll',
+      'voice_set',
+      'video_set',
+      'send_client_event',
+      'send_text',
+      'send_actor_message',
+      'send_channel_message',
       'pose_get',
       'pose_set',
       'pose_release',
+      'actor_spawn',
+      'actor_pose',
+      'actor_despawn',
+      'avatar_appearance',
+      'avatar_state_set',
+      'teleport_request',
       'scene_catalog',
       'scene_instances',
     ]);
@@ -226,6 +239,91 @@ describe('routeClientHostCall', () => {
       voxelType: 2,
       state: 'AA==',
     });
+  });
+
+  it('refuses a pose outside the grid and returns input axes', async () => {
+    const { bindModGrid, bindModInput, releaseModChunk } = await import('./modChunkRuntime');
+    bindModGrid(grid);
+    bindModInput({ axes: () => ({ x: 1, y: 0 }) } as never);
+    const { bindModSession } = await import('./modChunkRuntime');
+    bindModSession({
+      client: {
+        udp: { sendClientEvent: async () => true },
+        kit: () => ({ inventory: {} }),
+      } as never,
+      appId: '1',
+      gridId: '1',
+      selfUuid: 'self',
+      userId: '1',
+      moveTo: async () => undefined,
+      players: () => [{ uuid: 'self', pose: { x: 0, y: 0, z: 0 } }],
+      voiceStart: async () => undefined,
+      voiceStop: () => undefined,
+      videoStart: async () => undefined,
+      videoStop: () => undefined,
+    });
+    const outside = await routeClientHostCall(
+      { fn: 'pose_set', args: { x: 1000, y: 0, z: 0 } } as never,
+      reads().reads,
+      grid,
+    );
+    expect(outside).toEqual({ ok: false, error: 'outside the player grid' });
+    const axes = await routeClientHostCall(
+      { fn: 'input_axes', args: {} } as never,
+      reads().reads,
+      grid,
+    );
+    expect(axes).toEqual({ x: 1, y: 0 });
+    const other = await routeClientHostCall(
+      { fn: 'actor_spawn', args: { uuid: 'self', x: 0, y: 0, z: 0 } } as never,
+      reads().reads,
+      grid,
+    );
+    expect(other).toEqual({ ok: false, error: 'refusing a live player uuid' });
+    const kit = await routeClientHostCall(
+      {
+        fn: 'inventory_transfer',
+        args: { targetUuid: 'bob', fromStackId: 'a', toStackId: 'b' },
+      } as never,
+      reads().reads,
+      grid,
+    );
+    expect(kit).toEqual({ ok: false, error: 'target is outside the grid' });
+    const far = await routeClientHostCall(
+      {
+        fn: 'teleport_request',
+        args: { destChunkX: 9, destChunkY: 0, destChunkZ: 0, uuid: 'self' },
+      } as never,
+      reads().reads,
+      grid,
+    );
+    expect(far).toEqual({ ok: false, error: 'outside the player grid' });
+    const { modProjectiles } = await import('./modChunkRuntime');
+    await routeClientHostCall(
+      {
+        fn: 'send_client_event',
+        args: {
+          x: 0,
+          y: 0,
+          z: 0,
+          payloadBase64: btoa(
+            JSON.stringify({
+              kind: 'projectile',
+              origin: { x: 1, y: 1.7, z: 2 },
+              direction: { x: 0, y: 0, z: -1 },
+              speed: 40,
+              startMs: 0,
+              lifeMs: 1000,
+            }),
+          ),
+        },
+      } as never,
+      reads().reads,
+      grid,
+    );
+    expect(modProjectiles(0)).toHaveLength(1);
+    releaseModChunk();
+    bindModInput(null);
   });
 
   it('decodes an empty grid to no rows', () => {

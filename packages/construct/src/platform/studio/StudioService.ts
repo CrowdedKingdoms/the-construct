@@ -50,6 +50,7 @@ import { PointerClickBuffer } from './pointerClicks';
 import { clearModPose, setModPoseGrid } from './modPose';
 import type { Input } from '../../engine/Input';
 import { ModOverlayStore } from './modOverlay';
+import { bindModGrid, bindModSession, releaseModChunk } from './modChunkRuntime';
 import { ModSceneStore } from './modScene';
 import { GridService, type GridSnapshot } from './GridService';
 import { hasAnyStudioPermission, toBrokerBounds } from './permissions';
@@ -360,6 +361,7 @@ export class StudioService {
     this.pointerClicks.dispose();
     this.hud.destroy();
     this.overlay.clear();
+    releaseModChunk();
     this.scene.clear();
   }
 
@@ -761,6 +763,7 @@ export class StudioService {
     } finally {
       this.modsInFlight = false;
       this.state = { ...this.state, clientModsRunning: this.lifecycle.runningCount };
+      if (this.lifecycle.runningCount === 0) releaseModChunk();
       this.emit();
     }
   }
@@ -775,6 +778,26 @@ export class StudioService {
     grid: GridSnapshot,
     scope: ClientModScope,
   ): Promise<void> {
+    const bounds = toBrokerBounds(grid.bounds, grid.gridId);
+    bindModGrid(bounds);
+    bindModSession({
+      client: this.session.network.game,
+      appId: this.session.appId,
+      gridId: grid.gridId,
+      selfUuid: this.session.selfUuid,
+      userId: this.session.userId,
+      moveTo: (chunk) => this.session.moveTo(chunk),
+      players: () =>
+        this.session.players().map((player) => ({
+          uuid: player.uuid,
+          pose: { x: player.pose.x, y: player.pose.y, z: player.pose.z },
+        })),
+      voiceStart: () => this.session.voice.start(),
+      voiceStop: () => this.session.voice.stop(),
+      videoStart: () => this.session.webcam.start(),
+      videoStop: () => this.session.webcam.stop(),
+    });
+    const tick = (mod as { clientTickIntervalMs?: number }).clientTickIntervalMs;
     const handle = await runConsentedGridMod({
       client: this.session.network.game,
       appId: this.session.appId,
@@ -782,15 +805,19 @@ export class StudioService {
       artifactCacheKey: mod.clientArtifactHash,
       hudSource: `grid:${mod.attachmentId}`,
       hudLabel: mod.listingName || 'Grid mod',
-      grid: toBrokerBounds(grid.bounds, grid.gridId),
+      grid: bounds,
       workerUrl: glueWorkerAssetUrl,
       serverCalls: this.serverCallsFor(grid),
       reads: this.reads(),
       writes: this.writes(),
       hud: this.hud,
       overlay: this.overlay,
-      scene: this.scene,
       input: this.hostInput(),
+      // Cargo.toml is the authority (this module sets 50). The API field is
+      // absent until clientTickIntervalMs ships, and 1000ms makes a per-second
+      // step jump the claim box and leaves a bolt sitting still between ticks.
+      tickIntervalMs: typeof tick === 'number' && tick > 0 ? tick : 50,
+      scene: this.scene,
     });
     if (handle) {
       this.lifecycle.track(scope, descriptorOf(mod), handle);
