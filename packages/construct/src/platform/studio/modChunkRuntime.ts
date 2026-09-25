@@ -8,6 +8,7 @@ import type { PlayerCodeGridBounds, PlayerCodeHostCall } from '@crowdedkingdoms/
 import type { Input } from '../../engine/Input';
 import type { Pose } from '../realtime/actorCodec';
 import { worldToChunk } from '../realtime/space';
+import { poseSnapshot } from './modPose';
 
 export interface ModAppearance {
   color: number;
@@ -194,7 +195,23 @@ export async function routeModGameplay(call: PlayerCodeHostCall): Promise<unknow
       return { ok: true };
     }
     case 'pose_get':
-      return hold ?? { held: false };
+      // A hold is the mod's own body. Otherwise report the walker, so the mod
+      // can take over from where the player is standing instead of the origin.
+      if (hold) {
+        return {
+          held: true,
+          x: hold.x,
+          y: hold.y,
+          z: hold.z,
+          yaw: hold.yaw,
+          pitch: hold.pitch,
+          roll: hold.roll,
+          vx: hold.vx,
+          vy: hold.vy,
+          vz: hold.vz,
+        };
+      }
+      return poseSnapshot();
     case 'pose_release':
       hold = null;
       return { ok: true };

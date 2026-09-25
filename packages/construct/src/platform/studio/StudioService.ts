@@ -813,7 +813,10 @@ export class StudioService {
       hud: this.hud,
       overlay: this.overlay,
       input: this.hostInput(),
-      tickIntervalMs: typeof tick === 'number' && tick > 0 ? tick : 1000,
+      // Cargo.toml is the authority (this module sets 50). The API field is
+      // absent until clientTickIntervalMs ships, and 1000ms makes a per-second
+      // step jump the claim box and leaves a bolt sitting still between ticks.
+      tickIntervalMs: typeof tick === 'number' && tick > 0 ? tick : 50,
       scene: this.scene,
     });
     if (handle) {
