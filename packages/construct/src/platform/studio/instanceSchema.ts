@@ -27,6 +27,9 @@ export const MAX_EVENT_STATE_BYTES = 1022;
 const CATALOG_CHUNK_HEADER = 8;
 
 export type MeshKind = 'box' | 'sphere' | 'cylinder' | 'capsule' | 'plane' | 'mesh';
+export type SceneShading = 'standard' | 'lambert' | 'basic';
+export type SceneBlend = 'normal' | 'additive';
+export type SceneSide = 'front' | 'double';
 export type ModOverlayShape = MeshKind;
 
 export interface SceneMesh {
@@ -56,6 +59,20 @@ export interface SceneNode {
   color: number;
   visible: boolean;
   bindActor?: string;
+  /** Unlit bolt, matching Afterburn's MeshBasicMaterial streak. */
+  unlit?: boolean;
+  /** standard is the lit default. lambert + flat is the robot and jet. basic is unlit. */
+  shading?: SceneShading;
+  flat?: boolean;
+  opacity?: number;
+  /** additive brightens what is behind the part. depthWrite false keeps it from punching a hole. */
+  blend?: SceneBlend;
+  depthWrite?: boolean;
+  /** Lit glow. Ignored on basic, which is already unlit. */
+  emissive?: number;
+  side?: SceneSide;
+  /** false keeps a lit part from fading in fog. basic already skips fog unless set true. */
+  fog?: boolean;
 }
 
 /** Overlay objects are scene nodes; `shape` is an alias of `kind` for older payloads. */
@@ -92,6 +109,18 @@ export interface ComposedInstance {
   sz: number;
   color: number;
   visible: boolean;
+  unlit?: boolean;
+  shading?: SceneShading;
+  flat?: boolean;
+  opacity?: number;
+  /** additive brightens what is behind the part. depthWrite false keeps it from punching a hole. */
+  blend?: SceneBlend;
+  depthWrite?: boolean;
+  /** Lit glow. Ignored on basic, which is already unlit. */
+  emissive?: number;
+  side?: SceneSide;
+  /** false keeps a lit part from fading in fog. basic already skips fog unless set true. */
+  fog?: boolean;
 }
 
 export interface WorldAabb {
@@ -142,6 +171,18 @@ export function parseColor(value: unknown): number {
     if (/^[0-9a-fA-F]{6}$/.test(hex)) return Number.parseInt(hex, 16);
   }
   return 0xf8fafc;
+}
+
+function parseFog(rec: Record<string, unknown>, shading: SceneShading): boolean {
+  if (rec.fog === false) return false;
+  if (rec.fog === true) return true;
+  return shading !== 'basic';
+}
+
+function parseShading(rec: Record<string, unknown>): SceneShading {
+  if (rec.unlit === true || rec.basic === true || rec.shading === 'basic') return 'basic';
+  if (rec.shading === 'lambert') return 'lambert';
+  return 'standard';
 }
 
 function parseKind(value: unknown): MeshKind {
@@ -290,6 +331,15 @@ function parseNode(
     color: parseColor(rec.color ?? rec.colour),
     visible,
     bindActor: parseBindActor(rec.bindActor ?? rec.bind_actor ?? rec.actor),
+    unlit: rec.unlit === true || rec.basic === true || rec.shading === 'basic',
+    shading: parseShading(rec),
+    flat: rec.flat === true || rec.flatShading === true,
+    opacity: clamp(finiteNumber(rec.opacity, 1) ?? 1, 0, 1),
+    blend: rec.blend === 'additive' ? 'additive' : 'normal',
+    depthWrite: rec.depthWrite !== false && rec.depth_write !== false,
+    emissive: rec.emissive === undefined ? undefined : parseColor(rec.emissive),
+    side: rec.side === 'double' ? 'double' : 'front',
+    fog: parseFog(rec, parseShading(rec)),
   };
 }
 
@@ -538,6 +588,15 @@ export function composeScene(
       sz,
       color: node.color || mesh?.color || 0xf8fafc,
       visible: true,
+      unlit: node.unlit,
+      shading: node.shading,
+      flat: node.flat,
+      opacity: node.opacity,
+      blend: node.blend,
+      depthWrite: node.depthWrite,
+      emissive: node.emissive,
+      side: node.side,
+      fog: node.fog,
     };
     world.set(id, composed);
     return composed;

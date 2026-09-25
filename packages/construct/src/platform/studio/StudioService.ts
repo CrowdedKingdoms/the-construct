@@ -42,11 +42,15 @@ import {
   routeClientHostCall,
   routeWithFallback,
   runConsentedGridMod,
+  voxelStateToWire,
   type ClientModHostReads,
   type ClientModHostWrites,
 } from './clientModHost';
 import { PointerClickBuffer } from './pointerClicks';
+import { clearModPose, setModPoseGrid } from './modPose';
+import type { Input } from '../../engine/Input';
 import { ModOverlayStore } from './modOverlay';
+import { ModSceneStore } from './modScene';
 import { GridService, type GridSnapshot } from './GridService';
 import { hasAnyStudioPermission, toBrokerBounds } from './permissions';
 import { Emitter } from '../util/Emitter';
@@ -87,8 +91,19 @@ function createConstructTextHud(): CrowdyStudioTextHud {
     describe(payload: unknown) {
       if (typeof payload === 'string') return payload;
       if (payload && typeof payload === 'object') {
-        const greeting = (payload as { greeting?: unknown }).greeting;
-        if (typeof greeting === 'string' && greeting.length > 0) return greeting;
+        const rec = payload as {
+          greeting?: unknown;
+          turn?: unknown;
+          scores?: unknown;
+          state?: unknown;
+          who?: unknown;
+        };
+        const lines: string[] = [];
+        for (const key of ['greeting', 'turn', 'scores', 'state', 'who'] as const) {
+          const value = rec[key];
+          if (typeof value === 'string' && value.length > 0) lines.push(value);
+        }
+        if (lines.length > 0) return lines.join('\n');
       }
       try {
         return JSON.stringify(payload);
@@ -117,6 +132,8 @@ export class StudioService {
   readonly locomotion = new AgentLocomotion();
   /** CLIENT overlay_draw gizmos; the holodeck merges these onto instances. */
   readonly overlay = new ModOverlayStore();
+  /** CLIENT scene_catalog / scene_instances. Templates are cloned in the page. */
+  readonly scene = new ModSceneStore();
   private readonly hud = createConstructTextHud();
   private readonly lifecycle = new ClientModLifecycle();
   private readonly declinedAuthors = new Set<string>();
@@ -126,6 +143,7 @@ export class StudioService {
   private readonly pointerClicks = new PointerClickBuffer();
   /** JS grid programs the agent (or the player) runs on the current grid. */
   readonly programs: GridProgramRunner;
+  private gameplay: Input | null = null;
   private gridEnteredAt = 0;
   private embed: CrowdyStudioEmbed | null = null;
   private hooks: StudioHooks | null = null;
@@ -136,6 +154,12 @@ export class StudioService {
   private lastModsReadAt = 0;
   private modsInFlight = false;
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Last GraphQL-persisted mailbox payload per cell, so roster ticks do not hammer updateVoxel. */
+  private lastDurableVoxel = new Map<string, string>();
+  private voxelUpdateCache = new Map<
+    string,
+    { at: number; states: Array<{ x: number; y: number; z: number; state: string }> }
+  >();
 
   constructor(private readonly session: GameSession) {
     this.grids = new GridService(session.network);
@@ -173,6 +197,21 @@ export class StudioService {
   /** Grid the local player is standing on, if known. */
   get grid(): GridSnapshot | null {
     return this.currentGrid;
+  }
+
+  /** Gameplay keys and stick for generic client-mod input calls. */
+  bindGameplayInput(input: Input): void {
+    this.gameplay = input;
+  }
+
+  private hostInput() {
+    return {
+      drainPointerClicks: () => this.pointerClicks.drainPointerClicks(),
+      axes: () =>
+        this.gameplay && !this.gameplay.suppressed ? this.gameplay.axes() : { x: 0, y: 0 },
+      look: () => this.gameplay?.takePointerDelta() ?? { dx: 0, dy: 0 },
+      keyDown: (code: string) => this.gameplay?.isDown(code) ?? false,
+    };
   }
 
   /** Wire the engine-side hooks; call once after the loop exists. */
@@ -237,6 +276,7 @@ export class StudioService {
         if (this.currentGrid) {
           const source = `studio:${this.currentGrid.gridId}`;
           this.overlay.remove(source);
+          this.scene.remove(source);
           this.hud.remove(source);
         }
         this.setOpen(false);
@@ -303,6 +343,7 @@ export class StudioService {
     if (this.currentGrid) {
       const source = `studio:${this.currentGrid.gridId}`;
       this.overlay.remove(source);
+      this.scene.remove(source);
       this.hud.remove(source);
     }
   }
@@ -319,6 +360,7 @@ export class StudioService {
     this.pointerClicks.dispose();
     this.hud.destroy();
     this.overlay.clear();
+    this.scene.clear();
   }
 
   // ---------------------------------------------------------------------------
@@ -352,12 +394,18 @@ export class StudioService {
       ...(clientOk
         ? {
             workerUrl: glueWorkerAssetUrl,
-            onHostCall: (call: PlayerCodeHostCall) =>
-              routeWithFallback(
+            onHostCall: (call: PlayerCodeHostCall) => {
+              setModPoseGrid(bounds);
+              return routeWithFallback(
                 call,
-                () => routeClientHostCall(call, reads, bounds, writes, this.pointerClicks),
+                () =>
+                  routeClientHostCall(call, reads, bounds, writes, this.hostInput(), {
+                    source: overlaySource,
+                    store: this.scene,
+                  }),
                 serverCalls,
-              ),
+              );
+            },
             onPresentation: (presentation) => {
               if (presentation.channel === 'hud') {
                 this.hud.set({
@@ -440,6 +488,8 @@ export class StudioService {
             x: s.x,
             y: s.y,
             z: s.z,
+            yaw: s.yaw,
+            pitch: s.pitch,
             program: s.program,
           });
         }
@@ -451,16 +501,39 @@ export class StudioService {
               x: p.pose.x,
               y: p.pose.y,
               z: p.pose.z,
+              yaw: p.pose.yaw,
+              pitch: p.pose.pitch,
               program: p.pose.program,
             });
           }
         }
         return rows;
       },
-      chunkVoxels: (x, y, z) => {
+      chunkVoxels: async (x, y, z) => {
         const cached = this.session.world.chunks.get({ x: Number(x), y: Number(y), z: Number(z) });
-        if (!cached?.voxels) return { voxelsBase64: null };
-        return { voxelsBase64: bytesToBase64(cached.voxels) };
+        const states: Array<{ x: number; y: number; z: number; state: string }> = [];
+        if (cached) {
+          for (const [index, state] of cached.voxelStates) {
+            if (typeof state !== 'string' || state.length === 0) continue;
+            states.push({
+              x: index & 15,
+              y: (index >> 4) & 15,
+              z: (index >> 8) & 15,
+              state,
+            });
+          }
+        }
+        const durable = await this.listDurableVoxelStates(Number(x), Number(y), Number(z));
+        for (const extra of durable) {
+          const row = states.find((s) => s.x === extra.x && s.y === extra.y && s.z === extra.z);
+          if (row) row.state = extra.state;
+          else states.push(extra);
+        }
+        if (!cached?.voxels && states.length === 0) return { voxelsBase64: null };
+        return {
+          voxelsBase64: bytesToBase64(cached?.voxels ?? new Uint8Array(4096)),
+          states,
+        };
       },
     };
   }
@@ -477,10 +550,88 @@ export class StudioService {
           voxelType: input.voxelType,
           state: input.state ?? DEFAULT_VOXEL_STATE,
         });
-        if (ok) chunks.markDirty(input.chunk);
+        if (ok) {
+          chunks.markDirty(input.chunk);
+          void this.persistVoxelUpdate(input);
+        }
         return ok;
       },
     };
+  }
+
+  /**
+   * Draft SERVER voxel_set writes Postgres but suppresses Buddy fan-out, so the
+   * live chunk cache never sees BOARD/SHOT mailboxes. Pull those states from
+   * listVoxels (cached ~250ms) so the author's CLIENT can read them.
+   */
+  private async listDurableVoxelStates(
+    x: number,
+    y: number,
+    z: number,
+  ): Promise<Array<{ x: number; y: number; z: number; state: string }>> {
+    const game = this.session.network.game;
+    if (!game?.voxels?.list) return [];
+    const key = `${x},${y},${z}`;
+    const hit = this.voxelUpdateCache.get(key);
+    const now = Date.now();
+    if (hit && now - hit.at < 250) return hit.states;
+    try {
+      const rows = await game.voxels.list({
+        appId: this.session.appId,
+        coordinates: { x: String(x), y: String(y), z: String(z) },
+      });
+      const states: Array<{ x: number; y: number; z: number; state: string }> = [];
+      for (const row of rows ?? []) {
+        const loc = row.location;
+        if (!loc) continue;
+        const raw = row.state;
+        if (typeof raw !== 'string' || raw.length === 0) continue;
+        let decoded = raw;
+        try {
+          decoded = new TextDecoder().decode(Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)));
+        } catch {
+          decoded = raw;
+        }
+        states.push({ x: loc.x, y: loc.y, z: loc.z, state: decoded });
+      }
+      this.voxelUpdateCache.set(key, { at: now, states });
+      return states;
+    } catch (error) {
+      this.session.network.log(`voxel list failed: ${messageOf(error)}`);
+      return hit?.states ?? [];
+    }
+  }
+  private async persistVoxelUpdate(input: {
+    chunk: { x: number; y: number; z: number };
+    x: number;
+    y: number;
+    z: number;
+    voxelType: number;
+    state?: string;
+  }): Promise<void> {
+    const game = this.session.network.game;
+    if (!game?.voxels?.update) return;
+    const wire = voxelStateToWire(input.state ?? DEFAULT_VOXEL_STATE);
+    const cell = `${input.chunk.x},${input.chunk.y},${input.chunk.z}:${input.x},${input.y},${input.z}`;
+    const payload = `${input.voxelType}:${wire}`;
+    if (this.lastDurableVoxel.get(cell) === payload) return;
+    this.lastDurableVoxel.set(cell, payload);
+    try {
+      await game.voxels.update({
+        appId: this.session.appId,
+        coordinates: {
+          x: String(input.chunk.x),
+          y: String(input.chunk.y),
+          z: String(input.chunk.z),
+        },
+        location: { x: input.x, y: input.y, z: input.z },
+        voxelType: input.voxelType,
+        state: wire,
+      });
+    } catch (error) {
+      this.lastDurableVoxel.delete(cell);
+      this.session.network.log(`voxel persist failed: ${messageOf(error)}`);
+    }
   }
 
   private adoptGrid(grid: GridSnapshot | null, chunk: ChunkCoord): void {
@@ -493,8 +644,14 @@ export class StudioService {
       this.lastModsReadAt = 0;
       this.gridEnteredAt = Date.now();
       this.overlay.clear();
+      this.scene.clear();
+      clearModPose();
     }
-    this.state = { ...this.state, grid };
+    this.state = {
+      ...this.state,
+      grid,
+      clientModsRunning: this.lifecycle.runningCount,
+    };
     this.emit();
   }
 
@@ -530,7 +687,6 @@ export class StudioService {
     if (
       this.state.clientModsAvailable &&
       this.currentGrid &&
-      !this.currentGrid.owned &&
       now - this.gridEnteredAt >= GRID_SETTLE_MS
     ) {
       await this.syncGridClientMods(this.currentGrid);
@@ -538,9 +694,10 @@ export class StudioService {
   }
 
   /**
-   * Visitor path: fetch the grid's attached CLIENT mods, ask once per author
-   * whether to trust them, and run the trusted/consented ones. Re-run on a
-   * cadence so a hash change stops the old worker.
+   * Fetch the grid's attached CLIENT mods and run the trusted ones, including
+   * for the owner. Studio's Test draft broker dies on reload, so the owner
+   * has to run the same attachment or their clicks never reach the mod.
+   * Re-run on a cadence so a hash change stops the old worker.
    */
   private async syncGridClientMods(grid: GridSnapshot): Promise<void> {
     const now = Date.now();
@@ -560,6 +717,8 @@ export class StudioService {
         if (mod.callerTrustsAuthor) continue;
         const authorKey = `${mod.authorKind}:${mod.authorRef}:${mod.authorCapabilityHash}`;
         if (this.declinedAuthors.has(authorKey)) continue;
+        const selfAuthored = String(mod.authorRef) === this.session.userId;
+        if (selfAuthored) this.approvedAuthors.add(authorKey);
         if (!this.approvedAuthors.has(authorKey)) {
           const approved = await this.confirmTrust(
             `Trust ${String(mod.authorKind).toLowerCase()} ${mod.authorRef}'s mods on this grid?\n\n` +
@@ -630,7 +789,8 @@ export class StudioService {
       writes: this.writes(),
       hud: this.hud,
       overlay: this.overlay,
-      input: this.pointerClicks,
+      scene: this.scene,
+      input: this.hostInput(),
     });
     if (handle) {
       this.lifecycle.track(scope, descriptorOf(mod), handle);
