@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+CrowdyJS `17.9.0-dev.1` (adds `client.exec`, ck-exec's client, as a dev-tier
+preview). The `@crowdedkingdoms/construct` peer range admits the 17.8 and 17.9
+prerelease lines.
+
 SERVER mods can put a replicated 3D scene on a claimed grid. construct.scene.v1
 is a parented node graph with quaternions and procedural meshes; the holodeck
 renders it for every visitor, CLIENT companion or not. `overlay_draw` stays
