@@ -22,7 +22,7 @@
     "test": "npm run test:unit && npm run test:headers && npm run test:release",
     "test:unit": "vitest run",
     "test:headers": "node --test security-headers.test.mjs scripts/lib/dev-server-options.test.mjs",
-    "test:release": "bash scripts/ci/resolve-construct-release.test.sh && node scripts/ci/check-package-content.mjs packages/construct",
+    "test:release": "bash scripts/ci/resolve-construct-release.test.sh && node --test scripts/ci/check-package-content.test.mjs && node scripts/ci/check-package-content.mjs packages/construct",
     "test:e2e": "playwright test",
     "check:pin": "node scripts/ci/check-sdk-pin.mjs",
     "setup": "node scripts/setup.mjs",

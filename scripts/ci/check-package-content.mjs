@@ -27,13 +27,30 @@ export const DENYLIST = [
   'dev-run-buddy',
 ];
 
+/**
+ * The file list out of `npm pack --dry-run --json`, whose shape npm has changed: npm 10 and 11
+ * print an array of packs, npm 12 an object keyed by package name. An empty or unknown shape
+ * throws: a check that found no files has not checked anything.
+ */
+export function filesFromPackJson(parsed) {
+  const packs = Array.isArray(parsed)
+    ? parsed
+    : parsed && Array.isArray(parsed.files)
+      ? [parsed]
+      : Object.values(parsed ?? {});
+  const pack = packs[0];
+  if (!pack || !Array.isArray(pack.files)) {
+    throw new Error(`unexpected npm pack --json output: ${JSON.stringify(parsed).slice(0, 200)}`);
+  }
+  return pack.files.map((f) => f.path);
+}
+
 export function packedFiles(dir) {
   const out = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
     cwd: dir,
     encoding: 'utf8',
   });
-  const [pack] = JSON.parse(out);
-  return pack.files.map((f) => f.path);
+  return filesFromPackJson(JSON.parse(out));
 }
 
 export function findings(dir, files, terms = DENYLIST) {
