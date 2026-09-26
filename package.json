@@ -25,6 +25,7 @@
     "test:release": "bash scripts/ci/resolve-construct-release.test.sh && node --test scripts/ci/check-package-content.test.mjs && node scripts/ci/check-package-content.mjs packages/construct",
     "test:e2e": "playwright test",
     "check:pin": "node scripts/ci/check-sdk-pin.mjs",
+    "check:grid-program": "node scripts/ci/check-grid-program-bundle.mjs",
     "setup": "node scripts/setup.mjs",
     "seed": "node scripts/seed.mjs",
     "deploy:exec": "node scripts/deploy-exec.mjs",
@@ -33,7 +34,7 @@
     "publish": "node scripts/publish.mjs"
   },
   "dependencies": {
-    "@crowdedkingdoms/construct": "0.2.0",
+    "@crowdedkingdoms/construct": "0.2.1",
     "@crowdedkingdoms/crowdyjs": "17.12.0-dev.1",
     "pixi.js": "^8.20.1",
     "three": "^0.185.1"

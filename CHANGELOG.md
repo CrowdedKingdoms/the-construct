@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+`@crowdedkingdoms/construct` 0.2.1: JS grid programs start again in built games.
+The package declared `"sideEffects": false`, so bundlers dropped
+`sandbox/boot`, which is imported only for what it does on load, and a built
+`grid-program.html` loaded Vite's preload polyfill and nothing else. It now
+lists `./sandbox/boot.ts`, and CI checks that the built page loads the sandbox
+(`npm run check:grid-program`).
+
 `@crowdedkingdoms/construct` 0.2.0 goes to npm. It was only ever on a local
 registry, so no game built in CI could install it.
 
