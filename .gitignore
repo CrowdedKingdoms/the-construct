@@ -5,6 +5,10 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# local builds of the ck-exec crates (the platform builds them from source)
+exec/target/
+exec/Cargo.lock
+
 # the Studio agent harness, copied from @crowdedkingdoms/crowdy-dsh by
 # scripts/copy-dsh-web.mjs before every dev/build (see docs/HOSTING.md)
 public/dsh/
