@@ -61,14 +61,13 @@ export { ChatService, type ChatMessage } from './platform/social/ChatService';
 export { VoiceService } from './platform/media/VoiceService';
 export { WebcamService } from './platform/media/WebcamService';
 
-// Model
+// The world hub (ck-exec)
 export {
-  configureGameModel,
-  gameModelNames,
-  gameKitOptions,
-  type GameKitOptions,
-  type GameModelNames,
-} from './platform/model/gameModelConfig';
+  WorldHub,
+  configureWorldHub,
+  worldHubAddress,
+  type WorldHubAddress,
+} from './platform/exec/worldHub';
 
 // Crowdy Studio, mods, grids
 export { StudioService, type StudioHooks, type StudioState } from './platform/studio/StudioService';

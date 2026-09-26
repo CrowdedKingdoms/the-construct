@@ -128,7 +128,10 @@ outright, so set it explicitly.
 the production API). `<tier-zone>` is that host minus its first label: the API
 hands clients to a per-datacenter and then a per-instance name under the same
 zone, and the wildcard is what lets that move happen. The zone is one label
-wide on purpose: a build for one tier cannot reach another.
+wide on purpose: a build for one tier cannot reach another. The world hub
+connection (ck-exec) dials an execution host's gateway, a `wss://` name under
+the same zone, so it needs nothing more; a build pointed at a proxy or a raw IP
+(`VITE_CROWDY_HTTP_URL`) must add the gateway's origin with `extraConnectSrc`.
 
 ## How to tell it worked
 

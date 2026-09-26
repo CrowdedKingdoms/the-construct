@@ -210,6 +210,141 @@ describe('onboarding steps', () => {
     expect(world.containers.map((c: Any) => c.typeName)).toEqual(['Program']);
   });
 
+  const execManifest = {
+    root: 'construct',
+    types: {
+      construct: { kind: 'hub', crate: 'construct', client: true },
+      world: { kind: 'hub', parent: 'construct', crate: 'construct', client: true },
+    },
+  };
+  const execCrates = [{ name: 'construct', files: { 'Cargo.toml': '', 'src/lib.rs': '' } }];
+
+  function execStub(build: Any = { status: 'succeeded', log: '' }) {
+    const calls: string[] = [];
+    const exec = {
+      build: vi.fn(async () => {
+        calls.push('build');
+        return { buildId: 'b1', status: 'queued' };
+      }),
+      waitForBuild: vi.fn(async () => {
+        calls.push('wait');
+        return {
+          buildId: 'b1',
+          artifacts: [{ crate: 'construct', sizeBytes: 10, digest: 'd' }],
+          ...build,
+        };
+      }),
+      deploy: vi.fn(async () => {
+        calls.push('deploy');
+        return { version: 3 };
+      }),
+      setEnabled: vi.fn(async (_appId: string, on: boolean, nodeType: string) => {
+        calls.push(`${nodeType}:${on ? 'on' : 'off'}`);
+      }),
+    };
+    return { client: { exec, close: vi.fn() }, exec, calls };
+  }
+
+  it('builds the ck-exec crates on the platform and deploys that build', async () => {
+    const { client, exec, calls } = execStub();
+    const result = await steps.deployExec(client as never, {
+      appId: '77',
+      manifest: execManifest as never,
+      crates: execCrates,
+    });
+    expect(result).toEqual({ buildId: 'b1', version: 3, restarted: [] });
+    expect(exec.build).toHaveBeenCalledWith('77', execCrates);
+    expect(exec.deploy).toHaveBeenCalledWith({
+      appId: '77',
+      root: 'construct',
+      types: execManifest.types,
+      buildId: 'b1',
+    });
+    expect(calls).toEqual(['build', 'wait', 'deploy']);
+  });
+
+  it('switches the named types off and on after the deploy when asked to restart', async () => {
+    const { client, calls } = execStub();
+    let retried = 0;
+    await steps.deployExec(client as never, {
+      appId: '77',
+      manifest: execManifest as never,
+      crates: execCrates,
+      restart: ['construct', 'world'],
+      restartPauseMs: 0,
+      retry: async (request) => {
+        retried += 1;
+        return request();
+      },
+    });
+    expect(calls).toEqual([
+      'build',
+      'wait',
+      'deploy',
+      'construct:off',
+      'world:off',
+      'construct:on',
+      'world:on',
+    ]);
+    expect(retried).toBe(7);
+  });
+
+  it('refuses to deploy a failed build and shows why', async () => {
+    const { client, exec } = execStub({ status: 'failed', log: 'error[E0425]: cannot find value' });
+    await expect(
+      steps.deployExec(client as never, {
+        appId: '77',
+        manifest: execManifest as never,
+        crates: execCrates,
+      }),
+    ).rejects.toThrow(/build b1 failed:\nerror\[E0425\]/);
+    expect(exec.deploy).not.toHaveBeenCalled();
+  });
+
+  it('runs the ck-exec step, on its own client, where a game has no model', async () => {
+    const identity = identityStub();
+    identity.marketplace = {
+      gridClaimPolicy: vi.fn(async () => 'SELF_CLAIM'),
+      setGridClaimPolicy: vi.fn(),
+    };
+    identity.graphql = {
+      query: vi.fn(async () => {
+        throw new Error('manage_compute required');
+      }),
+    };
+    const game = { crowdyStudio: { listCommonFiles: vi.fn(async () => []) }, kit: vi.fn() };
+    const { client, calls } = execStub();
+    const clientFor = vi.fn(async () => client);
+    const done: string[] = [];
+    const report = await steps.runOnboarding({
+      identity,
+      userId: '42',
+      enterApp: async () => game as never,
+      orgName: 'My studio',
+      appName: 'The Construct',
+      exec: { manifest: execManifest as never, crates: execCrates, client: clientFor as never },
+      onStep: (event) => {
+        if (event.status === 'done') done.push(event.id);
+      },
+    });
+    expect(report.appId).toBe('77');
+    expect(done).toEqual([
+      'org',
+      'app',
+      'tier',
+      'enter',
+      'claims',
+      'exec',
+      'studio',
+      'agent',
+      'github',
+    ]);
+    expect(clientFor).toHaveBeenCalledWith('77');
+    expect(calls).toEqual(['build', 'wait', 'deploy']);
+    expect(client.close).toHaveBeenCalled();
+    expect(game.kit).not.toHaveBeenCalled();
+  });
+
   it('keeps use_studio_agent on Constructor and off the visitor default', () => {
     expect(steps.CONSTRUCTOR_TIER_KEYS).toContain('use_studio_agent');
     expect(steps.VISITOR_RUN_KEYS).not.toContain('use_studio_agent');

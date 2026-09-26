@@ -74,24 +74,55 @@ reserved for that org) through the same command a third party runs.
   set. A local ck-api or IDE-on-public-IP stack is opt-in via `VITE_DEV_*` in
   `.env.local` (see `.env.example`); default `npm run dev` is isolating and
   unproxied.
-- `model/blueprints.mjs`, `mods/templates/index.mjs` and
-  `src/platform/onboarding/steps.mjs` are plain ES modules on purpose: the Node
-  scripts import them and the browser imports the first two. Keep them free of
-  TypeScript and of browser-only globals; their `.d.mts` siblings carry types.
-- Seeding is idempotent on the server since ck-api `v1.93.0`: `gameModelSeed`
-  upserts containers by `binding_key = seed:<tempId>` and skips existing
-  edges. `deployModel`'s client-side "already exists" filter is redundant,
-  not wrong — keep it.
+- `model/catalog.mjs`, `mods/templates/index.mjs` (with the generated
+  `exec-mods.mjs`) and `src/platform/onboarding/steps.mjs` are plain ES modules
+  on purpose: the Node scripts import them and the browser imports the catalog.
+  Keep them free of TypeScript and of browser-only globals; their `.d.mts`
+  siblings carry types.
+- The game's server code is `exec/`: a ck-exec manifest (`ckx.json`: the root
+  `construct` and the `world` hub) and the Rust crates, `construct` and the
+  SERVER starter mods under `mods/`. From `exec/`, `cargo test`,
+  `cargo clippy --all-targets` (no warnings) and `cargo build --release
+  --target wasm32-unknown-unknown` must pass when you touch it. They need a
+  ck-exec checkout beside this repository for `ckx-sdk`, which is not public,
+  so CI cannot run them; the platform's build replaces that dependency line.
+- `npm run build:exec-sources` after editing `model/catalog.mjs` or
+  `exec/mods/`: it rewrites `exec/construct/src/catalog.rs` and
+  `mods/templates/exec-mods.mjs`, and the unit tests (and every deploy) fail
+  while either is stale.
+- What `execBuild` / `execModBuild` accept: files `Cargo.toml`, `README.md` and
+  `src/**/*.rs`; `[package]`, `[lib] crate-type = ["cdylib", "rlib"]` and
+  `[dependencies]` on `ckx-sdk`, `serde` and `serde_json` only, one key per
+  line; edition 2024. The source guard refuses the identifiers `include`,
+  `include_str`, `include_bytes`, `env`, `option_env` and the `asm` family
+  anywhere in code (not only as macros), and `path` / `link` inside an
+  attribute.
+- ck-exec builds, deploys and switches take the developer's own session (the
+  org's `manage_compute`) on the app's own datacenter origin
+  (`scripts/lib/cli.mjs#developerOnApp`), never an app token: another
+  datacenter's API deploys to its own execution manager.
+  `npm run deploy:exec -- --restart` switches every type off and on so a
+  running hub (the world hub never idles while players are in) starts again
+  on the new version.
+- `deployModel` stays in `steps.mjs` for games that keep a Game Model; the
+  starter no longer seeds one.
 
 ## Platform facts this code depends on (measured 2026-09-07, dev tier)
 
 - `nearbyGridPermissions` still requires `manage_apps`. Players can call
   `nearbyGrids` (ck-api `v1.93.0`: `gridId` + bounds, no `permissionKeys`).
-  This game still uses `Claim` containers; that workaround was not rewritten.
-- Model expressions have `now()` (int milliseconds, one instant per invoke).
-- A CLIENT mod runs for visitors only as the required companion of a live
-  SERVER module (full-stack project), after the visitor trusts the author, and
-  only if the **visitor's** tier holds `run_client_code`.
+  This game keeps its own claim registry in the world hub instead: a claim is
+  recorded for the calling player and only its owner may release it
+  (developers can `forget_claim`). The hub does not ask the platform who owns
+  a grid, so a player can still record a grid id they do not own if no one
+  recorded it first.
+- A self-authored CLIENT mod runs for visitors only as the required companion
+  of a live **legacy** SERVER module, after the visitor trusts the author, and
+  only if the **visitor's** tier holds `run_client_code`: ck-api creates the
+  grid client attachment when that player-compute module is enabled. With the
+  SERVER target on ck-exec (`serverEngine: 'ck-exec'`, since this branch) the
+  Studio sets no pairing, so a full-stack project's CLIENT half runs for its
+  author only.
 - The trust/artifact gates check presence written by Buddy on chunk entry;
   asking in the first seconds after entering a grid races it. `GRID_SETTLE_MS`.
 - `PlayerCodeBroker` ticks a client mod only when `tickIntervalMs` is set.
@@ -113,8 +144,32 @@ reserved for that org) through the same command a third party runs.
   write-back (`markDirty` → `chunks.update`).
 - pixi.js v8 needs `import 'pixi.js/unsafe-eval'` under a CSP without
   `unsafe-eval`.
-- The Studio's blank project declares only `crowdy-compute-sdk`; templates
-  that build JSON ship a companion `Cargo.toml` with `serde_json`.
+- The Studio's blank project declares only `crowdy-compute-sdk` (CrowdyJS
+  17.12.0, for both targets); CLIENT templates that build JSON ship a companion
+  `Cargo.toml` with `serde_json`. A blank SERVER project does not build as a
+  mod: players import a SERVER starter's `Cargo.toml` and `src/lib.rs`.
+
+## ck-exec facts this code depends on (2026-09-26, local cluster and ck-api source)
+
+- ck-exec is a **dev-tier preview**: `setup`, `seed` and `deploy:exec` work
+  only against dev. Do not promote this to `test` / `prod` before ck-exec
+  reaches those tiers.
+- The root hub takes at most 50 calls a second; the HUD's polling goes to
+  `world/main`, never the root.
+- A pending timer keeps a hub running only while players are in the app, and
+  a hub is snapshotted every 30 s by default (at most one interval is lost in
+  a crash). The world hub re-arms its pulse timer on every start, so a
+  stopped world does not make up missed pulses, and calls `persist_now` after
+  a claim or progression change.
+- A mod calls no other node, subscribes to nothing, and its realtime emits are
+  dropped. Its node API reaches only its grid: `grids.get` for its own id,
+  `world.*` inside the grid's bounds, and `world.set_voxels` only while its
+  owner holds `update_voxel_data` there. That is why the scene starters build
+  with voxels, not construct.scene.v1 events.
+- Node API budget, shared by every hub and mod of an app: 200 reads and 50
+  voxel writes a second per ck-api replica.
+- The execution host's gateway is a `wss://` name under the tier's zone, which
+  the CSP's zone wildcard already admits.
 
 ## Docs
 

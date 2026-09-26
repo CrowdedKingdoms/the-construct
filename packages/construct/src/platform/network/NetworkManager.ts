@@ -11,11 +11,12 @@
  *    HOSTED_SIGN_IN_REQUIRED from any non-first-party origin, ck-api v1.88.0).
  *  - the **game** client holds that same app token and is pointed at the app's
  *    own datacenter (the token response carries the endpoint). Everything
- *    realtime, model, Studio and persistence runs on it.
+ *    realtime, Studio and persistence runs on it, and so does the connection
+ *    to the app's world hub on ck-exec (`worldHub`).
  *
  * Because the page never holds a session, everything that needs one -- creating
- * the org and the app, seeding the model, registering this origin as a redirect
- * URI -- happens in `npm run setup` (a Node script, no Origin header) or in
+ * the org and the app, deploying the world hub, registering this origin as a
+ * redirect URI -- happens in `npm run setup` (a Node script, no Origin header) or in
  * Studio. The browser knows its app id from `VITE_APP_ID`, `?app=`, or storage.
  *
  * Scenes and services never import the SDK client directly; they read
@@ -40,6 +41,7 @@ import {
   AUTHORIZE_URL,
 } from '../config';
 import { envScopedKey, readScoped, writeScoped } from '../envScope';
+import { WorldHub } from '../exec/worldHub';
 import { Emitter } from '../util/Emitter';
 
 export interface SessionUser {
@@ -110,6 +112,7 @@ export class NetworkManager {
   readonly platform: CrowdyClient;
 
   private gameClient: CrowdyClient | null = null;
+  private worldHubValue: WorldHub | null = null;
   private route: AppRoute | null = null;
   private userValue: SessionUser | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -285,6 +288,15 @@ export class NetworkManager {
     return this.gameClient !== null;
   }
 
+  /**
+   * The entered app's world hub on ck-exec, over one connection the model and grid services
+   * share. It goes with the game client (another app, another endpoint, leaving).
+   */
+  get worldHub(): WorldHub {
+    this.worldHubValue ??= new WorldHub(this.game, this.requireAppId());
+    return this.worldHubValue;
+  }
+
   get appId(): string | null {
     return this.route?.appId ?? null;
   }
@@ -367,6 +379,8 @@ export class NetworkManager {
   }
 
   private disposeGameClient(): void {
+    this.worldHubValue?.close();
+    this.worldHubValue = null;
     this.udpUnsubscribe?.();
     this.udpUnsubscribe = null;
     this.realtimeUnsubscribe?.();

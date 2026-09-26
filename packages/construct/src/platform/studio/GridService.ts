@@ -8,19 +8,19 @@
  * Three sources, in order of authority:
  *  1. `claimHere` -> `marketplace.claimGridChunk` (SELF_CLAIM policy): the
  *     new grid, its bounds and the caller's EFFECTIVE permission keys. The
- *     result is remembered per browser and mirrored into a `Claim` container.
- *  2. The `Claim` containers in the game model: the player-readable registry
- *     of who claimed which chunk. The platform's own grid tables answer
- *     "which grid contains this chunk" only to app admins
- *     (`nearbyGridPermissions` requires manage_apps — measured 2026-09-07), so
- *     visitors learn the grid under their feet from here.
+ *     result is remembered per browser and recorded in the world hub.
+ *  2. The world hub's claim registry (ck-exec, `record_claim` / `claims` /
+ *     `release_claim`): the player-readable record of who claimed which chunk.
+ *     The platform's own grid tables answer "which grid contains this chunk"
+ *     only to app admins (`nearbyGridPermissions` requires manage_apps —
+ *     measured 2026-09-07), so visitors learn the grid under their feet from
+ *     here. The hub records a claim for the calling player and lets only that
+ *     player release it.
  *  3. `gameApps.nearbyPermissions`, when the caller is an admin, to refresh
  *     the effective keys on an owned grid. Failing that is expected for
  *     ordinary players and is not an error.
  */
-import { gameModelNames } from '../model/gameModelConfig';
-
-import type { NetworkManager } from '../network/NetworkManager';
+import { messageOf, type NetworkManager } from '../network/NetworkManager';
 import { readScoped, writeScoped } from '../envScope';
 import { chunkInput, chunkKey, type ChunkCoord } from '../realtime/space';
 import {
@@ -54,7 +54,14 @@ interface OwnedRecord {
 }
 
 interface ClaimRecord {
-  containerId: string;
+  gridId: string;
+  chunk: ChunkCoord;
+  ownerUserId: string;
+  ownerName: string;
+}
+
+/** A claim as the world hub lists it. */
+interface HubClaim {
   gridId: string;
   chunk: ChunkCoord;
   ownerUserId: string;
@@ -63,11 +70,18 @@ interface ClaimRecord {
 
 export class GridService {
   private owned = new Map<string, OwnedRecord>();
-  private registry: { at: number; claims: ClaimRecord[] } | null = null;
-  private registryInFlight: Promise<ClaimRecord[]> | null = null;
+  /** The registry's answer per chunk, cached briefly (visitors poll it as they walk). */
+  private registry = new Map<string, { at: number; claim: ClaimRecord | null }>();
+  private registryInFlight = new Map<string, Promise<ClaimRecord | null>>();
+  /** Grids this session already tried to put in the registry from `lookup`. */
+  private backfilled = new Set<string>();
 
   constructor(private readonly network: NetworkManager) {
     this.loadOwned();
+  }
+
+  private get hub() {
+    return this.network.worldHub;
   }
 
   /** Claim the chunk under `position` as a one-chunk grid owned by the player. */
@@ -98,15 +112,12 @@ export class GridService {
     await this.network.game.marketplace.releaseClaimedGrid({ appId, gridId });
     for (const [key, record] of this.owned) if (record.gridId === gridId) this.owned.delete(key);
     this.saveOwned();
-    const claims = await this.claims(true);
-    for (const claim of claims) {
-      if (claim.gridId === gridId && claim.ownerUserId === this.network.user?.userId) {
-        await this.network.game.gameModel
-          .deleteContainer({ appId, containerId: claim.containerId })
-          .catch(() => undefined);
-      }
+    try {
+      await this.hub.call('release_claim', { gridId });
+    } catch (error) {
+      this.network.log(`claim registry release failed: ${messageOf(error)}`);
     }
-    this.registry = null;
+    this.registry.clear();
   }
 
   /** The grid at `chunk` as this player may know it, or null for open world. */
@@ -114,10 +125,13 @@ export class GridService {
     const mine = this.ownedAt(chunk);
     if (mine) {
       const refreshed = await this.refreshOwnedKeys(chunk, mine);
-      // A grid claimed before the registry existed (or from a browser whose
-      // registry write failed) gets its row on the next visit.
-      const registered = (await this.claims()).some((c) => c.gridId === mine.gridId);
-      if (!registered) void this.recordClaim(mine.gridId, chunk, this.ownerNameHint());
+      // A grid claimed before the registry existed (or from a browser whose registry write
+      // failed) gets its row on the next visit.
+      const registered = await this.claimAt(chunk);
+      if (registered?.gridId !== mine.gridId && !this.backfilled.has(mine.gridId)) {
+        this.backfilled.add(mine.gridId);
+        void this.recordClaim(mine.gridId, chunk, this.ownerNameHint());
+      }
       return {
         gridId: mine.gridId,
         bounds: mine.bounds,
@@ -125,8 +139,7 @@ export class GridService {
         owned: true,
       };
     }
-    const claims = await this.claims();
-    const claim = claims.find((c) => chunkKey(c.chunk) === chunkKey(chunk));
+    const claim = await this.claimAt(chunk);
     if (!claim) return null;
     const owned = claim.ownerUserId === this.network.user?.userId;
     if (owned) {
@@ -198,84 +211,53 @@ export class GridService {
     }
   }
 
+  /** Records the claim for the signed-in player; the hub takes the owner from the caller. */
   private async recordClaim(gridId: string, chunk: ChunkCoord, ownerName: string): Promise<void> {
-    const appId = this.requireAppId();
-    const userId = this.network.user?.userId ?? '0';
     try {
-      const existing = (await this.claims(true)).find((c) => c.gridId === gridId);
-      if (existing) return;
-      await this.network.game.gameModel.createContainer({
-        appId,
-        typeName: gameModelNames().claimType,
-        displayName: `Claim ${gridId}`,
-        properties: [
-          { key: 'grid_id', valueType: 'string', valueJson: JSON.stringify(gridId) },
-          { key: 'cx', valueType: 'int', valueJson: String(chunk.x) },
-          { key: 'cy', valueType: 'int', valueJson: String(chunk.y) },
-          { key: 'cz', valueType: 'int', valueJson: String(chunk.z) },
-          { key: 'owner_user_id', valueType: 'int', valueJson: String(userId) },
-          {
-            key: 'owner_name',
-            valueType: 'string',
-            valueJson: JSON.stringify(ownerName.slice(0, 32)),
-          },
-        ],
+      await this.hub.call('record_claim', {
+        gridId,
+        chunk: { x: chunk.x, y: chunk.y, z: chunk.z },
+        ownerName: ownerName.slice(0, 32),
       });
-      this.registry = null;
     } catch (error) {
-      // The claim itself succeeded; only the registry row failed (model not
-      // seeded yet). Say so rather than hide it.
-      this.network.log(
-        `claim registry write failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      // The claim itself succeeded; only the registry row failed (the world hub is not
+      // deployed, or another player's claim covers the chunk). Say so rather than hide it.
+      this.network.log(`claim registry write failed: ${messageOf(error)}`);
     }
+    this.registry.delete(chunkKey(chunk));
   }
 
-  /** The Claim registry, cached briefly (visitors poll it as they walk). */
-  private async claims(force = false): Promise<ClaimRecord[]> {
-    if (!force && this.registry && Date.now() - this.registry.at < REGISTRY_TTL_MS)
-      return this.registry.claims;
-    if (this.registryInFlight) return this.registryInFlight;
-    const appId = this.requireAppId();
-    this.registryInFlight = (async () => {
-      const claims: ClaimRecord[] = [];
+  /** The registry's claim at `chunk`, or null; a failed read counts as none until it expires. */
+  private claimAt(chunk: ChunkCoord): Promise<ClaimRecord | null> {
+    const key = chunkKey(chunk);
+    const cached = this.registry.get(key);
+    if (cached && Date.now() - cached.at < REGISTRY_TTL_MS) return Promise.resolve(cached.claim);
+    const inFlight = this.registryInFlight.get(key);
+    if (inFlight) return inFlight;
+    const read = (async () => {
+      let claim: ClaimRecord | null = null;
       try {
-        const rows = await this.network.game.gameModel.containers({
-          appId,
-          typeName: gameModelNames().claimType,
-          limit: 200,
+        const { claims } = await this.hub.call<{ claims: HubClaim[] }>('claims', {
+          chunk: { x: chunk.x, y: chunk.y, z: chunk.z },
         });
-        for (const row of rows) {
-          const state = await this.network.game.gameModel.containerState({
-            appId,
-            containerId: row.containerId,
-          });
-          let props: Record<string, unknown> = {};
-          try {
-            props = JSON.parse(state.propertiesJson) as Record<string, unknown>;
-          } catch {
-            props = {};
-          }
-          const gridId = String(props.grid_id ?? '');
-          if (!gridId) continue;
-          claims.push({
-            containerId: row.containerId,
-            gridId,
-            chunk: { x: Number(props.cx ?? 0), y: Number(props.cy ?? 0), z: Number(props.cz ?? 0) },
-            ownerUserId: String(props.owner_user_id ?? row.ownerUserId ?? ''),
-            ownerName: String(props.owner_name ?? ''),
-          });
+        const row = claims[0];
+        if (row) {
+          claim = {
+            gridId: String(row.gridId),
+            chunk: { x: Number(row.chunk.x), y: Number(row.chunk.y), z: Number(row.chunk.z) },
+            ownerUserId: String(row.ownerUserId),
+            ownerName: String(row.ownerName ?? ''),
+          };
         }
       } catch (error) {
-        this.network.log(
-          `claim registry unavailable: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        this.network.log(`claim registry unavailable: ${messageOf(error)}`);
       }
-      this.registry = { at: Date.now(), claims };
-      this.registryInFlight = null;
-      return claims;
+      this.registry.set(key, { at: Date.now(), claim });
+      this.registryInFlight.delete(key);
+      return claim;
     })();
-    return this.registryInFlight;
+    this.registryInFlight.set(key, read);
+    return read;
   }
 
   private ownerNameHint(): string {

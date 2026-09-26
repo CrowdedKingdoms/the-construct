@@ -1,0 +1,15 @@
+[package]
+name = "construct-spinning-child"
+description = "Spinning child: a mod that builds a post with an arm swinging round it, in voxels"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# A ck-exec build replaces this line with the platform's copy of ckx-sdk; the path is a ck-exec
+# checkout beside this repository, for local builds and tests.
+ckx-sdk = { path = "../../../../ck-exec/crates/ckx-sdk" }
+serde = { version = "1", features = ["derive"] }

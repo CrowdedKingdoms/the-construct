@@ -25,20 +25,25 @@ A checklist, in the order that keeps everything working at every step.
 
 - [ ] Implement `GameScene` for your first scene ([RENDERER-ADAPTER.md](RENDERER-ADAPTER.md)).
 - [ ] Register it in `src/main.ts`; decide whether the holodeck stays as a hub.
-- [ ] Update `src/game/programs.ts` and `PROGRAM_CATALOG` in
-      `model/blueprints.mjs` together.
+- [ ] Put your programs in `PROGRAM_CATALOG` (`model/catalog.mjs`) and their
+      pads in `src/game/programs.ts`, then `npm run build:exec-sources`.
 - [ ] Remove the demo scene folders and unused renderer dependencies.
 
-## 4. Model your rules
+## 4. Write your rules
 
-- [ ] Pick Game Kit blueprints (inventory, economy, quests, combat, matches…)
-      and add them to `constructBlueprints()` with your `typePrefix`es; mirror
-      the prefixes in `kitOptions()`.
-- [ ] Hand-author what the kit does not cover: container types, properties,
-      functions with invoke policies, automations.
-- [ ] Keep `deployModel`'s existing-container check in mind: seed containers
-      are matched by display name per type.
-- [ ] `npm run seed` after every change; `npm run smoke` to verify.
+- [ ] Your server code is `exec/`: the world hub (`exec/construct`, Rust on
+      `ckx-sdk`) and the manifest (`exec/ckx.json`). Add endpoints there, or
+      hubs of your own under the root (starter crates: `client.exec.starters`,
+      [builds](https://docs.crowdedkingdoms.com/exec/builds)). Keep per-player
+      polling off the root hub (50 calls a second); refuse keys a hub should
+      not have.
+- [ ] Authorize in handlers with `call.player()` / `call.developer()`: the
+      platform names the caller, the client never does.
+- [ ] `cargo test && cargo clippy --all-targets` in `exec/` (with a ck-exec
+      checkout beside this repo), then `npm run deploy:exec -- --restart` and
+      `npm run smoke`.
+- [ ] If your hub has another name, tell the framework once at boot:
+      `configureWorldHub({ nodeType, key })`.
 
 ## 5. Decide who may do what
 
@@ -51,7 +56,9 @@ A checklist, in the order that keeps everything working at every step.
 
 ## 6. Studio and mods
 
-- [ ] Replace `mods/templates/` with starters that make sense in your world.
+- [ ] Replace `mods/templates/` (CLIENT starters) and `exec/mods/` (SERVER
+      starters, ck-exec mods) with starters that make sense in your world;
+      `npm run build:exec-sources`, then `npm run seed`.
 - [ ] Decide on `VITE_CONSTRUCT_CLIENT_MODS` (browser execution on or off).
 - [ ] Read [MODDING.md](MODDING.md)'s security posture and keep the CSP tight.
 
@@ -65,8 +72,10 @@ A checklist, in the order that keeps everything working at every step.
       A pin bump that brings a new realtime feature (15.5 brought webcam
       video and the actor-left notice) lands here as platform code plus a
       `NetworkManager.on(kind)` slot — mirror it in your scenes or hide it.
-- [ ] Watch the presence rule in your automations: nothing ticks while nobody
+- [ ] Watch the presence rule in your hubs' timers: nothing ticks while nobody
       plays.
+- [ ] ck-exec is a dev-tier preview: a branch that deploys `exec/` cannot be
+      promoted to a tier ck-exec has not reached.
 
 ## 8. Things this starter leaves to you
 
