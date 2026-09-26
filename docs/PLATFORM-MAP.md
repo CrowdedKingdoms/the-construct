@@ -13,20 +13,22 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 | Version floor, UDP status | `serverStatus.gameClientBootstrap(appId)` | `NetworkManager#bootstrap` |
 | Presence & movement | World Stores `self` / `actors` over `udp.subscribe`; chunk-addressed fan-out | `platform/realtime/WorldStores.ts`, `engine/GameLoop.ts` |
 | Terrain / shared canvas / mod-placed blocks | World Stores `chunks` (cache + realtime merge), `markDirty` → `chunks.update` for durability. CLIENT `voxel_set` uses this path. The holodeck draws cubes; Paint draws the y=0 layer in 2D. | `scenes/holodeck-three/voxels.ts`, `scenes/program-pixi/PaintScene.ts`, `platform/studio/clientModHost.ts` |
-| Replicated 3D instances (quats, procedural meshes) | SERVER `emit_spatial("server_event")` eventTypes `0xC501`/`0xC502`; World Stores `events` + `InstanceStore`. `overlay_draw` is local gizmos on the same schema. | `platform/studio/instanceSchema.ts`, `platform/studio/instanceStore.ts`, `scenes/holodeck-three/instanceLayer.ts` |
+| Replicated 3D instances (quats, procedural meshes) | Legacy SERVER `emit_spatial("server_event")` eventTypes `0xC501`/`0xC502`; World Stores `events` + `InstanceStore`. `overlay_draw` is local gizmos on the same schema. A ck-exec mod cannot emit, so the Studio's SERVER target no longer feeds it. | `platform/studio/instanceSchema.ts`, `platform/studio/instanceStore.ts`, `scenes/holodeck-three/instanceLayer.ts` |
 | Save game | World Stores `save` (per-user `state.*` blob) | `GameSession#loadSave` / `rememberPosition` |
 | Chat | `udp.sendTextPacket` + `text` notifications (proximity); `channels.*` for named rooms | `platform/social/ChatService.ts` |
-| Server-side rules | Game model containers/properties/functions with invoke policies; Game Kit blueprints | `model/blueprints.mjs`, `platform/model/ModelService.ts` |
-| Scheduled world life | Model automations (`schedule` / `event`), compute modules; run only while players are present | `construct-pulse` automation |
+| Server-side rules | ck-exec hubs in Rust (`ckx-sdk`), built with `execBuild`, deployed with `execDeploy`; players call them over `client.exec.connect` | `exec/` (the `world` hub), `scripts/deploy-exec.mjs`, `platform/exec/worldHub.ts`, `platform/model/ModelService.ts` |
+| Scheduled world life | Hub timers (`ctx.timer_every`); they run only while players are in the app | The world hub's minute `pulse` timer (`exec/construct`) |
 | Player-owned land | `marketplace.claimGridChunk` under `SELF_CLAIM`; grids carry effective permission keys | `platform/studio/GridService.ts` |
-| Who is on which grid | Admin-only `gameApps.nearbyPermissions`; players read the game's own `Claim` registry | `GridService#lookup` |
-| In-game IDE | `@crowdedkingdoms/crowdyjs/crowdy-studio` embed kit over `crowdyStudio` + `playerCompute` | `platform/studio/StudioService.ts` |
+| Who is on which grid | Admin-only `gameApps.nearbyPermissions`; players read the game's own claim registry in its world hub | `GridService#lookup`, the world hub's `claims` / `record_claim` / `release_claim` |
+| In-game IDE | `@crowdedkingdoms/crowdyjs/crowdy-studio` embed kit over `crowdyStudio`, `exec` (the SERVER target as a mod, `serverEngine: 'ck-exec'`) and `playerCompute` (the CLIENT target) | `platform/studio/StudioService.ts` |
+| Players' server code | ck-exec mods: `modBuild` → `modDeploy` → `modSetEnabled`, a hub `mod:<name>` per grid; node API confined to the grid, no emits | `exec/mods/` (the SERVER starters), [MODDING.md](MODDING.md) |
 | Crowdy Agent | `client.crowdyStudioAgent` + `context.playerHost`; Constructor `use_studio_agent`; **app** policy (`setCrowdyStudioAgentPolicy`) | `platform/studio/StudioService.ts`, `ConstructPlayerHostAdapter.ts`. Setup writes the app row only — never `cp*` / platform catalog. Model usage is metered to the player wallet by default (or the app's org wallet); no provider key in the game. |
 | Player wallet | Studio `/account/wallet` (grid / player-compute billing, not agent tokens) | HUD **Wallet**; origin from `VITE_AUTHORIZE_URL` / `VITE_STUDIO_URL` |
-| CLIENT mods for visitors | `marketplace.gridClientMods` → `trustGridAuthor` → `clientArtifactBytes` → `PlayerCodeBroker` | `platform/studio/clientModHost.ts` |
+| CLIENT mods for visitors | `marketplace.gridClientMods` → `trustGridAuthor` → `clientArtifactBytes` → `PlayerCodeBroker`. A project whose SERVER target is a mod is not attached (no pairing). | `platform/studio/clientModHost.ts` |
 | CLIENT mouse clicks | Host call `pointer_clicks` (broker `input` family); Construct drains holodeck canvas down/up each tick | `platform/studio/pointerClicks.ts`, `clientModHost.ts` |
-| Starter mod files | `crowdyStudioCommonPublish` (common-file catalog) | `mods/templates/`, `steps.mjs#publishStarterFiles` |
-| Progression, leaderboards | `kit.progression`, `kit.leaderboards` | `ModelService#progress` |
+| Starter mod files | `crowdyStudioCommonPublish` (common-file catalog) | `mods/templates/`, `exec/mods/`, `steps.mjs#publishStarterFiles` |
+| Progression | A hub's own state (the world hub's `progress`, created on first read); `ckx_sdk::model` for typed containers | `ModelService#progress` |
+| Leaderboards | A hub's own state | not wired |
 | Webcam | `udp.sendVideoFrame` (fragments a JPEG into `sendVideoPacket`s) / `video` notifications + `VideoFrameAssembler`; `use_video_chat` | `platform/media/WebcamService.ts`; holodeck draws the face plane (`avatars.ts#setFace`), Paint shows a camera-on ring — a 2D game decides whether to draw video |
 | Player left | `actorLeft` notification (Buddy says an actor is gone, ~5 s after its last update) | `WorldStores` lane drops the actor; `WebcamService` ends the stream; scenes free per-uuid objects at once instead of after the 12 s reaper |
 | Voice | `udp.sendAudioPacket` / `audio` notifications | `platform/media/VoiceService.ts` (µ-law 8 kHz, V to toggle); holodeck/Paint play nearby speakers |
@@ -47,11 +49,13 @@ domain never sees a password. The token rotates in place
 (`refreshGameplayToken`); after repeated failure the player is bounced through
 hosted sign-in again, which is silent while their Studio session lasts.
 
-The shell scripts (`npm run setup`, `seed`, `smoke`) run in Node, send no
-`Origin` header, and therefore CAN sign in directly with `auth.login` to hold an
-**identity session** -- which is what creating an org and app, seeding the model
-and registering redirect URIs need. That is why Setup lives there and not in
-the browser.
+The shell scripts (`npm run setup`, `seed`, `deploy:exec`, `smoke`) run in
+Node, send no `Origin` header, and therefore CAN sign in directly with
+`auth.login` to hold an **identity session** -- which is what creating an org
+and app, deploying the world hub and registering redirect URIs need. That is
+why Setup lives there and not in the browser. ck-exec builds and deploys go to
+the app's own datacenter (the `gameApiUrl` a mint returns) with that session,
+because each datacenter's API deploys to its own execution manager.
 
 The app's **redirect URIs** (Studio > Apps > Settings, or `npm run setup
 --origin`) are where hosted sign-in may return the player AND the API's CORS
@@ -60,12 +64,14 @@ no CORS headers and a refused return leg; one fix.
 
 ## The presence rule
 
-Nothing runs for an app with no player in it: schedule automations and compute
-ticks fire only while someone is connected, and missed runs are not made up.
-Timers fire late, not lost. Write scheduled logic to be correct whenever it
-next runs rather than assuming a cadence, and note that model expressions have
-no `now()` — real elapsed time needs a compute module or a server-validated
-client timestamp.
+Nothing runs for an app with no player in it: a hub's pending timer keeps it
+running only while someone is in the app (connected to an execution host, or
+in the world), and once nobody has been for a type's eviction window (five
+minutes by default) its hubs persist and stop. A repeating timer that came due
+while its hub was stopped fires once when the hub starts again; the world hub
+re-arms its pulse on every start instead, so it never makes one up. Write
+scheduled logic to be correct whenever it next runs rather than assuming a
+cadence; `ctx.now_ms()` is the wall clock.
 
 ## Where permissions come from
 
@@ -81,9 +87,12 @@ Setup adds the two `run_*` keys to the default tier.
 - Client workflow: <https://docs.crowdedkingdoms.com/overview/client-workflow>
 - Before you ship: <https://docs.crowdedkingdoms.com/overview/before-you-ship>
 - World Stores: <https://docs.crowdedkingdoms.com/crowdyjs/stores>
-- Game Kit: <https://docs.crowdedkingdoms.com/crowdyjs/game-kit>
-- Game models: <https://docs.crowdedkingdoms.com/game-api/game-models>
-- Autonomous processes: <https://docs.crowdedkingdoms.com/game-api/autonomous-processes>
+- ck-exec (dev-tier preview): <https://docs.crowdedkingdoms.com/exec/intro>,
+  [timers and presence](https://docs.crowdedkingdoms.com/exec/timers-and-presence),
+  [connect from a game](https://docs.crowdedkingdoms.com/exec/connect-from-a-game),
+  [builds](https://docs.crowdedkingdoms.com/exec/builds),
+  [mods](https://docs.crowdedkingdoms.com/exec/mods),
+  [operations](https://docs.crowdedkingdoms.com/exec/operations)
 - Grids and permissions: <https://docs.crowdedkingdoms.com/game-api/grids-and-permissions>
 - Player code: <https://docs.crowdedkingdoms.com/game-api/player-code>
 - Embed Crowdy Studio: <https://docs.crowdedkingdoms.com/crowdyjs/crowdy-studio-embed>

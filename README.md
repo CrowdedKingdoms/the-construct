@@ -5,7 +5,7 @@ with the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) SDK.
 
 The SDK gives you the platform. This repo gives you the rest of a game: an
 engine-agnostic platform layer, two renderers driven by the same session, a
-server-authoritative game model, an in-game Crowdy Studio IDE where players
+server-authoritative world hub on ck-exec, an in-game Crowdy Studio IDE where players
 write and run their own mods, hosted sign-in (your players sign in on Crowded
 Kingdoms and come back holding a token for your game -- your page never sees a
 password), and a one-command Setup that creates your org and app on Crowded
@@ -19,11 +19,11 @@ Clone it, run it, then replace the demo scenes with your game.
 | --- | --- | --- |
 | Holodeck | A three.js hub where players arrive, see each other, chat, and step on pads | `src/scenes/holodeck-three/` |
 | Paint | A pixi.js program: a shared canvas painted with persisted voxels | `src/scenes/program-pixi/` |
-| Platform layer | Hosted sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B) and voice (V), model, Studio — engine-agnostic | `packages/construct/src/platform/` |
+| Platform layer | Hosted sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B) and voice (V), the world hub connection, Studio — engine-agnostic | `packages/construct/src/platform/` |
 | Adapter boundary | The small `GameScene` contract both renderers implement | `packages/construct/src/engine/`, [docs/RENDERER-ADAPTER.md](docs/RENDERER-ADAPTER.md) |
-| Crowdy Studio | The in-game IDE: players claim a chunk, write SERVER + CLIENT Rust mods, and use the Ask/Build/Play agent | `packages/construct/src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
-| Game model | Kit blueprints (progression, leaderboards) + a hand-authored catalog, seeded idempotently | `model/blueprints.mjs` |
-| Setup | org → free app → access tier → redirect URIs → seed → Studio starter files, from a shell (`npm run setup`) | `packages/construct/src/platform/onboarding/`, `scripts/setup.mjs` |
+| Crowdy Studio | The in-game IDE: players claim a chunk, write SERVER mods (ck-exec) and CLIENT Rust mods, and use the Ask/Build/Play agent | `packages/construct/src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
+| World hub | A ck-exec hub in Rust: a minute pulse while players are in, the program catalog, the claim registry, each player's progression | `exec/`, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#the-world-hub) |
+| Setup | org → free app → access tier → redirect URIs → world hub → Studio starter files, from a shell (`npm run setup`) | `packages/construct/src/platform/onboarding/`, `scripts/setup.mjs` |
 | Security headers | COOP/COEP/CSP that make CLIENT mods possible, plus the Permissions-Policy the camera needs, wired into Vite and documented per host | `security-headers.mjs`, [docs/HOSTING.md](docs/HOSTING.md) |
 
 ## Ten minutes to a running game
@@ -48,11 +48,17 @@ npm install
    Nine idempotent steps run: organization, free app on shared hosting, a
    *Constructor* access tier with the Crowdy Studio code keys and
    `use_studio_agent`, the dev server registered as a **redirect URI**, an app
-   token, the self-claim grid policy, the game model, the Studio starter files,
-   and the Studio Agent **app** policy. Setup never writes operator platform
-   policy. If the platform catalog is unpublished the dock stays closed (an
-   operator publishes it; a third-party clone cannot). It prints an app id;
-   copy `.env.example` to `.env.local` and set `VITE_APP_ID` to it.
+   token, the self-claim grid policy, the **world hub** (the Rust crates under
+   `exec/`, built on the platform and deployed with ck-exec — no Rust toolchain
+   needed), the Studio starter files, and the Studio Agent **app** policy.
+   Setup never writes operator platform policy. If the platform catalog is
+   unpublished the dock stays closed (an operator publishes it; a third-party
+   clone cannot). It prints an app id; copy `.env.example` to `.env.local` and
+   set `VITE_APP_ID` to it.
+
+   ck-exec is a **dev-tier preview**, so the world hub deploys only where the
+   installed SDK is a `-dev.N` build (the `dev` branch); see
+   [ck-exec](https://docs.crowdedkingdoms.com/exec/intro).
 
    Why a shell and not the browser: creating an app needs your account's
    session, and a game on its own domain never holds one -- see step 2.
@@ -74,8 +80,8 @@ npm install
    that dock (Constructor tier; model usage is metered to your player wallet by
    default, or the app's org wallet — no provider key in this game). **Wallet**
    in the HUD opens Studio for that wallet and grid / player-compute billing.
-   Follow [docs/MODDING.md](docs/MODDING.md) to deploy a mod that runs in the
-   browser — yours and your visitors'.
+   Follow [docs/MODDING.md](docs/MODDING.md) to deploy a SERVER mod everyone on
+   your grid sees, and a CLIENT mod that runs in your browser.
 
 Everything but `VITE_APP_ID` is optional: the installed SDK build already knows
 the API origin for its tier. When you deploy somewhere other than
@@ -101,9 +107,11 @@ Put `VITE_DEV_PROXY=1`, `VITE_DEV_ALLOWED_HOSTS=1`, and/or
 | `npm test` | Unit tests (vitest) + CSP builder tests (`node --test`) |
 | `npm run test:e2e` | Playwright: boots cross-origin isolated and shows hosted sign-in; with `CONSTRUCT_E2E=1` and credentials, completes Studio login / consent and opens Studio. Node token-seed is `CONSTRUCT_E2E_SEED_TOKEN=1` + `CROWDY_HTTP_URL` only |
 | `npm run lint` / `npm run typecheck` / `npm run format:check` | Quality gates CI runs |
-| `npm run setup -- --org "…" --app "…" [--origin https://…]` | Setup: org, app, tier, redirect URIs, seed; needs `CONSTRUCT_EMAIL` / `CONSTRUCT_PASSWORD` |
-| `npm run seed` | Re-deploy the model + Studio starter files to `APP_ID` after editing `model/` or `mods/` |
-| `npm run smoke` | Verify an app has everything Setup should have produced |
+| `npm run setup -- --org "…" --app "…" [--origin https://…]` | Setup: org, app, tier, redirect URIs, world hub, starter files; needs `CONSTRUCT_EMAIL` / `CONSTRUCT_PASSWORD` |
+| `npm run deploy:exec [-- --restart]` | Build `exec/` on the platform and deploy it to `APP_ID`; `--restart` moves the running world hub to the new version |
+| `npm run seed` | Re-deploy the world hub + Studio starter files to `APP_ID` after editing `exec/`, `model/` or `mods/` |
+| `npm run build:exec-sources` | Regenerate the hub's program catalog and the SERVER starter strings from `model/catalog.mjs` and `exec/mods/` (the unit tests fail while they are stale) |
+| `npm run smoke` | Verify an app has everything Setup should have produced, the world hub included |
 | `npm run publish [-- --slug my-game] [--no-build] [--dir dist]` | Publish the build to Crowdy Games: claim the slug, build, upload; prints the play URL. Needs `CONSTRUCT_EMAIL` / `CONSTRUCT_PASSWORD` and `VITE_APP_ID` |
 | `npm run check:pin` | The CrowdyJS pin is exact and matches the branch tier |
 
@@ -133,6 +141,7 @@ flowchart LR
   Model --> Net
   Onb --> Net
   Net -->|GraphQL + realtime| CK[Crowded Kingdoms]
+  Net -->|ck-exec connection| Hub[world hub, exec/]
 ```
 
 - Two tokens, one endpoint: an identity session for account and admin work,
@@ -142,15 +151,18 @@ flowchart LR
   the replication store, which sends at 5 Hz on change. Scenes render other
   players from `session.players()`. That is the whole adapter boundary.
 - The browser presents intent and renders results. Inventories, scores,
-  grids, and who may run code are decided server-side by the game model and
+  grids, and who may run code are decided server-side by the world hub and
   the platform. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- The world hub (`exec/construct`, a ck-exec hub in Rust) is the game's own
+  server code. `ModelService` and `GridService` call it over one exec
+  connection per page; `npm run deploy:exec` ships a change.
 
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layers, authority, the boot sequence, what is generic and what is demo
 - [docs/RENDERER-ADAPTER.md](docs/RENDERER-ADAPTER.md) — replacing a scene or the whole renderer
 - [docs/PLATFORM-MAP.md](docs/PLATFORM-MAP.md) — game concept → platform surface, with links to the public docs
-- [docs/MODDING.md](docs/MODDING.md) — Crowdy Studio: permissions, the CLIENT mod sandbox, templates, visitors, security posture
+- [docs/MODDING.md](docs/MODDING.md) — Crowdy Studio: permissions, SERVER mods on ck-exec, the CLIENT mod sandbox, templates, visitors, security posture
 - [docs/NEW-GAME-CHECKLIST.md](docs/NEW-GAME-CHECKLIST.md) — turning this into your game
 - [docs/HOSTING.md](docs/HOSTING.md) — static hosting with the headers CLIENT mods require
 - [CHANGELOG.md](CHANGELOG.md)
@@ -160,8 +172,8 @@ flowchart LR
 A new organization gets free apps on shared hosting (three by default) with
 monthly allowances per app (egress, ingress, compute hours, storage). Nothing
 here asks for a card. Sustained usage above the allowances bills the org
-wallet; a player's mods have a free monthly compute trial before their own
-wallet is involved. Crowdy Agent tokens are **platform-funded** on Crowded
+wallet; a player's SERVER mods run on ck-exec, whose mod usage is recorded but
+not billed during the preview. Crowdy Agent tokens are **platform-funded** on Crowded
 Kingdoms (this game never asks for an OpenRouter key). The HUD Wallet link is
 for the player's grid / compute wallet, not the agent. Current figures:
 [Shared environment](https://docs.crowdedkingdoms.com/management-api/shared-environment)
