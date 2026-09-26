@@ -42,6 +42,9 @@ jobs:
       # No VITE_APP_ID: the build must succeed for a clone with no env file at
       # all, because that is what a third party gets.
       - run: npm run build
+      # The built grid program page must still load the sandbox (construct 0.2.0 shipped it
+      # empty: the package's sideEffects let the bundler drop the boot).
+      - run: npm run check:grid-program
 
   browser:
     name: Browser smoke (isolation headers, sign-in screen)
