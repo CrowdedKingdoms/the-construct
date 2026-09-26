@@ -31,9 +31,10 @@ ck-exec is a dev-tier preview; so is running the SERVER target on it
    *Create project*. The server module name it proposes (`<name>-server`) is
    the mod's name: 1–48 lowercase letters, digits, `-` or `_`.
 3. In **Files → Common files**, add *Spinning child entrypoint* and *Spinning
-   child Cargo.toml* over the blank project's two SERVER files. The blank
-   project is a compute-SDK crate, which does not build as a mod; every SERVER
-   starter's Cargo.toml is a `ckx-sdk` crate (the platform supplies `ckx-sdk`).
+   child Cargo.toml* over the new project's two SERVER files. Those files are
+   already a mod, the platform's mod starter (CrowdyJS 17.13), and build as
+   they are; the Spinning child swaps in the demo. Every SERVER starter's
+   Cargo.toml is a `ckx-sdk` crate (the platform supplies `ckx-sdk`).
 4. **Test draft** or **Run ▾ → Deploy live.** The Studio builds the crate on
    the platform (`modBuild`, the console shows the compiler), deploys it to
    your grid (`modDeploy`) and switches it on (`modSetEnabled`).
@@ -160,8 +161,10 @@ What the port could not keep, and why:
 - **Players call a mod; a CLIENT mod cannot.** The legacy beacon answered an
   invoke a CLIENT companion could route; there is no host call that reaches a
   mod, so `present` is for players (or the game) with an exec connection.
-- **The blank SERVER project is not a mod.** Replace its Cargo.toml and
-  src/lib.rs with a starter's.
+- **A SERVER project created before CrowdyJS 17.13 is not a mod.** Its crate
+  is the legacy compute SDK's, which a mod build refuses; replace its
+  Cargo.toml and src/lib.rs with a starter's. Projects created since start
+  from the platform's mod starter.
 
 ## Security posture
 
