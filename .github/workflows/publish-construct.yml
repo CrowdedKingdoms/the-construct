@@ -1,0 +1,201 @@
+name: Publish @crowdedkingdoms/construct
+
+run-name: publish ${{ github.ref_name }}
+
+# The framework package in packages/construct is released by PACKAGE tags, apart from the
+# repository's own `<tier>/vX.Y.Z` tags (which version the-construct as a whole):
+#
+#   construct/dev/v0.2.0  -> 0.2.0-dev.N   @dev
+#   construct/test/v0.2.0 -> 0.2.0-test.N  @test
+#   construct/prod/v0.2.0 -> 0.2.0         @latest
+#
+# CrowdyJS's rules (.github/workflows/publish.yml there): the tagged commit must be contained
+# in the tier's branch, the tag's version must equal packages/construct/package.json, N is the
+# next free ordinal read from the registry, and what the dist-tag serves is read back after
+# publishing. npm Trusted Publishing (OIDC): no token is stored anywhere, and npm trusts this
+# workflow file by name, so renaming it breaks publishing until npm is told.
+on:
+  push:
+    tags:
+      - 'construct/dev/v*.*.*'
+      - 'construct/test/v*.*.*'
+      - 'construct/prod/v*.*.*'
+  workflow_dispatch:
+
+# Least privilege by default; only the publish job asks for the OIDC token.
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-construct-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tier: ${{ steps.gate.outputs.tier }}
+      version: ${{ steps.gate.outputs.version }}
+    steps:
+      # The gate fetches the tier branch and checks containment, so it needs the history.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: gate
+        run: scripts/ci/resolve-construct-release.sh
+
+  publish:
+    needs: guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm Trusted Publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted Publishing needs npm >= 11.5.1.
+      - run: npm install -g npm@latest
+
+      - name: Read the package and check it against the tag
+        id: pkg
+        working-directory: packages/construct
+        env:
+          TAG_VERSION: ${{ needs.guard.outputs.version }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          name=$(node -p "require('./package.json').name")
+          tagged=${TAG_VERSION#v}
+          if [ "$version" != "$tagged" ]; then
+            echo "::error::tag '$TAG_NAME' names version $tagged but packages/construct/package.json says $version. Bump it (npm version --no-git-tag-version $tagged in packages/construct), merge, and re-tag that commit."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      # An unreachable registry is not an empty one: only E404 means "never published".
+      - name: Read published versions from the registry
+        env:
+          NAME: ${{ steps.pkg.outputs.name }}
+        run: |
+          set -euo pipefail
+          if raw=$(npm view "$NAME" versions --json 2>"$RUNNER_TEMP/npm-view.err"); then
+            :
+          elif grep -qE 'E404|is not in this registry' "$RUNNER_TEMP/npm-view.err"; then
+            echo "::notice::$NAME has never been published; starting the series."
+            raw='[]'
+          else
+            cat "$RUNNER_TEMP/npm-view.err" >&2
+            echo "::error::could not read $NAME from the npm registry; refusing to guess the next version."
+            exit 1
+          fi
+          printf '%s' "$raw" > "$RUNNER_TEMP/registry-versions.json"
+
+      - name: Resolve the version and dist-tag
+        id: resolve
+        env:
+          TIER: ${{ needs.guard.outputs.tier }}
+          TAG_VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/resolve-npm-publish-version.mjs "$TIER" "$TAG_VERSION" \
+            < "$RUNNER_TEMP/registry-versions.json"
+
+      # Only a prod re-run can find its version taken; dev and test pick the next ordinal.
+      - name: Check whether that version is already published
+        id: check
+        env:
+          PUBLISH_VERSION: ${{ steps.resolve.outputs.publish_version }}
+        run: |
+          set -euo pipefail
+          if node -e '
+            const raw = require("fs").readFileSync(process.argv[1], "utf8").trim() || "[]";
+            const parsed = JSON.parse(raw);
+            const versions = Array.isArray(parsed) ? parsed : [parsed];
+            process.exit(versions.includes(process.argv[2]) ? 0 : 1);
+          ' "$RUNNER_TEMP/registry-versions.json" "$PUBLISH_VERSION"; then
+            echo "::notice::$PUBLISH_VERSION is already on npm. Skipping publish."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set the publish version
+        if: steps.check.outputs.should_publish == 'true'
+        working-directory: packages/construct
+        env:
+          PUBLISH_VERSION: ${{ steps.resolve.outputs.publish_version }}
+        run: npm version "$PUBLISH_VERSION" --no-git-tag-version --allow-same-version --workspaces-update=false
+
+      - name: Nothing in the tarball names a private repository
+        if: steps.check.outputs.should_publish == 'true'
+        run: node scripts/ci/check-package-content.mjs packages/construct
+
+      - name: Publish to npm
+        if: steps.check.outputs.should_publish == 'true'
+        working-directory: packages/construct
+        env:
+          DIST_TAG: ${{ steps.resolve.outputs.dist_tag }}
+        run: npm publish --provenance --access public --tag "$DIST_TAG"
+
+      # Ask the registry what the dist-tag now serves, by what `npm pack` fetches: the CDN
+      # edge can lag `npm view` by minutes (CrowdyJS measured seven and a half).
+      - name: What the dist-tag serves is what this run published
+        if: steps.check.outputs.should_publish == 'true'
+        env:
+          NAME: ${{ steps.pkg.outputs.name }}
+          DIST_TAG: ${{ steps.resolve.outputs.dist_tag }}
+          PUBLISH_VERSION: ${{ steps.resolve.outputs.publish_version }}
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          packed=""
+          for attempt in $(seq 1 30); do
+            rm -rf "$work"/*.tgz "$work/package"
+            served=$(npm view "$NAME@$DIST_TAG" version 2>/dev/null || true)
+            if [ "$served" = "$PUBLISH_VERSION" ] && (cd "$work" && npm pack "$NAME@$DIST_TAG" >/dev/null 2>&1); then
+              t=$(find "$work" -name '*.tgz' -print -quit)
+              [ -n "$t" ] && tar -xzf "$t" -C "$work" && packed=$(node -p "require('$work/package/package.json').version")
+              [ "$packed" = "$PUBLISH_VERSION" ] && break
+            fi
+            echo "  '$DIST_TAG' serves '${served:-nothing}' (packed '${packed:-nothing}'), not $PUBLISH_VERSION yet (attempt $attempt)"
+            sleep 15
+          done
+          if [ "$packed" != "$PUBLISH_VERSION" ]; then
+            echo "::error::published $PUBLISH_VERSION but '$DIST_TAG' does not serve it; an unverified publish is not a verified one."
+            exit 1
+          fi
+          echo "  $NAME@$DIST_TAG -> $packed"
+
+      - name: Summary
+        if: always()
+        env:
+          NAME: ${{ steps.pkg.outputs.name }}
+          TAG_NAME: ${{ github.ref_name }}
+          TIER: ${{ needs.guard.outputs.tier }}
+          PUBLISH_VERSION: ${{ steps.resolve.outputs.publish_version }}
+          DIST_TAG: ${{ steps.resolve.outputs.dist_tag }}
+          PUBLISHED: ${{ steps.check.outputs.should_publish }}
+        run: |
+          {
+            echo "### $TAG_NAME"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| tier | \`${TIER:-unresolved}\` |"
+            echo "| npm version | \`${PUBLISH_VERSION:-unresolved}\` |"
+            echo "| dist-tag | \`${DIST_TAG:-unresolved}\` |"
+            echo "| action | $([ "${PUBLISHED:-}" = 'true' ] && echo 'published' || echo 'no-op (already on the registry)') |"
+            echo
+            echo "\`npm install ${NAME:-@crowdedkingdoms/construct}@${DIST_TAG:-dev}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

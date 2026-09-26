@@ -36,6 +36,9 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:unit
       - run: npm run test:headers
+      # The package's release gate and content check (publish-construct.yml), proven on
+      # every PR instead of first running at a release tag.
+      - run: npm run test:release
       # No VITE_APP_ID: the build must succeed for a clone with no env file at
       # all, because that is what a third party gets.
       - run: npm run build

@@ -19,6 +19,19 @@ It ships **TypeScript source** for Vite (it uses `?worker&url` and
 for `ModelService`, `GridService` and the Studio's SERVER target on ck-exec)
 and, for the Studio agent pane, `@crowdedkingdoms/crowdy-dsh` 0.4+.
 
+## Installing it
+
+Releases are on npm under one dist-tag per tier, and a game pins the exact
+version of its own tier, as it pins CrowdyJS:
+
+```bash
+npm install --save-exact @crowdedkingdoms/construct@dev   # a 0.2.0-dev.N build
+```
+
+`dev` is `X.Y.Z-dev.N`, `test` is `X.Y.Z-test.N`, and `prod` is `X.Y.Z` on
+`latest`. Each is published by the-construct's `publish-construct.yml` from a
+`construct/<tier>/vX.Y.Z` tag on a commit already in that tier's branch.
+
 ## Using it in a game
 
 `ModelService` and `GridService` call a world hub on ck-exec with the endpoints

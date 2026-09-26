@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+`@crowdedkingdoms/construct` 0.2.0 goes to npm. It was only ever on a local
+registry, so no game built in CI could install it.
+
+- `publish-construct.yml` publishes `packages/construct` from
+  `construct/<tier>/vX.Y.Z` tags (`0.2.0-dev.N` on `dev`, `-test.N` on `test`,
+  `0.2.0` on `latest`) with npm Trusted Publishing. It follows CrowdyJS's
+  rules: the tagged commit must be in the tier's branch, the tag must match
+  `package.json`, the next ordinal comes from the registry, and the dist-tag is
+  read back after the publish.
+- `scripts/ci/check-package-content.mjs` refuses a tarball that names a
+  private repository or internal infrastructure (CrowdyJS's denylist, over
+  the files `npm pack` would ship). `npm run test:release` runs it with the
+  gate's own test, and CI runs both on every PR.
+
 The game's server moves off the Game Model and automations onto ck-exec (a
 dev-tier preview), and Crowdy Studio's SERVER target runs as a ck-exec mod.
 CrowdyJS `17.12.0-dev.1`; the `@crowdedkingdoms/construct` peer range admits

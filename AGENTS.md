@@ -48,6 +48,18 @@ tier's registry artifact, runs `check:pin` and opens the PR.
 naming the same `X.Y.Z`, so a repin to a new minor adds its line there first,
 or `npm install` refuses the root pin with `ERESOLVE`.
 
+**The framework package is published to npm by its own tags.**
+`publish-construct.yml` releases `packages/construct` from
+`construct/<tier>/vX.Y.Z` (dev `X.Y.Z-dev.N`, test `X.Y.Z-test.N`, prod `X.Y.Z`
+on `latest`), apart from this repo's `<tier>/vX.Y.Z` tags, which version the
+starter. Bump `packages/construct/package.json`, the root pin and the lockfile's
+`packages/construct` entry together, merge to the tier's branch, then tag that
+commit: the gate (`scripts/ci/resolve-construct-release.sh`) refuses a tag whose
+commit isn't in the branch, and the job refuses a tag that disagrees with
+`package.json`. It publishes with npm Trusted Publishing, which trusts this
+workflow by file name, so renaming it needs the package's npm settings changed
+too. `npm run test:release` runs the gate's test and the tarball content check.
+
 There is no deploy workflow in this repo, deliberately. Hosting is the
 developer's -- and since 0.8.0 one of the developer's options is
 `npm run publish` (`scripts/publish.mjs`), which publishes `dist/` to Crowdy
