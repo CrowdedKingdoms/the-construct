@@ -18,6 +18,9 @@ export interface WorldHubAddress {
 
 let address: WorldHubAddress = { nodeType: 'world', key: 'main' };
 
+/** After a failed connect, calls fail with its error for this long instead of dialling again. */
+const REDIAL_AFTER_MS = 15_000;
+
 /** Call once at boot, before the session starts. */
 export function configureWorldHub(next: Partial<WorldHubAddress>): void {
   address = { ...address, ...next };
@@ -29,6 +32,7 @@ export function worldHubAddress(): WorldHubAddress {
 
 export class WorldHub {
   private connection: Promise<ExecConnection> | null = null;
+  private failure: { at: number; error: unknown } | null = null;
   private closed = false;
 
   constructor(
@@ -57,12 +61,24 @@ export class WorldHub {
     );
   }
 
+  /**
+   * The HUD and the Studio poll on timers, so a hub that is not there (not deployed, or a tier
+   * without ck-exec) is not asked for again on every poll.
+   */
   private connect(): Promise<ExecConnection> {
     if (this.closed) return Promise.reject(new Error('The world hub connection is closed'));
+    if (!this.connection && this.failure && Date.now() - this.failure.at < REDIAL_AFTER_MS) {
+      return Promise.reject(this.failure.error);
+    }
     this.connection ??= this.client.exec
       .connect(this.appId, { nodeType: address.nodeType, key: address.key })
+      .then((connection) => {
+        this.failure = null;
+        return connection;
+      })
       .catch((error: unknown) => {
         this.connection = null;
+        this.failure = { at: Date.now(), error };
         throw error;
       });
     return this.connection;

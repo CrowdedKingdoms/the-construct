@@ -27,16 +27,24 @@ describe('WorldHub', () => {
     expect(connection.call).toHaveBeenCalledWith('world', 'main', 'claims', { mine: true });
   });
 
-  it('dials again after a failed connect, and never after close', async () => {
-    const { client, exec, connection } = fakeClient(['fail', 'ok']);
-    const hub = new WorldHub(client, '77');
-    await expect(hub.call('world')).rejects.toThrow(/no host/);
-    await hub.call('world');
-    expect(exec.connect).toHaveBeenCalledTimes(2);
-    hub.close();
-    await Promise.resolve();
-    expect(connection.close).toHaveBeenCalledTimes(1);
-    await expect(hub.call('world')).rejects.toThrow(/closed/);
+  it('waits before dialling again after a failed connect, and never dials after close', async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, exec, connection } = fakeClient(['fail', 'ok']);
+      const hub = new WorldHub(client, '77');
+      await expect(hub.call('world')).rejects.toThrow(/no host/);
+      await expect(hub.call('world')).rejects.toThrow(/no host/);
+      expect(exec.connect).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(15_000);
+      await hub.call('world');
+      expect(exec.connect).toHaveBeenCalledTimes(2);
+      hub.close();
+      await Promise.resolve();
+      expect(connection.close).toHaveBeenCalledTimes(1);
+      await expect(hub.call('world')).rejects.toThrow(/closed/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('calls the hub a game names at boot', async () => {

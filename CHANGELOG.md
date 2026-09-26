@@ -19,7 +19,9 @@ the 17.12 prerelease line.
 - `ModelService` and `GridService` call the hub over one exec connection per
   page (`NetworkManager.worldHub`); their public methods are unchanged. The
   framework's `configureGameModel` is gone; `configureWorldHub` names a
-  game's own hub.
+  game's own hub. Claims kept in the old `Claim` containers are not copied: an
+  owner's browser records its grids in the hub on its next visit there, and
+  until then visitors see those chunks as open world.
 - Setup, `npm run seed` and the new `npm run deploy:exec [-- --restart]`
   build `exec/` on the platform and deploy it (`deployExec` in `steps.mjs`,
   on the app's own datacenter with the developer's session). The

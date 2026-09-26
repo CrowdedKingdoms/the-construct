@@ -99,7 +99,8 @@ at once after a claim or progression change.
 The browser reaches it through `NetworkManager.worldHub`: one exec connection
 per page (`client.exec.connect(appId, { nodeType: 'world', key: 'main' })`,
 the app token as the session), opened by the first call and closed with the
-game client. `ModelService` (`world`, `programs`, `progress`) and
+game client; after a failed connect, calls fail fast for 15 seconds instead of
+dialling again. `ModelService` (`world`, `programs`, `progress`) and
 `GridService` (the claim registry) call it and cache reads for 15 and 10
 seconds, because the HUD and the Studio poll. A game built on the framework
 names its own hub with `configureWorldHub({ nodeType, key })`.
