@@ -15,6 +15,9 @@ registry, so no game built in CI could install it.
   private repository or internal infrastructure (CrowdyJS's denylist, over
   the files `npm pack` would ship). `npm run test:release` runs it with the
   gate's own test, and CI runs both on every PR.
+- The first publish failed before uploading anything: npm 12 prints
+  `npm pack --json` as an object keyed by package name, not an array. The check
+  reads both shapes, and the publish job pins npm 11.
 
 The game's server moves off the Game Model and automations onto ck-exec (a
 dev-tier preview), and Crowdy Studio's SERVER target runs as a ck-exec mod.
