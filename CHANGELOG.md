@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+CrowdyJS `17.13.0-dev.1` and crowdy-dsh `0.4.1-dev.1`. The
+`@crowdedkingdoms/construct` peer ranges gain the 17.13 and 0.4.1 prerelease
+lines; npm refused both root pins against the 17.12 and 0.4.0 comparators,
+the optional crowdy-dsh peer included. 17.13 is additive here (ck-exec
+endpoint stats, log flows, version manifests, `CrowdyExecError.rateLimited`),
+and a new Studio project's SERVER target now starts from the platform's mod
+starter, so it builds as a mod without importing a starter first
+(docs/MODDING.md).
+
 `@crowdedkingdoms/construct` 0.2.1: JS grid programs start again in built games.
 The package declared `"sideEffects": false`, so bundlers dropped
 `sandbox/boot`, which is imported only for what it does on load, and a built

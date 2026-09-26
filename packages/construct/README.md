@@ -17,7 +17,12 @@ and the games built on it share.
 It ships **TypeScript source** for Vite (it uses `?worker&url` and
 `import.meta.env`). Peer dependencies: `@crowdedkingdoms/crowdyjs` 17.7+ (17.12
 for `ModelService`, `GridService` and the Studio's SERVER target on ck-exec)
-and, for the Studio agent pane, `@crowdedkingdoms/crowdy-dsh` 0.4+.
+and, for the Studio agent pane, `@crowdedkingdoms/crowdy-dsh` 0.4+. On a
+prerelease tier the ranges name each `X.Y.Z` line they admit, because npm
+matches a prerelease only against a comparator on the same `X.Y.Z`. A game can
+take a new CrowdyJS line only once a construct release names it (until then
+`npm install` refuses the pin with `ERESOLVE`); npm lets an unnamed crowdy-dsh
+line through with a warning, but keep that pin on a named line too.
 
 ## Installing it
 
@@ -25,7 +30,7 @@ Releases are on npm under one dist-tag per tier, and a game pins the exact
 version of its own tier, as it pins CrowdyJS:
 
 ```bash
-npm install --save-exact @crowdedkingdoms/construct@dev   # a 0.2.0-dev.N build
+npm install --save-exact @crowdedkingdoms/construct@dev   # an X.Y.Z-dev.N build
 ```
 
 `dev` is `X.Y.Z-dev.N`, `test` is `X.Y.Z-test.N`, and `prod` is `X.Y.Z` on

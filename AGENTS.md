@@ -46,7 +46,12 @@ tier's registry artifact, runs `check:pin` and opens the PR.
 `packages/construct` peers on the SDK with one comparator per minor line
 (`>=17.9.0-dev.0 <18`, …): npm admits a prerelease only against a comparator
 naming the same `X.Y.Z`, so a repin to a new minor adds its line there first,
-or `npm install` refuses the root pin with `ERESOLVE`.
+or `npm install` refuses the root pin with `ERESOLVE`. The optional crowdy-dsh
+peer is checked the same way here (a workspace's peers are strict), so a new
+crowdy-dsh `X.Y.Z` needs its line too. A game that installs the **published**
+package gets the range that release was cut with: npm refuses a CrowdyJS line
+it does not name (`ERESOLVE`) and only warns about an unnamed crowdy-dsh line,
+so a new line in either needs a construct release before a game takes it.
 
 **The framework package is published to npm by its own tags.**
 `publish-construct.yml` releases `packages/construct` from
@@ -156,10 +161,13 @@ reserved for that org) through the same command a third party runs.
   write-back (`markDirty` → `chunks.update`).
 - pixi.js v8 needs `import 'pixi.js/unsafe-eval'` under a CSP without
   `unsafe-eval`.
-- The Studio's blank project declares only `crowdy-compute-sdk` (CrowdyJS
-  17.12.0, for both targets); CLIENT templates that build JSON ship a companion
-  `Cargo.toml` with `serde_json`. A blank SERVER project does not build as a
-  mod: players import a SERVER starter's `Cargo.toml` and `src/lib.rs`.
+- A new Studio project's SERVER target is the platform's mod starter
+  (CrowdyJS 17.13: `execModStarter`, a `ckx-sdk` crate with its package named
+  for the project), so it builds as a mod as created. Its CLIENT target still
+  declares only `crowdy-compute-sdk`; CLIENT templates that build JSON ship a
+  companion `Cargo.toml` with `serde_json`. A SERVER project created before
+  17.13 keeps its compute-SDK crate, which a mod build refuses: players import a
+  SERVER starter's `Cargo.toml` and `src/lib.rs` over it.
 
 ## ck-exec facts this code depends on (2026-09-26, local cluster and ck-api source)
 
