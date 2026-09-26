@@ -188,13 +188,15 @@ export class Hud implements SceneHud {
       ]),
     );
     const worldRows: Node[] = [];
-    if (!model) worldRows.push(el('div', { class: 'muted', text: 'reading the game model…' }));
+    if (!model) worldRows.push(el('div', { class: 'muted', text: 'reading the world hub…' }));
     else {
       if (model.pulses !== undefined)
         worldRows.push(el('div', { text: `world pulses ${model.pulses}` }));
       if (model.level !== undefined) worldRows.push(el('div', { text: `level ${model.level}` }));
       if (worldRows.length === 0)
-        worldRows.push(el('div', { class: 'muted', text: 'model not seeded — run npm run setup' }));
+        worldRows.push(
+          el('div', { class: 'muted', text: 'world hub not deployed — run npm run setup' }),
+        );
     }
     this.world.replaceChildren(...worldRows);
   }

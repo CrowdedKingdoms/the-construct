@@ -1,6 +1,9 @@
 /**
  * Crowdy Studio, embedded — the in-game IDE where players write SERVER and
- * CLIENT Rust mods for the grid they stand on.
+ * CLIENT Rust mods for the grid they stand on. A project's SERVER target is a
+ * ck-exec mod (`serverEngine: 'ck-exec'`): a `ckx-sdk` crate the platform
+ * builds, deploys to the grid and switches on, which players in the grid call
+ * as `mod:<name>`. The CLIENT target runs in the browser sandbox as before.
  *
  * The SDK's embed kit owns the chrome (dock, fullscreen fallback, Context
  * drawer, focus trap, HUD sink). This service supplies what only the game
@@ -186,8 +189,13 @@ export class StudioService {
         get crowdyStudio() {
           return network().game.crowdyStudio;
         },
+        // Still the CLIENT target's compile and artifact service.
         get playerCompute() {
           return network().game.playerCompute;
+        },
+        // The SERVER target's mod builds, deploys and switch (`serverEngine` below).
+        get exec() {
+          return network().game.exec;
         },
         get playerWallet() {
           return network().game.playerWallet;
@@ -205,6 +213,9 @@ export class StudioService {
       },
       appId: () => this.session.appId,
       gameName: GAME_NAME,
+      // A mod has no CLIENT pairing, so ck-api attaches no CLIENT half of such a project for
+      // visitors (docs/MODDING.md); the author still runs it in their own tab.
+      serverEngine: 'ck-exec',
       closeKeyCode: 'KeyM',
       dsh: {
         graphql: network().game.graphql,

@@ -6,7 +6,7 @@
  * Environment (a `.env.local` is read if present; real env wins):
  *   CONSTRUCT_EMAIL / CONSTRUCT_PASSWORD  the developer account (required)
  *   CROWDY_HTTP_URL                        API root override (optional)
- *   APP_ID                                 for seed/smoke (or VITE_APP_ID)
+ *   APP_ID                                 for seed/smoke/deploy:exec (or VITE_APP_ID)
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -83,6 +83,20 @@ export async function enterApp(identity, appId, log = console.log) {
   game.setToken(minted.token);
   log(`Entered app ${appId}${httpUrl ? ` via ${httpUrl}` : ''}`);
   return game;
+}
+
+/**
+ * A client on the app's own datacenter holding the developer's session: what ck-exec builds,
+ * deploys and operator reads need (the org's `manage_compute` / `view_compute_diagnostics`,
+ * and that datacenter's execution manager rather than another's).
+ */
+export async function developerOnApp(identity, appId, log = console.log) {
+  const minted = await identity.portal.mintAppToken(appId);
+  const httpUrl = minted.gameApiUrl ?? apiRoot();
+  const client = createCrowdyClient(httpUrl ? { httpUrl } : {});
+  client.setToken(identity.getToken());
+  log(`ck-exec for app ${appId}${httpUrl ? ` via ${httpUrl}` : ''}`);
+  return client;
 }
 
 export function messageOf(error) {

@@ -3,11 +3,12 @@
  *
  * `programId` is the byte broadcast in every pose (0 is the holodeck itself),
  * `sceneId` is what the router loads, and `pad` is where the pad stands in
- * the holodeck. The seed publishes the same list into a `Program` container on
- * the game model so server-side logic (automations, leaderboards) can refer to
- * programs by id; the client keeps this copy so it can render pads before the
- * model has been read.
+ * the holodeck. Everything but the pad and its colour comes from
+ * PROGRAM_CATALOG in `model/catalog.mjs`, the list the world hub serves too
+ * (`npm run build:exec-sources` compiles it into the hub).
  */
+import { PROGRAM_CATALOG } from '../../model/catalog.mjs';
+
 export interface ProgramDefinition {
   programId: number;
   sceneId: string;
@@ -18,16 +19,16 @@ export interface ProgramDefinition {
   color: number;
 }
 
-export const PROGRAMS: readonly ProgramDefinition[] = [
-  {
-    programId: 1,
-    sceneId: 'paint',
-    name: 'Paint',
-    description: 'A shared 2D canvas. Click to paint voxels everyone sees, live and persisted.',
-    pad: { x: 10, z: -6 },
-    color: 0xff7ac8,
-  },
-];
+/** Where each program's pad stands, and its colour, by scene. */
+const PADS: Record<string, Pick<ProgramDefinition, 'pad' | 'color'>> = {
+  paint: { pad: { x: 10, z: -6 }, color: 0xff7ac8 },
+};
+
+export const PROGRAMS: readonly ProgramDefinition[] = PROGRAM_CATALOG.map((program) => {
+  const pad = PADS[program.sceneId];
+  if (!pad) throw new Error(`No pad for program "${program.sceneId}" in src/game/programs.ts`);
+  return { ...program, ...pad };
+});
 
 export const HOLODECK_SCENE_ID = 'holodeck';
 

@@ -42,12 +42,6 @@ import { ChatPanel } from '@/ui/ChatPanel';
 import { Hud } from '@/ui/Hud';
 import { showSignIn } from '@/ui/LoginForm';
 import { showNoApp } from '@/ui/NoAppCard';
-import { configureGameModel } from '@crowdedkingdoms/construct/platform/model/gameModelConfig';
-
-import { MODEL_NAMES, kitOptions } from '../model/blueprints.mjs';
-
-// The framework reads the model back by name; the names live with the blueprints.
-configureGameModel({ names: MODEL_NAMES, kitOptions: kitOptions() });
 
 const gameRoot = document.getElementById('game-root');
 const uiRoot = document.getElementById('ui-root');

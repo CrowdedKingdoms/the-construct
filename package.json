@@ -2,7 +2,7 @@
   "name": "the-construct",
   "version": "0.8.4",
   "private": true,
-  "description": "Starter repo for browser games on Crowded Kingdoms: engine-agnostic platform layer, three.js holodeck hub, pixi.js program scene, Crowdy Studio with client mods and the Ask/Build/Play agent, and in-app onboarding.",
+  "description": "Starter repo for browser games on Crowded Kingdoms: engine-agnostic platform layer, three.js holodeck hub, pixi.js program scene, a ck-exec world hub, Crowdy Studio with server and client mods and the Ask/Build/Play agent, and shell onboarding.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -26,7 +26,9 @@
     "check:pin": "node scripts/ci/check-sdk-pin.mjs",
     "setup": "node scripts/setup.mjs",
     "seed": "node scripts/seed.mjs",
-    "smoke": "node scripts/smoke.mjs",
+    "deploy:exec": "node scripts/deploy-exec.mjs",
+    "build:exec-sources": "node scripts/build-exec-sources.mjs",
+    "smoke": "node --experimental-websocket scripts/smoke.mjs",
     "publish": "node scripts/publish.mjs"
   },
   "dependencies": {
