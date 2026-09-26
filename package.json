@@ -19,9 +19,10 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "npm run test:unit && npm run test:headers",
+    "test": "npm run test:unit && npm run test:headers && npm run test:release",
     "test:unit": "vitest run",
     "test:headers": "node --test security-headers.test.mjs scripts/lib/dev-server-options.test.mjs",
+    "test:release": "bash scripts/ci/resolve-construct-release.test.sh && node scripts/ci/check-package-content.mjs packages/construct",
     "test:e2e": "playwright test",
     "check:pin": "node scripts/ci/check-sdk-pin.mjs",
     "setup": "node scripts/setup.mjs",
@@ -32,7 +33,7 @@
     "publish": "node scripts/publish.mjs"
   },
   "dependencies": {
-    "@crowdedkingdoms/construct": "0.1.0",
+    "@crowdedkingdoms/construct": "0.2.0",
     "@crowdedkingdoms/crowdyjs": "17.12.0-dev.1",
     "pixi.js": "^8.20.1",
     "three": "^0.185.1"

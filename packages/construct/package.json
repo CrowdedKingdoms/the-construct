@@ -1,6 +1,6 @@
 {
   "name": "@crowdedkingdoms/construct",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The Construct framework: the Crowded Kingdoms game platform layer (hosted sign-in, World Stores, voice/webcam/chat, Crowdy Studio dock, app and grid mods, grid programs) and engine loop, shared by the-construct starter and the games built on it. Ships TypeScript source for Vite.",
   "license": "MIT",
   "type": "module",
