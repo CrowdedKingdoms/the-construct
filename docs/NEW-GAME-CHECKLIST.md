@@ -52,7 +52,7 @@ A checklist, in the order that keeps everything working at every step.
 - [ ] Constructor tier keys: who gets to write code.
 - [ ] Grid claim policy: `SELF_CLAIM` (anyone claims free chunks), `APPROVAL`,
       `INVITE`, or `MARKETPLACE_ONLY`.
-- [ ] Which host calls your CLIENT mods may make (`clientModHost.ts`).
+- [ ] Which host calls CLIENT halves may make in your game (`clientModHost.ts`).
 
 ## 6. Studio and mods
 

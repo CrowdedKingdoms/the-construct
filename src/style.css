@@ -393,6 +393,41 @@ label {
   flex: none;
 }
 
+/* Whether to run a grid's CLIENT halves: asked in the HUD, the game keeps running. */
+.questions {
+  position: absolute;
+  left: 50%;
+  top: 96px;
+  transform: translateX(-50%);
+  width: min(420px, calc(100% - 40px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.question {
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  border-color: var(--accent);
+}
+
+.question strong {
+  display: block;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.question-body {
+  white-space: pre-wrap;
+}
+
+.question .actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 /* ---------- Crowdy Studio mod HUD (SDK layer; restyled by class override) ---------- */
 
 /* The SDK places the text HUD at top-left where our chips live. Move it below

@@ -182,6 +182,8 @@ async function startGame(): Promise<void> {
     suppressGameplayInput: () => input.suppress(),
     onLayoutChange: (rightInset) => loop.setRightInset(rightInset),
     notify: (text, tone) => hud.toast(text, tone),
+    confirmTrust: (summary, { signal }) =>
+      hud.ask(summary, { yes: 'Run it', no: 'Not now', signal }),
     captureFrame: async () => {
       const canvas = gameRoot!.querySelector('canvas.scene-canvas') as HTMLCanvasElement | null;
       return canvas ?? null;

@@ -9,15 +9,16 @@ and the games built on it share.
 | `engine/` | `GameLoop`, `SceneRouter`, `Input`, `Controls`, the `GameScene` contract |
 | `platform/` | Hosted sign-in and app entry (`AuthService`, `NetworkManager`), `GameSession`, World Stores presence and the pose codec, chat, voice, webcam, envScope storage |
 | `platform/exec/`, `platform/model/` | The game's world hub on ck-exec (`WorldHub`, one connection per page as `NetworkManager.worldHub`) and `ModelService`, which reads the pulse, programs and progression from it |
-| `platform/studio/` | The Crowdy Studio dock (the SERVER target as a ck-exec mod), grid claims and the world hub's claim registry (`GridService`), CLIENT mods for the player's grid and consented grid mods, the agent's player host |
+| `platform/studio/` | The Crowdy Studio dock (a project runs as a ck-exec mod and its CLIENT half), grid claims and the world hub's claim registry (`GridService`), the CLIENT halves of the grid the player stands in (`GridClientHalves`, over CrowdyJS's `ExecClientHalves`) and the host calls they reach, the agent's player host |
 | `grid/` | JS grid programs (`GridProgramRunner`): player JavaScript with the full CrowdyJS SDK, sandboxed, relayed with a grid-scoped token |
 | `node/` | `security-headers` (site, `/dsh/`, `/grid-program.html`), `vite-plugins`, `construct-copy-dsh` |
 | `sandbox/boot` | The grid program sandbox bootstrap |
 
 It ships **TypeScript source** for Vite (it uses `?worker&url` and
 `import.meta.env`). Peer dependencies: `@crowdedkingdoms/crowdyjs` 17.7+ (17.12
-for `ModelService`, `GridService` and the Studio's SERVER target on ck-exec)
-and, for the Studio agent pane, `@crowdedkingdoms/crowdy-dsh` 0.4+. On a
+for `ModelService`, `GridService` and the Studio's SERVER target on ck-exec,
+17.14 for its CLIENT target and `GridClientHalves`) and, for the Studio agent
+pane, `@crowdedkingdoms/crowdy-dsh` 0.4+. On a
 prerelease tier the ranges name each `X.Y.Z` line they admit, because npm
 matches a prerelease only against a comparator on the same `X.Y.Z`. A game can
 take a new CrowdyJS line only once a construct release names it (until then

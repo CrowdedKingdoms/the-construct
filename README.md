@@ -21,10 +21,10 @@ Clone it, run it, then replace the demo scenes with your game.
 | Paint | A pixi.js program: a shared canvas painted with persisted voxels | `src/scenes/program-pixi/` |
 | Platform layer | Hosted sign-in, app entry, presence, chunks, save state, chat, proximity webcam (B) and voice (V), the world hub connection, Studio — engine-agnostic | `packages/construct/src/platform/` |
 | Adapter boundary | The small `GameScene` contract both renderers implement | `packages/construct/src/engine/`, [docs/RENDERER-ADAPTER.md](docs/RENDERER-ADAPTER.md) |
-| Crowdy Studio | The in-game IDE: players claim a chunk, write SERVER mods (ck-exec) and CLIENT Rust mods, and use the Ask/Build/Play agent | `packages/construct/src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
+| Crowdy Studio | The in-game IDE: players claim a chunk and write Rust mods on ck-exec — a SERVER half, and a CLIENT half that runs in the browser of whoever stands on their grid and says yes — and use the Ask/Build/Play agent | `packages/construct/src/platform/studio/`, [docs/MODDING.md](docs/MODDING.md) |
 | World hub | A ck-exec hub in Rust: a minute pulse while players are in, the program catalog, the claim registry, each player's progression | `exec/`, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#the-world-hub) |
 | Setup | org → free app → access tier → redirect URIs → world hub → Studio starter files, from a shell (`npm run setup`) | `packages/construct/src/platform/onboarding/`, `scripts/setup.mjs` |
-| Security headers | COOP/COEP/CSP that make CLIENT mods possible, plus the Permissions-Policy the camera needs, wired into Vite and documented per host | `security-headers.mjs`, [docs/HOSTING.md](docs/HOSTING.md) |
+| Security headers | COOP/COEP/CSP that make CLIENT halves possible, plus the Permissions-Policy the camera needs, wired into Vite and documented per host | `security-headers.mjs`, [docs/HOSTING.md](docs/HOSTING.md) |
 
 ## Ten minutes to a running game
 
@@ -79,9 +79,10 @@ npm install
    and Crowdy Studio opens beside the game. The Ask/Build/Play agent lives in
    that dock (Constructor tier; model usage is metered to your player wallet by
    default, or the app's org wallet — no provider key in this game). **Wallet**
-   in the HUD opens Studio for that wallet and grid / player-compute billing.
+   in the HUD opens Studio for that wallet, which also pays for your mods.
    Follow [docs/MODDING.md](docs/MODDING.md) to deploy a SERVER mod everyone on
-   your grid sees, and a CLIENT mod that runs in your browser.
+   your grid sees, and a CLIENT half that runs in the browser of every player
+   who stands on your grid and says yes to it.
 
 Everything but `VITE_APP_ID` is optional: the installed SDK build already knows
 the API origin for its tier. When you deploy somewhere other than
@@ -162,9 +163,9 @@ flowchart LR
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layers, authority, the boot sequence, what is generic and what is demo
 - [docs/RENDERER-ADAPTER.md](docs/RENDERER-ADAPTER.md) — replacing a scene or the whole renderer
 - [docs/PLATFORM-MAP.md](docs/PLATFORM-MAP.md) — game concept → platform surface, with links to the public docs
-- [docs/MODDING.md](docs/MODDING.md) — Crowdy Studio: permissions, SERVER mods on ck-exec, the CLIENT mod sandbox, templates, visitors, security posture
+- [docs/MODDING.md](docs/MODDING.md) — Crowdy Studio: permissions, mods on ck-exec and their CLIENT halves, the browser sandbox, templates, visitors' consent, security posture
 - [docs/NEW-GAME-CHECKLIST.md](docs/NEW-GAME-CHECKLIST.md) — turning this into your game
-- [docs/HOSTING.md](docs/HOSTING.md) — static hosting with the headers CLIENT mods require
+- [docs/HOSTING.md](docs/HOSTING.md) — static hosting with the headers CLIENT halves require
 - [CHANGELOG.md](CHANGELOG.md)
 
 ## Free tier, plainly
@@ -172,10 +173,11 @@ flowchart LR
 A new organization gets free apps on shared hosting (three by default) with
 monthly allowances per app (egress, ingress, compute hours, storage). Nothing
 here asks for a card. Sustained usage above the allowances bills the org
-wallet; a player's SERVER mods run on ck-exec, whose mod usage is recorded but
-not billed during the preview. Crowdy Agent tokens are **platform-funded** on Crowded
-Kingdoms (this game never asks for an OpenRouter key). The HUD Wallet link is
-for the player's grid / compute wallet, not the agent. Current figures:
+wallet; a player's mods run on ck-exec and, on the dev preview, bill that
+player's own wallet after a monthly trial. Crowdy Agent tokens are
+**platform-funded** on Crowded Kingdoms (this game never asks for an OpenRouter
+key). The HUD Wallet link is for the player's wallet, not the agent. Current
+figures:
 [Shared environment](https://docs.crowdedkingdoms.com/management-api/shared-environment)
 and [Player billing](https://docs.crowdedkingdoms.com/management-api/player-billing).
 
@@ -185,7 +187,7 @@ and [Player billing](https://docs.crowdedkingdoms.com/management-api/player-bill
 `https://<games host>/<slug>/` and runs on an origin of its own, with every
 security header served for you, and players sign in exactly as they would
 anywhere else. Or `npm run build` produces a static site you can put anywhere
-— with one requirement: the host must send the COOP/COEP headers or CLIENT mods
+— with one requirement: the host must send the COOP/COEP headers or CLIENT halves
 will not run (the game says so on screen). Both in
 [docs/HOSTING.md](docs/HOSTING.md).
 

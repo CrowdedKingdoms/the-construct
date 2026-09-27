@@ -1,13 +1,14 @@
 # Modding with Crowdy Studio
 
 The Construct embeds Crowdy Studio, the platform's in-game IDE. A player who
-owns a grid can write Rust, compile it on the platform, and run it — as a
-**SERVER** mod on ck-exec (a hub on their grid, keyed by the grid's id), or as
-a **CLIENT** module in the browser sandbox. This page is the walkthrough and
-the security story, in that order.
+owns a grid can write Rust, build it on the platform, and run it as a mod on
+ck-exec: a **SERVER** half (a hub on their grid, keyed by the grid's id) and an
+optional **CLIENT** half (browser WASM the grid serves to the players standing
+in it, who run it in a sandbox once they consent to it). This page is the
+walkthrough and the security story, in that order.
 
-ck-exec is a dev-tier preview; so is running the SERVER target on it
-(`serverEngine: 'ck-exec'` in `StudioService`, CrowdyJS 17.12). See
+ck-exec is a dev-tier preview; so are both Studio targets on it
+(`serverEngine: 'ck-exec'` in `StudioService`, CrowdyJS 17.14). See
 [Mods](https://docs.crowdedkingdoms.com/exec/mods) in the platform docs.
 
 ## Prerequisites (Setup does all of this)
@@ -15,7 +16,7 @@ ck-exec is a dev-tier preview; so is running the SERVER target on it
 | Requirement | What Setup did | Why |
 | --- | --- | --- |
 | Code keys on a tier | Created the *Constructor* tier with `write_server_code`, `run_server_code`, `write_client_code`, `run_client_code`, and `use_studio_agent`; granted it to you | A claim materialises only the keys your tier holds onto the grid. Building a mod needs `write_server_code`; deploying it needs that key on the grid too, and switching it on needs `run_server_code`. Agent stays off the default visitor tier. |
-| Visitors may run mods | Added `run_server_code` + `run_client_code` to the default free tier | Fetching a grid's CLIENT artifact is gated on the **visitor's** tier |
+| Visitors may run mods | Added `run_server_code` + `run_client_code` to the default free tier | A grid serves its CLIENT halves only to players whose **own** tier holds `run_client_code` |
 | Claimable chunks | Set the grid claim policy to `SELF_CLAIM` | `claimGridChunk` refuses under other policies |
 | Starter files | Published each starter template's `src/lib.rs` and `Cargo.toml`, and the fountain grid program, as Common Files | Imported copy-by-value into your projects |
 | Studio Agent | Enabled the **app** Studio Agent policy and put `use_studio_agent` on Constructor | DeepSeek Harness (DSH) runs in a Web Worker inside the Studio agent pane, editing the open project (or bound GitHub repo) and testing drafts. Model tokens are billed per request to your player wallet by default (or the app's org wallet). |
@@ -40,7 +41,7 @@ ck-exec is a dev-tier preview; so is running the SERVER target on it
    your grid (`modDeploy`) and switches it on (`modSetEnabled`).
 5. Stay in the chunk: a wooden post with a white hub appears in its middle,
    and a pink arm steps round it once a second. Anyone who can see the chunk
-   sees the same blocks, whether or not they run CLIENT mods; the arm only
+   sees the same blocks, whether or not they run CLIENT halves; the arm only
    turns while someone stands in that chunk.
 6. **Live-code with the Studio Agent** in the agent pane (Constructor only).
    The agent runs the DeepSeek Harness directly in your browser. It can read
@@ -54,12 +55,34 @@ ck-exec is a dev-tier preview; so is running the SERVER target on it
    it only observes. When it wants to **deploy live**, the pane asks you first
    and nothing ships until you click **Deploy live** there.
 
-A **Client** project works the same way with the *HUD greeter* starter (its
-Cargo.toml declares `serde_json` and `[package.metadata.crowdy]
-tick_interval_ms`: `1000` for HUD, `50` for physics minigames, `16` for
-shooters). **Test draft** compiles it on the platform and starts it in your
-sandbox, which writes `Welcome, <you>!` to the mod HUD. It runs in your tab
-only: see [Gaps](#gaps-under-ck-exec).
+## Walkthrough: a CLIENT half your visitors run
+
+1. On your claimed chunk, **New project…** → **Client**. Its CLIENT module name
+   (`<name>-client`) is also the name of the mod the half rides.
+2. In **Files → Common files**, add *HUD greeter entrypoint* and *HUD greeter
+   Cargo.toml* over the project's two CLIENT files. The Cargo.toml is a
+   `crowdy-client-sdk` crate with `serde_json` and `[package.metadata.crowdy]
+   tick_interval_ms` (`1000` for HUD, `50` for physics minigames, `16` for
+   shooters).
+3. **Test draft.** The Studio builds the crate on the platform
+   (`modClientBuild`; the console shows cargo, `instrument`, `wasm-opt` and the
+   host calls it found), and, because a CLIENT half rides a mod, deploys the
+   platform's mod starter as `<name>-client` when your grid has no mod of that
+   name and switches it on. It attaches the half to that mod
+   (`modClientDeploy`), consents to it as its author and previews it: the mod
+   HUD reads `Welcome, <you>!`.
+4. A player who walks onto your grid is asked, in the HUD, whether to run your
+   code there, with the host calls it may make. **Run it** trusts you on this
+   grid for those calls; their browser fetches the half, checks its digest and
+   runs it, and their HUD greets everyone in the chunk. Leaving the grid stops
+   it. A new build that needs no more calls keeps their trust; one that needs
+   more asks again.
+
+A **Full stack** project does both: its SERVER crate is the mod and its CLIENT
+crate that mod's half. While the Studio is open on a project, its CLIENT half
+runs only as the Studio's preview; your other CLIENT halves, and this one once
+the Studio closes, run for you as they run for visitors (your own without a
+question).
 
 ## What a SERVER mod can do
 
@@ -89,28 +112,35 @@ The *Presence beacon* counts the players in its grid as they come and go
 with `{ "present": n }`. See the platform's
 [Mods](https://docs.crowdedkingdoms.com/exec/mods) page.
 
-## What a CLIENT mod can do here
+## What a CLIENT half can do here
 
-The SDK's `PlayerCodeBroker` allowlists and rate-limits every host call and
+A CLIENT half is one `crowdy-client-sdk` crate (`crowdy::api::*`), and it runs
+in a `PlayerCodeBroker` with `engine: 'ck-exec'`. The broker allows exactly
+the host calls crowdy-client-sdk makes, and of those only the ones in the
+capability summary the player consented to; it rate-limits every call and
 clamps chunk coordinates to the mod's grid. Calls it answers itself:
-`grid_info` (the grid's bounds), `hud_set` (text HUD), and `overlay_draw`
-(3D gizmos the holodeck renders from the same construct.scene.v1 schema —
-still data, never HTML). Everything else reaches this game's router,
-`packages/construct/src/platform/studio/clientModHost.ts`, which offers:
+`grid_info` (the grid's bounds), `hud_set` (text HUD), `overlay_draw` (3D
+gizmos the holodeck renders from the same construct.scene.v1 schema — still
+data, never HTML) and `emit_event` (the page's grid event bus). World reads,
+voxel writes and clicks reach this game's router,
+`packages/construct/src/platform/studio/clientModHost.ts`:
 
 | Host call | Answer |
 | --- | --- |
 | `actors_list(x,y,z)` | Players in that chunk (uuid, name, position, program) |
-| `actors_list_radius(x,y,z,r)` | The same across a box, clamped to the grid and r ≤ 8 |
+| `actors_list_radius(x,y,z,radius_xz,radius_y)` | The same across a box of chunks, as the platform clamps it: `radiusXz` ≤ 3, `radiusY` ≤ 1, inside the grid |
 | `chunk_get(x,y,z)` | The cached dense voxel grid, base64 |
 | `voxels_list(x,y,z)` | The non-zero cells as rows |
-| `voxel_set` | One voxel write through World Stores `chunks.setVoxel` + `markDirty`. Replicates to other players and persists. Args: `chunkX/Y/Z` (or `chunk`) plus in-chunk `x,y,z` (0–15) and `voxelType`. |
-| `pointer_clicks` | Drain holodeck mouse clicks since the last call. `{ nowMs, buttons, holdingMs, clicks }`. `clicks` is `{ t:"down"\|"up", button, atMs, heldMs?, nx, ny }` (canvas NDC, +ny up). `holdingMs["0"]` is left-button charge time. Studio chrome is omitted. Call every `on_tick`. |
+| `voxel_set` | One voxel write, as the player running it, through World Stores `chunks.setVoxel` + `markDirty`. Replicates to other players and persists. Args as `crowdy::api::voxel_set` sends them: `chunkX/Y/Z`, in-chunk `voxelX/Y/Z` (0–15), `voxelType`, `stateBase64`. |
+| `pointer_clicks` | Drain holodeck mouse clicks since the last call. `{ nowMs, buttons, holdingMs, clicks }`. `clicks` is `{ t:"down"\|"up", button, atMs, heldMs?, nx, ny }` (canvas NDC, +ny up). `holdingMs["0"]` is left-button charge time. Studio chrome is omitted. Call every tick. |
+
+The rest (`user_state_get` / `user_state_set`, `avatar_state_get`,
+`grid_permission_check`, `emit_spatial`, `emit_channel`) goes through
+CrowdyJS's `createGridHostCalls`, confined to the grid, as the player.
 
 `voxel_set` is occupancy: floors, walls, claim-aligned blocks. Voxels cannot
 rotate. `overlay_draw` is **local** presentation (aim assist, author preview)
-for whoever is running the CLIENT companion — it is not a second replication
-path.
+for whoever is running the CLIENT half — it is not a second replication path.
 
 The holodeck also renders a **replicated scene graph** (`construct.scene.v1`)
 for every visitor on a grid: a mesh catalog and node list, then packed poses,
@@ -124,8 +154,8 @@ Only a legacy player-compute SERVER module can send those events: a ck-exec mod
 cannot emit, so the Studio's SERVER target no longer reaches this path.
 
 Anything else is refused with `host call '<fn>' is not offered by this game`.
-To let mods reach more of the game, add a case that goes through the same
-player-authorised SDK path the human UI uses. Never hand a mod the client
+To let CLIENT halves reach more of the game, add a case that goes through the
+same player-authorised SDK path the human UI uses. Never hand a mod the client
 object.
 
 ## Templates
@@ -136,9 +166,16 @@ rest of `exec/` (`cargo test`, `cargo clippy --all-targets`, `cargo build
 --release --target wasm32-unknown-unknown`). `npm run build:exec-sources`
 turns them into the strings `mods/templates/exec-mods.mjs` carries, their
 `ckx-sdk` line pointed at the platform's copy; the unit tests fail while that
-file is stale. CLIENT starters and the fountain grid program are strings in
-`mods/templates/index.mjs`. `npm run setup` and `npm run seed` publish them
-all; publishing is idempotent by content.
+file is stale. The CLIENT starters (`construct-hud-greeter`,
+`construct-voxel-marker`) are `crowdy-client-sdk` crates, and they and the
+fountain grid program are strings in `mods/templates/index.mjs`. A CLIENT
+crate builds only within the platform's rules: `[package]`, `[lib]
+crate-type = ["cdylib"]`, `[package.metadata.crowdy] tick_interval_ms` and
+dependencies on `crowdy-client-sdk`, `serde` and `serde_json`, with its entry
+points in `crowdy::register_module!(init: …, tick: …, invoke: …)` (and
+optionally `event: …`); the unit tests hold the starters to that. `npm run
+setup` and `npm run seed` publish them all; publishing is idempotent by
+content.
 
 ## Gaps under ck-exec
 
@@ -153,25 +190,30 @@ What the port could not keep, and why:
   write budget), and blocks that stay in the chunk when the mod stops.
   They place themselves from the grid's low chunk instead of a `CHUNK` you
   edit, and need `update_voxel_data` on the grid, which a claim gives you.
-- **Visitors do not get a ck-exec project's CLIENT half.** ck-api attaches a
-  self-authored CLIENT module to the grid for visitors only when a legacy
-  SERVER module that requires it is enabled; the Studio sets no pairing for a
-  mod. The author runs the CLIENT half in their own tab; visitors still get
-  CLIENT mods attached the legacy way.
-- **Players call a mod; a CLIENT mod cannot.** The legacy beacon answered an
+- **Players call a mod; its CLIENT half cannot.** The legacy beacon answered an
   invoke a CLIENT companion could route; there is no host call that reaches a
   mod, so `present` is for players (or the game) with an exec connection.
-- **A SERVER project created before CrowdyJS 17.13 is not a mod.** Its crate
-  is the legacy compute SDK's, which a mod build refuses; replace its
-  Cargo.toml and src/lib.rs with a starter's. Projects created since start
-  from the platform's mod starter.
+- **A project created before CrowdyJS 17.13 (SERVER) or 17.14 (CLIENT) is on
+  the legacy compute SDK.** A mod build refuses that crate, and the Studio
+  refuses a CLIENT one before building (`crowdy-compute-sdk` becomes
+  `crowdy-client-sdk = "0.1.0"` and `crowdy_compute_sdk` becomes
+  `crowdy_client_sdk`; the host calls are the same less the Game Model and
+  sessions). Replace its Cargo.toml and src/lib.rs with a starter's. New
+  projects start on the platform's mod starter and a `crowdy-client-sdk`
+  crate.
+- **Legacy grid-attached client mods no longer run here.** The Studio attaches
+  CLIENT halves to mods, and `StudioService` runs only those
+  (`marketplace.gridClientMods` is superseded in CrowdyJS 17.14 and removed in
+  18.0). The framework still exports `runConsentedGridMod` and
+  `ClientModLifecycle` for a game that runs legacy ones until then.
 
 ## Security posture
 
 - **Isolation is a prerequisite, checked at boot.** `StudioService` reads
-  `crossOriginIsolated`; when false, the CLIENT half is hidden and a banner
-  names the missing headers. The Playwright smoke asserts it on the served
-  bundle so a hosting regression fails CI rather than a player's tab.
+  `crossOriginIsolated`; when false, the CLIENT target is hidden, no grid's
+  CLIENT halves run, and a banner names the missing headers. The Playwright
+  smoke asserts it on the served bundle so a hosting regression fails CI
+  rather than a player's tab.
 - **The CSP has no `unsafe-eval` and no `unsafe-inline` scripts.** Workers are
   same-origin (`worker-src 'self' blob:`); `connect-src` is the API origin plus
   its one-label zone. pixi.js runs in its CSP-safe mode for the same reason.
@@ -181,14 +223,20 @@ What the port could not keep, and why:
 - **Mods never get a token.** The glue worker is tokenless; every effect crosses
   the broker, and presentation is data the game renders as text. A SERVER mod
   runs in its owner's sandbox with its grid's capability only.
-- **Trust is per author, per grid, per capability hash.** Widening a mod's
-  capabilities re-prompts every visitor.
+- **Trust is per author, per grid, per capability set.** A visitor who trusts
+  an author covers that author's CLIENT halves on the grid while they need no
+  more host calls than the visitor saw; widening them asks again
+  (`hooks.clientHalfConsent: 'mod'` asks about each half instead). The broker
+  runs a half only with its SHA-256 digest, its fuel budget and the host calls
+  both the consented summary and the served module list. Your own CLIENT
+  halves run for you without a question, except one installed from someone's
+  marketplace listing.
 - **A build switch exists.** `VITE_CONSTRUCT_CLIENT_MODS=0` ships SERVER-only
   Studio for a fork that does not want browser execution.
 
 ### Platform status note
 
-The platform admits CLIENT modules for any app whose tiers grant the keys —
+The platform admits CLIENT halves for any app whose tiers grant the keys —
 there is no first-party allowlist — and this starter ships them **on** by
 default, with the mitigations above, as the reference integration the public
 docs point at. Whether to keep them on in *your* game is your call; the switch
@@ -198,14 +246,14 @@ and the SERVER-only path are here so it can be a deliberate one.
 
 - **The camera, for mods.** Webcam video is a host-side feature
   (`WebcamService`, `Permissions-Policy: camera=(self)`); there is no host call
-  that exposes frames or the capture to a CLIENT mod, on purpose. A mod that
+  that exposes frames or the capture to a CLIENT half, on purpose. A mod that
   wants to react to "camera on" would need a new allowlisted call in
   `clientModHost.ts`, which is your decision to make, not this starter's.
 
-- **Marketplace listings and paid mods** — `marketplace.publishListing` and
-  friends for CLIENT code, `client.exec.modPublish` / `modInstall` for mods.
-  Read [Player marketplace](https://docs.crowdedkingdoms.com/game-api/player-marketplace)
-  and [Mods](https://docs.crowdedkingdoms.com/exec/mods).
+- **Marketplace listings** — `client.exec.modPublish` / `modInstall`. A listing
+  carries the mod's CLIENT half, and an installer's grid serves it once the
+  installer consents to it afresh. Read
+  [Mods](https://docs.crowdedkingdoms.com/exec/mods).
 
 ## JS grid programs
 

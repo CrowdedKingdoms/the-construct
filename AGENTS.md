@@ -114,6 +114,15 @@ reserved for that org) through the same command a third party runs.
   `include_str`, `include_bytes`, `env`, `option_env` and the `asm` family
   anywhere in code (not only as macros), and `path` / `link` inside an
   attribute.
+- What `execModClientBuild` (a mod's CLIENT half) accepts: one crate, the same
+  files and source guard; `[package]`, `[lib] crate-type = ["cdylib"]`,
+  `[package.metadata.crowdy] tick_interval_ms` and `[dependencies]` on
+  `crowdy-client-sdk`, `serde` and `serde_json`; entry points through
+  `crowdy::register_module!`. The result is metered (`instrument`), optimized
+  and at most 512 KiB. `mods/templates/index.test.ts` holds the CLIENT
+  starters to it; to prove one really builds, build it with
+  `client.exec.modClientBuild` on dev (the build log names every step and the
+  host calls it found).
 - ck-exec builds, deploys and switches take the developer's own session (the
   org's `manage_compute`) on the app's own datacenter origin
   (`scripts/lib/cli.mjs#developerOnApp`), never an app token: another
@@ -133,13 +142,17 @@ reserved for that org) through the same command a third party runs.
   (developers can `forget_claim`). The hub does not ask the platform who owns
   a grid, so a player can still record a grid id they do not own if no one
   recorded it first.
-- A self-authored CLIENT mod runs for visitors only as the required companion
-  of a live **legacy** SERVER module, after the visitor trusts the author, and
-  only if the **visitor's** tier holds `run_client_code`: ck-api creates the
-  grid client attachment when that player-compute module is enabled. With the
-  SERVER target on ck-exec (`serverEngine: 'ck-exec'`, since this branch) the
-  Studio sets no pairing, so a full-stack project's CLIENT half runs for its
-  author only.
+- A CLIENT half (CrowdyJS 17.14, ck-api ≥ v2.24.0) is served by its mod's grid
+  only while the mod is on and running as the grid's owner, to a player whose
+  **own** tier holds `run_client_code`, who stands in the grid, and who
+  consented to it at its capability hash or trusts its author at a union no
+  wider. Every refusal of the artifact is `NOT_FOUND`; 12 fetches a minute per
+  player and mod (`RATE_LIMITED`). `GridClientHalves` runs them for owner and
+  visitor alike; the owner's own, self-written halves are trusted without a
+  question (`isOwnClientHalfPrompt`).
+- Crowdy Studio stores a `crowdy-client-sdk` crate only from ck-api `v2.25.1`:
+  before, every CLIENT project and CLIENT `Cargo.toml` Common File was refused
+  as `CROWDY_STUDIO_MANIFEST_INVALID` against the legacy compute allowlist.
 - The trust/artifact gates check presence written by Buddy on chunk entry;
   asking in the first seconds after entering a grid races it. `GRID_SETTLE_MS`.
 - `PlayerCodeBroker` ticks a client mod only when `tickIntervalMs` is set.
@@ -163,11 +176,16 @@ reserved for that org) through the same command a third party runs.
   `unsafe-eval`.
 - A new Studio project's SERVER target is the platform's mod starter
   (CrowdyJS 17.13: `execModStarter`, a `ckx-sdk` crate with its package named
-  for the project), so it builds as a mod as created. Its CLIENT target still
-  declares only `crowdy-compute-sdk`; CLIENT templates that build JSON ship a
-  companion `Cargo.toml` with `serde_json`. A SERVER project created before
-  17.13 keeps its compute-SDK crate, which a mod build refuses: players import a
-  SERVER starter's `Cargo.toml` and `src/lib.rs` over it.
+  for the project), so it builds as a mod as created, and its CLIENT target a
+  `crowdy-client-sdk` crate with `serde_json` (17.14). A CLIENT-only project's
+  half rides the mod named for its CLIENT module, which the Studio deploys
+  from the mod starter when the player's grid has none, so it needs SERVER
+  write and run keys too. A project created before 17.13 (SERVER) or 17.14
+  (CLIENT) keeps its compute-SDK crate, which a mod build refuses and the
+  Studio refuses as a CLIENT half before building: players import a starter's
+  `Cargo.toml` and `src/lib.rs` over it.
+- CrowdyJS 17's embed still types a `playerCompute` service it never calls
+  with `serverEngine: 'ck-exec'`; `StudioService` passes one that refuses.
 
 ## ck-exec facts this code depends on (2026-09-26, local cluster and ck-api source)
 

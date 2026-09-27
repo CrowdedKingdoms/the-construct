@@ -21,6 +21,11 @@ export interface ClientModScope {
 
 interface RunningClientMod extends ClientModDescriptor, ClientModHandle {}
 
+/**
+ * @deprecated For the legacy grid-attached client mods (`runConsentedGridMod`),
+ * which CrowdyJS 18 removes; `GridClientHalves` keeps a ck-exec grid's CLIENT
+ * halves.
+ */
 export class ClientModLifecycle {
   private readonly running = new Map<string, RunningClientMod>();
   private activeGridId: string | null = null;
