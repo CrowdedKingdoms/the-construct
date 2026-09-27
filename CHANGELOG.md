@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+`@crowdedkingdoms/construct` 0.2.3 and CrowdyJS `17.14.0-dev.1`: a mod's
+CLIENT half on ck-exec, a dev-tier preview. A CLIENT half needs ck-api v2.24.0
+or later, and a Studio CLIENT project v2.25.1 (earlier, Studio refused to save
+any `crowdy-client-sdk` crate).
+
+- Crowdy Studio's CLIENT target runs on ck-exec. A CLIENT or full-stack
+  project's `crowdy-client-sdk` crate builds on the platform (`modClientBuild`)
+  and is attached to the project's mod as its CLIENT half; a CLIENT-only
+  project rides the mod named for its CLIENT module, which the Studio deploys
+  from the mod starter when the grid has none. `StudioService` no longer
+  touches legacy player compute: CrowdyJS 17's embed still types that service,
+  and it gets one that refuses.
+- Whoever stands on a grid runs its CLIENT halves. `GridClientHalves`
+  (`platform/studio/clientHalves.ts`, over CrowdyJS's `ExecClientHalves`)
+  lists them, asks once per author (or once per half with
+  `hooks.clientHalfConsent: 'mod'`), fetches each by digest and runs it in the
+  broker (`engine: 'ck-exec'`, bounded by the consented capability summary)
+  through this game's host-call router into the HUD and the overlay, and stops
+  them when the player leaves the grid. The owner's own, self-written halves
+  run without a question; one installed from a listing asks. While the Studio
+  is open on a project, that project's half runs only as the Studio's preview.
+- The starter asks in the HUD (`Hud.ask`: "Run it" / "Not now") instead of a
+  native `confirm`, which froze the frame loop. `StudioHooks.confirmTrust`
+  receives the prompt and an `AbortSignal` that fires when the player leaves
+  the grid.
+- The HUD greeter and Voxel marker starters are `crowdy-client-sdk` crates
+  within the platform's CLIENT build rules. Both build (cargo, `instrument`,
+  `wasm-opt`, the CLIENT ABI check), and `mods/templates/index.test.ts` holds
+  them to the rules.
+- The host-call router reads the arguments crowdy-client-sdk sends:
+  `voxel_set`'s `voxelX/Y/Z` (it read only `x/y/z`, so the SDK's `voxel_set`
+  was refused as malformed) and `actors_list_radius`'s `radiusXz` / `radiusY`,
+  clamped as the platform clamps them, 3 across and 1 up (it read `radius` and
+  allowed 8 on every axis).
+- Legacy grid-attached client mods no longer run in the starter.
+  `runConsentedGridMod` and `ClientModLifecycle` stay exported, deprecated, for
+  a game that still runs them until CrowdyJS 18 (construct 0.3.0).
+- The construct peer range gains the 17.14 prerelease line.
+
 `@crowdedkingdoms/construct` 0.2.2, CrowdyJS `17.13.0-dev.1` and crowdy-dsh
 `0.4.1-dev.1`. The construct peer ranges gain the 17.13 and 0.4.1 prerelease
 lines; npm refused both root pins against the 17.12 and 0.4.0 comparators,

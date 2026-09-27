@@ -9,25 +9,24 @@
  *
  * SERVER starters are ck-exec mods: `ckx-sdk` crates under `exec/mods/`, built
  * and tested with the rest of `exec/`, and carried here as strings by the
- * generated `exec-mods.mjs` (`npm run build:exec-sources`). CLIENT starters run
- * in the browser sandbox on the compute SDK and live below as strings.
+ * generated `exec-mods.mjs` (`npm run build:exec-sources`). CLIENT starters are
+ * a mod's CLIENT half: one `crowdy-client-sdk` crate each, which the platform
+ * builds for the browser and the mod's grid serves to the players standing in
+ * it who consent. They live below as strings.
  *
  * Plain ES module: shared by `scripts/setup.mjs`, `seed.mjs` and `smoke.mjs`.
  */
 import { EXEC_MOD_SOURCES } from './exec-mods.mjs';
 
-const SDK_VERSION = '0.1.5';
+/** crowdy-client-sdk; the platform's build points this line at its own copy. */
+const CLIENT_SDK_VERSION = '0.1.0';
 
-function cargo(name, extraDeps = '', tickIntervalMs = null) {
-  const tick =
-    tickIntervalMs == null
-      ? ''
-      : `
-# How often the browser calls CLIENT on_tick (clamped 16–1000 ms).
-# 1000 = HUD/text. 50 = physics minigames (pool). 16 = shooters, if a tick stays cheap.
-[package.metadata.crowdy]
-tick_interval_ms = ${tickIntervalMs}
-`;
+/**
+ * A CLIENT half's Cargo.toml, within the platform build's rules: `[package]`,
+ * `[lib]` as a cdylib, `[package.metadata.crowdy] tick_interval_ms`, and
+ * dependencies on crowdy-client-sdk and serde_json only.
+ */
+function clientCargo(name, tickIntervalMs) {
   return `[package]
 name = "${name}"
 version = "0.1.0"
@@ -35,106 +34,120 @@ edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
-${tick}
-[dependencies]
-crowdy-compute-sdk = "${SDK_VERSION}"
-${extraDeps}`;
-}
 
-const SERDE_JSON_DEP = 'serde_json = "1"\n';
+# How often each visitor's browser calls tick (clamped 16–1000 ms).
+# 1000 = HUD/text. 50 = physics minigames (pool). 16 = shooters, if a tick stays cheap.
+[package.metadata.crowdy]
+tick_interval_ms = ${tickIntervalMs}
+
+[dependencies]
+crowdy-client-sdk = "${CLIENT_SDK_VERSION}"
+serde_json = "1"
+`;
+}
 
 /**
- * CLIENT: runs in the visitor's browser sandbox. Asks the host for its own
- * grid bounds (`grid_info`, answered locally by the broker), lists the actors
- * standing in the grid's first chunk (`actors_list`, routed to the game's
- * allowlisted host-call router) and renders a greeting through `hud_set`.
- * Presentation crosses as data; the game renders it as text, never HTML.
+ * CLIENT: asks the broker for the grid's bounds (`grid_info`, answered in the
+ * browser), lists the players standing in the grid's first chunk
+ * (`actors_list`, answered by the game's host-call router) and greets them
+ * through `hud_set`. Presentation crosses as data; the game renders it as
+ * text, never HTML.
  */
-const HUD_GREETER = `use crowdy_compute_sdk::{api, host_call};
-use serde_json::json;
+const HUD_GREETER = `//! HUD greeter: the CLIENT half of a mod. It runs in the browser of each player who stands in
+//! the mod's grid and consents to it (or trusts you), and greets whoever is in the grid's first
+//! chunk in the mod HUD.
 
+use crowdy_client_sdk as crowdy;
+use serde_json::{json, Value};
+
+/// The grid's low chunk. The broker answers grid_info with decimal strings.
 fn grid_origin() -> Option<(i64, i64, i64)> {
-    let info = host_call("grid_info", json!({})).ok()?;
+    let info = crowdy::api::grid_info().ok()?;
     let low = info.get("low")?;
-    let parse = |v: &serde_json::Value| v.as_str()?.parse::<i64>().ok();
-    Some((parse(low.get("x")?)?, parse(low.get("y")?)?, parse(low.get("z")?)?))
+    let coord = |axis: &str| low.get(axis)?.as_str()?.parse::<i64>().ok();
+    Some((coord("x")?, coord("y")?, coord("z")?))
 }
 
-fn on_init() {}
+fn init() {
+    crowdy::log(1, "hud greeter ready");
+}
 
-fn on_tick(_dt: u32) {
+fn tick(_dt_ms: u32) {
     let Some((x, y, z)) = grid_origin() else { return };
-    let actors = api::actors_list(x, y, z).unwrap_or_else(|_| json!({ "actors": [] }));
-    let rows = actors.get("actors").and_then(|a| a.as_array()).cloned().unwrap_or_default();
-    let names: Vec<String> = rows
+    let actors = crowdy::api::actors_list(x, y, z).unwrap_or_else(|_| json!({ "actors": [] }));
+    let rows = actors.get("actors").and_then(Value::as_array).cloned().unwrap_or_default();
+    let names: Vec<&str> = rows
         .iter()
-        .filter_map(|row| row.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
-        .filter(|n| !n.is_empty())
+        .filter_map(|row| row.get("name")?.as_str())
+        .filter(|name| !name.is_empty())
         .collect();
     let greeting = if names.is_empty() {
         "Nobody here yet.".to_string()
     } else {
         format!("Welcome, {}!", names.join(", "))
     };
-    // The host owns the HUD; this payload is rendered as text.
-    let _ = host_call(
-        "hud_set",
-        json!({ "payload": { "greeting": greeting, "here": rows.len(), "chunk": [x, y, z] } }),
-    );
-    // Mouse: crowdy::api::pointer_clicks() each tick. Drain {clicks, buttons,
-    // holdingMs}. Click-to-charge = left down, holdingMs["0"] while held, fire on up.
+    // The game owns the HUD; this payload is rendered as text.
+    let _ = crowdy::api::hud_set(json!({ "greeting": greeting, "here": rows.len(), "chunk": [x, y, z] }));
+    // Mouse: crowdy::api::pointer_clicks() each tick drains { clicks, buttons, holdingMs }.
+    // Click-to-charge = left down, holdingMs["0"] while held, fire on up.
 }
 
-fn on_invoke(_payload: &[u8]) -> Vec<u8> { Vec::new() }
+fn invoke(payload: &[u8]) -> Vec<u8> {
+    payload.to_vec()
+}
 
-crowdy_compute_sdk::register_module!(init: on_init, tick: on_tick, invoke: on_invoke);
+crowdy::register_module!(init: init, tick: tick, invoke: invoke);
 `;
 
 /**
- * CLIENT: plants one voxel in the middle of the owned grid so visitors see a
- * real block in the holodeck, not only HUD text. `voxel_set` replicates
- * through the chunk store (same path as Paint).
+ * CLIENT: places one voxel in the middle of the grid's first chunk, as the
+ * player running it, so everyone sees a real block in the holodeck and not only
+ * HUD text. `voxel_set` goes through the chunk store (the path Paint uses).
  */
-const VOXEL_MARKER = `use crowdy_compute_sdk::host_call;
-use serde_json::json;
-use std::sync::atomic::{AtomicBool, Ordering};
+const VOXEL_MARKER = `//! Voxel marker: the CLIENT half of a mod. In the browser of each player who stands in the mod's
+//! grid and consents to it, it places one block in the middle of the grid's first chunk, once per
+//! visit, as that player: it needs their update_voxel_data on the grid, and the HUD says whether
+//! it could.
 
-static PLACED: AtomicBool = AtomicBool::new(false);
+use crowdy_client_sdk as crowdy;
+use serde_json::{json, Value};
 
+/// The holodeck palette's stone.
+const MARKER: i32 = 1;
+/// The state blob lives as long as the page's worker: one attempt per visit.
+const TRIED: &[u8] = b"tried";
+
+/// The grid's low chunk. The broker answers grid_info with decimal strings.
 fn grid_origin() -> Option<(i64, i64, i64)> {
-    let info = host_call("grid_info", json!({})).ok()?;
+    let info = crowdy::api::grid_info().ok()?;
     let low = info.get("low")?;
-    let parse = |v: &serde_json::Value| v.as_str()?.parse::<i64>().ok();
-    Some((parse(low.get("x")?)?, parse(low.get("y")?)?, parse(low.get("z")?)?))
+    let coord = |axis: &str| low.get(axis)?.as_str()?.parse::<i64>().ok();
+    Some((coord("x")?, coord("y")?, coord("z")?))
 }
 
-fn on_init() {}
+fn init() {}
 
-fn on_tick(_dt: u32) {
-    if PLACED.load(Ordering::Relaxed) {
+fn tick(_dt_ms: u32) {
+    if crowdy::state_get() == TRIED {
         return;
     }
-    let Some((x, y, z)) = grid_origin() else { return };
-    let result = host_call(
-        "voxel_set",
-        json!({
-            "chunkX": x,
-            "chunkY": y,
-            "chunkZ": z,
-            "x": 8,
-            "y": 1,
-            "z": 8,
-            "voxelType": 1
-        }),
-    );
-    if result.is_ok() {
-        PLACED.store(true, Ordering::Relaxed);
-    }
+    let Some(chunk) = grid_origin() else { return };
+    crowdy::state_set(TRIED);
+    let text = match crowdy::api::voxel_set(chunk, (8, 1, 8), MARKER, None) {
+        Ok(reply) if reply.get("ok").and_then(Value::as_bool) != Some(false) => {
+            "Marker placed in the middle of the grid.".to_string()
+        }
+        Ok(_) => "The marker was not placed here.".to_string(),
+        Err(error) => format!("The marker was not placed: {error}"),
+    };
+    let _ = crowdy::api::hud_set(json!({ "greeting": text }));
 }
 
-fn on_invoke(_payload: &[u8]) -> Vec<u8> { Vec::new() }
+fn invoke(payload: &[u8]) -> Vec<u8> {
+    payload.to_vec()
+}
 
-crowdy_compute_sdk::register_module!(init: on_init, tick: on_tick, invoke: on_invoke);
+crowdy::register_module!(init: init, tick: tick, invoke: invoke);
 `;
 
 /** A SERVER starter's files: the crate in `exec/mods/<id>`, as Common Files carry it. */
@@ -151,10 +164,10 @@ export const STARTER_TEMPLATES = [
     title: 'HUD greeter',
     target: 'CLIENT',
     description:
-      'A browser mod that reads who is standing in your grid and greets them in the mod HUD. ' +
-      'Start here for CLIENT mods.',
+      "A mod's CLIENT half that reads who is standing in your grid and greets them in the mod HUD, " +
+      'in the browser of everyone there who consents to it. Start here for CLIENT mods.',
     files: [
-      { path: 'Cargo.toml', content: cargo('construct-hud-greeter', SERDE_JSON_DEP, 1000) },
+      { path: 'Cargo.toml', content: clientCargo('construct-hud-greeter', 1000) },
       { path: 'src/lib.rs', content: HUD_GREETER },
     ],
   },
@@ -172,10 +185,11 @@ export const STARTER_TEMPLATES = [
     title: 'Voxel marker',
     target: 'CLIENT',
     description:
-      'Places one voxel in the centre of your grid. Other players see the block in the holodeck ' +
-      'because it writes the shared chunk store, not a private HUD.',
+      "A mod's CLIENT half that places one voxel in the centre of your grid, as the player running " +
+      'it. Other players see the block in the holodeck because it writes the shared chunk store, ' +
+      'not a private HUD.',
     files: [
-      { path: 'Cargo.toml', content: cargo('construct-voxel-marker', SERDE_JSON_DEP, 1000) },
+      { path: 'Cargo.toml', content: clientCargo('construct-voxel-marker', 1000) },
       { path: 'src/lib.rs', content: VOXEL_MARKER },
     ],
   },
@@ -186,7 +200,7 @@ export const STARTER_TEMPLATES = [
     description:
       'A mod (ck-exec) that builds a post with an arm swinging round it from voxels in the middle ' +
       'of your grid, a quarter turn a second while someone is there. Every visitor sees it; ' +
-      'nobody has to trust or run a CLIENT companion.',
+      'nobody has to trust or run a CLIENT half.',
     files: serverMod('construct-spinning-child'),
   },
   {
@@ -204,11 +218,11 @@ export const STARTER_TEMPLATES = [
  * The common-file form of a template, ready for `crowdyStudioCommonPublish`.
  *
  * Two entries per template: the entrypoint AND its Cargo.toml, because the
- * crate's dependencies travel in it. A CLIENT crate declares `serde_json` beside
- * the compute SDK (measured on 2026-09-07 as `E0432: unresolved import
- * serde_json` when only the entrypoint was imported); a SERVER crate is a
- * `ckx-sdk` mod, which the Studio's blank SERVER project is not. Players add
- * both files; each import defaults to the right destination path.
+ * crate's dependencies and tick travel in it. A CLIENT crate is a
+ * `crowdy-client-sdk` crate with `serde_json` (measured on 2026-09-07 as
+ * `E0432: unresolved import serde_json` when only the entrypoint was imported);
+ * a SERVER crate is a `ckx-sdk` mod. Players add both files over a new
+ * project's; each import defaults to the right destination path.
  */
 export function commonFilesFor(template) {
   const entrypoint = template.files.find((file) => file.path === 'src/lib.rs');
@@ -233,7 +247,7 @@ export function commonFilesFor(template) {
       description:
         template.target === 'SERVER'
           ? `Cargo.toml for "${template.title}": a ckx-sdk mod (the platform supplies ckx-sdk) with serde.`
-          : `Cargo.toml for "${template.title}": declares serde_json beside the compute SDK.`,
+          : `Cargo.toml for "${template.title}": a mod's CLIENT half on crowdy-client-sdk (the platform supplies it) with serde_json.`,
       path: 'Cargo.toml',
       target: template.target,
       tags: [...tags, 'cargo'],

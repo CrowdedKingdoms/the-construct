@@ -3,8 +3,8 @@
  *
  * The platform layer every Crowded Kingdoms browser game needs (hosted
  * sign-in, app entry, World Stores presence, voice / webcam / chat, the
- * Crowdy Studio dock with app and grid mods, JS grid programs) and the engine
- * loop around it. Deep imports (`@crowdedkingdoms/construct/platform/...`,
+ * Crowdy Studio dock with grid mods and their CLIENT halves, JS grid programs)
+ * and the engine loop around it. Deep imports (`@crowdedkingdoms/construct/platform/...`,
  * `/engine/...`, `/grid/...`) reach every module; this barrel re-exports the
  * pieces a game wires at boot.
  */
@@ -85,4 +85,11 @@ export {
   type ClientModHostReads,
   type ClientModHostWrites,
 } from './platform/studio/clientModHost';
+export {
+  GridClientHalves,
+  describeClientHalfPrompt,
+  isOwnClientHalfPrompt,
+  type ClientHalvesGrid,
+  type GridClientHalvesOptions,
+} from './platform/studio/clientHalves';
 export { GridProgramRunner, type GridProgramRunnerOptions } from './grid/GridProgramRunner';

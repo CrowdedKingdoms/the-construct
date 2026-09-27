@@ -53,10 +53,11 @@ World Stores (`@crowdedkingdoms/crowdyjs/stores`) run over one shared
 - `actors` — everyone else, decoded once with the same `poseCodec` and
   reaped when stale. Scenes read `session.players(programId)`.
 - `chunks` — the voxel cache the Paint program draws on, the holodeck draws
-  as cubes, and CLIENT mods read and write (`voxel_set`). Realtime edits
+  as cubes, and CLIENT halves read and write (`voxel_set`). Realtime edits
   merge in; `markDirty` queues durable write-back.
 - `host` — 3 s heartbeats that keep the actor's presence fresh for the
-  server-side gates (player-compute occupancy, artifact fetches).
+  server-side gates (a CLIENT half is served only to a player standing in its
+  grid).
 - `save` — a JSON blob per user per app, autosaved.
 
 The pose is a fixed 64-byte struct (`packages/construct/src/platform/realtime/actorCodec.ts`):
@@ -114,14 +115,21 @@ call starts it on the new version from its snapshot.
 
 See [MODDING.md](MODDING.md). In one paragraph: a player claims a chunk
 (`claimGridChunk`, policy `SELF_CLAIM`); the platform returns the grid and the
-player's effective code keys; the SDK's embed kit renders the IDE; SERVER
-targets build on the platform and run as ck-exec mods, hubs on the grid that
-players there call by name (`serverEngine: 'ck-exec'`); CLIENT modules compile
-on the platform and run in a same-origin worker in the browser through a
+player's effective code keys; the SDK's embed kit renders the IDE; a project
+runs as a ck-exec mod (`serverEngine: 'ck-exec'`). Its SERVER target builds on
+the platform into a hub on the grid that players there call by name; its
+CLIENT target builds on the platform (`modClientBuild`, a `crowdy-client-sdk`
+crate) into that mod's CLIENT half, which the grid serves to the players who
+stand in it. A CLIENT half runs in a same-origin worker through a
 SharedArrayBuffer bridge, with every host call allowlisted by the SDK's broker
-and answered by this game's router. Visitors run a grid's attached CLIENT mods
-after trusting the author. All of that needs the page to be cross-origin
-isolated, which is why `security-headers.mjs` exists.
+(`engine: 'ck-exec'`, bounded by the capability summary the player consented
+to) and answered by this game's router. `GridClientHalves`
+(`platform/studio/clientHalves.ts`, over CrowdyJS's `ExecClientHalves`) runs
+the CLIENT halves of whatever grid the player stands in: the player is asked
+once per author, in the HUD, before anything of someone else's runs, their own
+run without a question, and all of them stop when the player leaves the grid.
+All of that needs the page to be cross-origin isolated, which is why
+`security-headers.mjs` exists.
 
 The Ask/Build/Play agent is the same embed. `StudioService` passes
 `client.crowdyStudioAgent` and a `ConstructPlayerHostAdapter` (`observe`,
@@ -131,7 +139,7 @@ operator concern (this starter never reads or writes `cp*` fields). The Play
 safety banner lives outside the dock. Model usage is metered per request to
 the player's wallet by default (or the app's org wallet) — this game never
 holds a provider key. HUD **Wallet** links to Studio for the same wallet, which
-also covers grid / player-compute billing.
+also covers a player's mods.
 
 ## Generic versus demo
 

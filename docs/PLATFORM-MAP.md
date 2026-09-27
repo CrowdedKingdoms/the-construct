@@ -20,11 +20,12 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 | Scheduled world life | Hub timers (`ctx.timer_every`); they run only while players are in the app | The world hub's minute `pulse` timer (`exec/construct`) |
 | Player-owned land | `marketplace.claimGridChunk` under `SELF_CLAIM`; grids carry effective permission keys | `platform/studio/GridService.ts` |
 | Who is on which grid | Admin-only `gameApps.nearbyPermissions`; players read the game's own claim registry in its world hub | `GridService#lookup`, the world hub's `claims` / `record_claim` / `release_claim` |
-| In-game IDE | `@crowdedkingdoms/crowdyjs/crowdy-studio` embed kit over `crowdyStudio`, `exec` (the SERVER target as a mod, `serverEngine: 'ck-exec'`) and `playerCompute` (the CLIENT target) | `platform/studio/StudioService.ts` |
+| In-game IDE | `@crowdedkingdoms/crowdyjs/crowdy-studio` embed kit over `crowdyStudio` and `exec` (`serverEngine: 'ck-exec'`: the SERVER target as the grid's mod, the CLIENT target as its CLIENT half) | `platform/studio/StudioService.ts` |
 | Players' server code | ck-exec mods: `modBuild` → `modDeploy` → `modSetEnabled`, a hub `mod:<name>` per grid; node API confined to the grid, no emits | `exec/mods/` (the SERVER starters), [MODDING.md](MODDING.md) |
+| Players' browser code | A mod's CLIENT half: `modClientBuild` (a `crowdy-client-sdk` crate) → `modClientDeploy` onto the mod | `mods/templates/` (the CLIENT starters), [MODDING.md](MODDING.md) |
 | Crowdy Agent | `client.crowdyStudioAgent` + `context.playerHost`; Constructor `use_studio_agent`; **app** policy (`setCrowdyStudioAgentPolicy`) | `platform/studio/StudioService.ts`, `ConstructPlayerHostAdapter.ts`. Setup writes the app row only — never `cp*` / platform catalog. Model usage is metered to the player wallet by default (or the app's org wallet); no provider key in the game. |
-| Player wallet | Studio `/account/wallet` (grid / player-compute billing, not agent tokens) | HUD **Wallet**; origin from `VITE_AUTHORIZE_URL` / `VITE_STUDIO_URL` |
-| CLIENT mods for visitors | `marketplace.gridClientMods` → `trustGridAuthor` → `clientArtifactBytes` → `PlayerCodeBroker`. A project whose SERVER target is a mod is not attached (no pairing). | `platform/studio/clientModHost.ts` |
+| Player wallet | Studio `/account/wallet` (the player's mods and grid billing, not agent tokens) | HUD **Wallet**; origin from `VITE_AUTHORIZE_URL` / `VITE_STUDIO_URL` |
+| A grid's CLIENT halves, for whoever stands in it | CrowdyJS `ExecClientHalves`: `exec.gridClientMods` → `trustAuthor` (or `consentClientMod`) → `modClientArtifactBytes` (digest checked) → `PlayerCodeBroker({ engine: 'ck-exec' })`, stopped on leaving the grid | `platform/studio/clientHalves.ts` (`GridClientHalves`), host calls in `clientModHost.ts`, the question in `ui/Hud.ts#ask` |
 | CLIENT mouse clicks | Host call `pointer_clicks` (broker `input` family); Construct drains holodeck canvas down/up each tick | `platform/studio/pointerClicks.ts`, `clientModHost.ts` |
 | Starter mod files | `crowdyStudioCommonPublish` (common-file catalog) | `mods/templates/`, `exec/mods/`, `steps.mjs#publishStarterFiles` |
 | Progression | A hub's own state (the world hub's `progress`, created on first read); `ckx_sdk::model` for typed containers | `ModelService#progress` |
@@ -78,9 +79,9 @@ cadence; `ctx.now_ms()` is the wall clock.
 Runtime permission keys live on **access tiers**; players hold a tier per app.
 A claim materialises the player's code keys onto the new grid and returns them
 as `effectivePermissionKeys`. The game derives the SERVER and CLIENT gates
-from those exact keys and nothing else. Visitors fetch and run a grid's
-CLIENT artifacts only if *their* tier grants `run_client_code`, which is why
-Setup adds the two `run_*` keys to the default tier.
+from those exact keys and nothing else. A grid serves its CLIENT halves only
+to players whose *own* tier grants `run_client_code` and who stand in it,
+which is why Setup adds the two `run_*` keys to the default tier.
 
 ## Reading more
 
