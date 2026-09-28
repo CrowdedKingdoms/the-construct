@@ -83,7 +83,7 @@ describe('routeClientHostCall', () => {
     expect(out).toEqual({ actors: [{ uuid: 'me', name: 'neo' }] });
   });
 
-  it('clamps actors_list_radius to the grid and to radius 8', async () => {
+  it('clamps actors_list_radius to the grid', async () => {
     const r = reads();
     await routeClientHostCall(
       { fn: 'actors_list_radius', args: { x: '0', y: '0', z: '0', radius: 50 } } as never,
@@ -93,6 +93,23 @@ describe('routeClientHostCall', () => {
     // 3x1x3 chunks inside the grid, never beyond it.
     expect(r.calls.length).toBe(9);
     expect(r.calls.every((c) => c.split(',').every((v) => Math.abs(Number(v)) <= 1))).toBe(true);
+  });
+
+  it('reads crowdy-client-sdk radii and clamps them as the platform does (3 across, 1 up)', async () => {
+    const r = reads();
+    const wide = { low: { x: -9n, y: -9n, z: -9n }, high: { x: 9n, y: 9n, z: 9n } };
+    await routeClientHostCall(
+      {
+        fn: 'actors_list_radius',
+        args: { x: '0', y: '0', z: '0', radiusXz: 9, radiusY: 4 },
+      } as never,
+      r.reads,
+      wide,
+    );
+    expect(r.calls.length).toBe(7 * 3 * 7);
+    const ys = new Set(r.calls.map((c) => Number(c.split(',')[1])));
+    expect([...ys].sort()).toEqual([-1, 0, 1]);
+    expect(r.calls.every((c) => Math.abs(Number(c.split(',')[0])) <= 3)).toBe(true);
   });
 
   it('serves chunk_get as base64 and voxels_list as sparse rows', async () => {
@@ -324,6 +341,28 @@ describe('routeClientHostCall', () => {
     expect(modProjectiles(0)).toHaveLength(1);
     releaseModChunk();
     bindModInput(null);
+  });
+
+  it('parses the voxel_set arguments crowdy-client-sdk sends', () => {
+    expect(
+      parseVoxelSetArgs({
+        chunkX: 3,
+        chunkY: 0,
+        chunkZ: 3,
+        voxelX: 8,
+        voxelY: 1,
+        voxelZ: 4,
+        voxelType: 2,
+        stateBase64: null,
+      }),
+    ).toEqual({
+      chunk: { x: 3, y: 0, z: 3 },
+      x: 8,
+      y: 1,
+      z: 4,
+      voxelType: 2,
+      state: DEFAULT_VOXEL_STATE,
+    });
   });
 
   it('decodes an empty grid to no rows', () => {

@@ -46,7 +46,24 @@ tier's registry artifact, runs `check:pin` and opens the PR.
 `packages/construct` peers on the SDK with one comparator per minor line
 (`>=17.9.0-dev.0 <18`, …): npm admits a prerelease only against a comparator
 naming the same `X.Y.Z`, so a repin to a new minor adds its line there first,
-or `npm install` refuses the root pin with `ERESOLVE`.
+or `npm install` refuses the root pin with `ERESOLVE`. The optional crowdy-dsh
+peer is checked the same way here (a workspace's peers are strict), so a new
+crowdy-dsh `X.Y.Z` needs its line too. A game that installs the **published**
+package gets the range that release was cut with: npm refuses a CrowdyJS line
+it does not name (`ERESOLVE`) and only warns about an unnamed crowdy-dsh line,
+so a new line in either needs a construct release before a game takes it.
+
+**The framework package is published to npm by its own tags.**
+`publish-construct.yml` releases `packages/construct` from
+`construct/<tier>/vX.Y.Z` (dev `X.Y.Z-dev.N`, test `X.Y.Z-test.N`, prod `X.Y.Z`
+on `latest`), apart from this repo's `<tier>/vX.Y.Z` tags, which version the
+starter. Bump `packages/construct/package.json`, the root pin and the lockfile's
+`packages/construct` entry together, merge to the tier's branch, then tag that
+commit: the gate (`scripts/ci/resolve-construct-release.sh`) refuses a tag whose
+commit isn't in the branch, and the job refuses a tag that disagrees with
+`package.json`. It publishes with npm Trusted Publishing, which trusts this
+workflow by file name, so renaming it needs the package's npm settings changed
+too. `npm run test:release` runs the gate's test and the tarball content check.
 
 There is no deploy workflow in this repo, deliberately. Hosting is the
 developer's -- and since 0.8.0 one of the developer's options is
@@ -74,24 +91,68 @@ reserved for that org) through the same command a third party runs.
   set. A local ck-api or IDE-on-public-IP stack is opt-in via `VITE_DEV_*` in
   `.env.local` (see `.env.example`); default `npm run dev` is isolating and
   unproxied.
-- `model/blueprints.mjs`, `mods/templates/index.mjs` and
-  `src/platform/onboarding/steps.mjs` are plain ES modules on purpose: the Node
-  scripts import them and the browser imports the first two. Keep them free of
-  TypeScript and of browser-only globals; their `.d.mts` siblings carry types.
-- Seeding is idempotent on the server since ck-api `v1.93.0`: `gameModelSeed`
-  upserts containers by `binding_key = seed:<tempId>` and skips existing
-  edges. `deployModel`'s client-side "already exists" filter is redundant,
-  not wrong — keep it.
+- `model/catalog.mjs`, `mods/templates/index.mjs` (with the generated
+  `exec-mods.mjs`) and `src/platform/onboarding/steps.mjs` are plain ES modules
+  on purpose: the Node scripts import them and the browser imports the catalog.
+  Keep them free of TypeScript and of browser-only globals; their `.d.mts`
+  siblings carry types.
+- The game's server code is `exec/`: a ck-exec manifest (`ckx.json`: the root
+  `construct` and the `world` hub) and the Rust crates, `construct` and the
+  SERVER starter mods under `mods/`. From `exec/`, `cargo test`,
+  `cargo clippy --all-targets` (no warnings) and `cargo build --release
+  --target wasm32-unknown-unknown` must pass when you touch it. They need a
+  ck-exec checkout beside this repository for `ckx-sdk`, which is not public,
+  so CI cannot run them; the platform's build replaces that dependency line.
+- `npm run build:exec-sources` after editing `model/catalog.mjs` or
+  `exec/mods/`: it rewrites `exec/construct/src/catalog.rs` and
+  `mods/templates/exec-mods.mjs`, and the unit tests (and every deploy) fail
+  while either is stale.
+- What `execBuild` / `execModBuild` accept: files `Cargo.toml`, `README.md` and
+  `src/**/*.rs`; `[package]`, `[lib] crate-type = ["cdylib", "rlib"]` and
+  `[dependencies]` on `ckx-sdk`, `serde` and `serde_json` only, one key per
+  line; edition 2024. The source guard refuses the identifiers `include`,
+  `include_str`, `include_bytes`, `env`, `option_env` and the `asm` family
+  anywhere in code (not only as macros), and `path` / `link` inside an
+  attribute.
+- What `execModClientBuild` (a mod's CLIENT half) accepts: one crate, the same
+  files and source guard; `[package]`, `[lib] crate-type = ["cdylib"]`,
+  `[package.metadata.crowdy] tick_interval_ms` and `[dependencies]` on
+  `crowdy-client-sdk`, `serde` and `serde_json`; entry points through
+  `crowdy::register_module!`. The result is metered (`instrument`), optimized
+  and at most 512 KiB. `mods/templates/index.test.ts` holds the CLIENT
+  starters to it; to prove one really builds, build it with
+  `client.exec.modClientBuild` on dev (the build log names every step and the
+  host calls it found).
+- ck-exec builds, deploys and switches take the developer's own session (the
+  org's `manage_compute`) on the app's own datacenter origin
+  (`scripts/lib/cli.mjs#developerOnApp`), never an app token: another
+  datacenter's API deploys to its own execution manager.
+  `npm run deploy:exec -- --restart` switches every type off and on so a
+  running hub (the world hub never idles while players are in) starts again
+  on the new version.
+- `deployModel` stays in `steps.mjs` for games that keep a Game Model; the
+  starter no longer seeds one.
 
 ## Platform facts this code depends on (measured 2026-09-07, dev tier)
 
 - `nearbyGridPermissions` still requires `manage_apps`. Players can call
   `nearbyGrids` (ck-api `v1.93.0`: `gridId` + bounds, no `permissionKeys`).
-  This game still uses `Claim` containers; that workaround was not rewritten.
-- Model expressions have `now()` (int milliseconds, one instant per invoke).
-- A CLIENT mod runs for visitors only as the required companion of a live
-  SERVER module (full-stack project), after the visitor trusts the author, and
-  only if the **visitor's** tier holds `run_client_code`.
+  This game keeps its own claim registry in the world hub instead: a claim is
+  recorded for the calling player and only its owner may release it
+  (developers can `forget_claim`). The hub does not ask the platform who owns
+  a grid, so a player can still record a grid id they do not own if no one
+  recorded it first.
+- A CLIENT half (CrowdyJS 17.14, ck-api ≥ v2.24.0) is served by its mod's grid
+  only while the mod is on and running as the grid's owner, to a player whose
+  **own** tier holds `run_client_code`, who stands in the grid, and who
+  consented to it at its capability hash or trusts its author at a union no
+  wider. Every refusal of the artifact is `NOT_FOUND`; 12 fetches a minute per
+  player and mod (`RATE_LIMITED`). `GridClientHalves` runs them for owner and
+  visitor alike; the owner's own, self-written halves are trusted without a
+  question (`isOwnClientHalfPrompt`).
+- Crowdy Studio stores a `crowdy-client-sdk` crate only from ck-api `v2.25.1`:
+  before, every CLIENT project and CLIENT `Cargo.toml` Common File was refused
+  as `CROWDY_STUDIO_MANIFEST_INVALID` against the legacy compute allowlist.
 - The trust/artifact gates check presence written by Buddy on chunk entry;
   asking in the first seconds after entering a grid races it. `GRID_SETTLE_MS`.
 - `PlayerCodeBroker` ticks a client mod only when `tickIntervalMs` is set.
@@ -113,8 +174,40 @@ reserved for that org) through the same command a third party runs.
   write-back (`markDirty` → `chunks.update`).
 - pixi.js v8 needs `import 'pixi.js/unsafe-eval'` under a CSP without
   `unsafe-eval`.
-- The Studio's blank project declares only `crowdy-compute-sdk`; templates
-  that build JSON ship a companion `Cargo.toml` with `serde_json`.
+- A new Studio project's SERVER target is the platform's mod starter
+  (CrowdyJS 17.13: `execModStarter`, a `ckx-sdk` crate with its package named
+  for the project), so it builds as a mod as created, and its CLIENT target a
+  `crowdy-client-sdk` crate with `serde_json` (17.14). A CLIENT-only project's
+  half rides the mod named for its CLIENT module, which the Studio deploys
+  from the mod starter when the player's grid has none, so it needs SERVER
+  write and run keys too. A project created before 17.13 (SERVER) or 17.14
+  (CLIENT) keeps its compute-SDK crate, which a mod build refuses and the
+  Studio refuses as a CLIENT half before building: players import a starter's
+  `Cargo.toml` and `src/lib.rs` over it.
+- CrowdyJS 17's embed still types a `playerCompute` service it never calls
+  with `serverEngine: 'ck-exec'`; `StudioService` passes one that refuses.
+
+## ck-exec facts this code depends on (2026-09-26, local cluster and ck-api source)
+
+- ck-exec is a **dev-tier preview**: `setup`, `seed` and `deploy:exec` work
+  only against dev. Do not promote this to `test` / `prod` before ck-exec
+  reaches those tiers.
+- The root hub takes at most 50 calls a second; the HUD's polling goes to
+  `world/main`, never the root.
+- A pending timer keeps a hub running only while players are in the app, and
+  a hub is snapshotted every 30 s by default (at most one interval is lost in
+  a crash). The world hub re-arms its pulse timer on every start, so a
+  stopped world does not make up missed pulses, and calls `persist_now` after
+  a claim or progression change.
+- A mod calls no other node, subscribes to nothing, and its realtime emits are
+  dropped. Its node API reaches only its grid: `grids.get` for its own id,
+  `world.*` inside the grid's bounds, and `world.set_voxels` only while its
+  owner holds `update_voxel_data` there. That is why the scene starters build
+  with voxels, not construct.scene.v1 events.
+- Node API budget, shared by every hub and mod of an app: 200 reads and 50
+  voxel writes a second per ck-api replica.
+- The execution host's gateway is a `wss://` name under the tier's zone, which
+  the CSP's zone wildcard already admits.
 
 ## Docs
 

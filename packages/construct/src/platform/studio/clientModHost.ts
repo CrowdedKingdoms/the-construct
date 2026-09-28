@@ -1,16 +1,19 @@
 /**
- * The host side of CLIENT mods: what a sandboxed player module may ask the
- * game for, and how a consented grid-attached mod is started for a visitor.
+ * The host side of CLIENT mods: what a sandboxed player module (the Studio's
+ * preview, or a grid's CLIENT half, `clientHalves.ts`) may ask the game for.
  *
  * The SDK's `PlayerCodeBroker` has already validated every call against the
  * platform allowlist, clamped chunk coordinates to the mod's grid AABB, rate-
  * limited it, and answered `grid_info` / `hud_set` / `overlay_draw` itself.
  * What reaches `routeClientHostCall` is world_read, `voxel_set`,
- * `pointer_clicks`, pose, and scene_catalog / scene_instances. Reads return only what the running player can already
- * lawfully see. Writes go through ChunkStore.setVoxel (optimistic + UDP),
- * markDirty (packed-chunk write-back), and GraphQL updateVoxel so SERVER
- * voxels_list can read mailbox JSON from voxel_updates. Never hand a mod
- * the raw client.
+ * `pointer_clicks`, pose, input, and scene_catalog / scene_instances, in the
+ * argument shapes `crowdy-client-sdk` sends. Reads return only what the
+ * running player can already lawfully see. Writes go through
+ * ChunkStore.setVoxel (optimistic + UDP) and markDirty (durable write-back),
+ * the same route Paint uses. Never hand a mod the raw client.
+ *
+ * `runConsentedGridMod` starts a legacy grid-attached client mod, until
+ * CrowdyJS 18 removes them.
  */
 import {
   PlayerCodeBroker,
@@ -96,10 +99,17 @@ export const OFFERED_HOST_CALLS = [
 /** One zero byte, base64: the smallest non-empty voxel state the API accepts. */
 export const DEFAULT_VOXEL_STATE = 'AA==';
 
-const MAX_RADIUS = 8;
+/** `actors_list_radius` reaches this far, as the platform clamps it. */
+const MAX_RADIUS_XZ = 3;
+const MAX_RADIUS_Y = 1;
 
 function toBigInt(value: unknown): bigint {
   return BigInt(value as string | number | bigint);
+}
+
+function radius(value: unknown, max: number): bigint {
+  const requested = Number(value ?? 0);
+  return BigInt(Number.isFinite(requested) ? Math.max(0, Math.min(max, Math.floor(requested))) : 0);
 }
 
 export class HostCallRefusedError extends Error {
@@ -128,22 +138,20 @@ export async function routeClientHostCall(
       return { actors: reads.actorsInChunk(toBigInt(args.x), toBigInt(args.y), toBigInt(args.z)) };
     case 'actors_list_radius': {
       const origin = { x: toBigInt(args.x), y: toBigInt(args.y), z: toBigInt(args.z) };
-      const requested = Number(args.radius ?? args.r ?? 0);
-      const radius = BigInt(
-        Number.isFinite(requested) ? Math.max(0, Math.min(MAX_RADIUS, Math.floor(requested))) : 0,
-      );
+      const rXz = radius(args.radiusXz ?? args.radius ?? args.r, MAX_RADIUS_XZ);
+      const rY = radius(args.radiusY, MAX_RADIUS_Y);
       const low = grid
         ? {
-            x: maxBig(grid.low.x, origin.x - radius),
-            y: maxBig(grid.low.y, origin.y - radius),
-            z: maxBig(grid.low.z, origin.z - radius),
+            x: maxBig(grid.low.x, origin.x - rXz),
+            y: maxBig(grid.low.y, origin.y - rY),
+            z: maxBig(grid.low.z, origin.z - rXz),
           }
         : origin;
       const high = grid
         ? {
-            x: minBig(grid.high.x, origin.x + radius),
-            y: minBig(grid.high.y, origin.y + radius),
-            z: minBig(grid.high.z, origin.z + radius),
+            x: minBig(grid.high.x, origin.x + rXz),
+            y: minBig(grid.high.y, origin.y + rY),
+            z: minBig(grid.high.z, origin.z + rXz),
           }
         : origin;
       const actors: Array<Record<string, unknown>> = [];
@@ -232,7 +240,7 @@ function asCoord3(value: unknown): { x: unknown; y: unknown; z: unknown } | null
   return null;
 }
 
-/** Accept the SDK tuple shape and the flattened host-call JSON the broker clamps. */
+/** Accept the SDKs' flattened host-call JSON (the broker clamps its chunk) and the tuple shape. */
 export function parseVoxelSetArgs(args: Record<string, unknown>): {
   chunk: { x: number; y: number; z: number };
   x: number;
@@ -338,6 +346,10 @@ const artifactCache = new Map<string, CachedArtifact>();
  * circuit breaker as the Studio's own Test/Run path. Its HUD output lands in
  * the persistent text HUD. Returns null (fails closed) when the artifact
  * cannot be fetched.
+ *
+ * @deprecated A legacy grid-attached client mod (`marketplace.gridClientMods`),
+ * which CrowdyJS 18 removes. A ck-exec mod's CLIENT half runs through
+ * `GridClientHalves` (`clientHalves.ts`).
  */
 export async function runConsentedGridMod(options: {
   client: CrowdyClient;

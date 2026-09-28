@@ -1,0 +1,20 @@
+# The Construct's ck-exec crates: the world hub (`construct`, deployed by `exec/ckx.json`) and the
+# SERVER starter mods Crowdy Studio publishes (`mods/*`, deployed by players to their grids). Each
+# crate's Cargo.toml stands alone, the way `execBuild` and `execModBuild` take it; this workspace
+# only builds and tests them together, with the release profile the platform's builds append:
+#   cargo test && cargo clippy --all-targets && cargo build --release --target wasm32-unknown-unknown
+[workspace]
+resolver = "3"
+members = [
+    "construct",
+    "mods/construct-beacon",
+    "mods/construct-spinning-child",
+    "mods/construct-pool-cue",
+]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
