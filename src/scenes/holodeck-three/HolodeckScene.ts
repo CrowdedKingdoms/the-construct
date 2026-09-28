@@ -377,7 +377,7 @@ export class HolodeckScene implements GameScene {
     if (!held) {
       for (const grid of claimed) {
         if (!pointInClaimedChunk(grid.bounds, this.position)) continue;
-        const gate = session.studio.state;
+        const gate = session.studio.snapshot;
         const ready = gate.grid?.gridId === grid.gridId && gate.clientModsReady;
         if (ready) continue;
         const box = claimedChunkAabb(grid.bounds);
@@ -393,7 +393,7 @@ export class HolodeckScene implements GameScene {
         break;
       }
     }
-    const studioState = session.studio.state;
+    const studioState = session.studio.snapshot;
     const open = new Set<string>();
     const loading = new Set<string>();
     let approachId: string | null = null;

@@ -202,7 +202,8 @@ export class GridService {
         const gridId = String(row.gridId ?? '');
         const bounds = gridBoundsFrom(row.lowChunk, row.highChunk);
         if (!gridId || !bounds || !gridBoundsContain(bounds, chunk)) continue;
-        const effectiveKeys = studioPermissions(row.permissionKeys).effectiveKeys;
+        const keys = row.permissionKeys;
+        const effectiveKeys = studioPermissions(Array.isArray(keys) ? keys : null).effectiveKeys;
         if (effectiveKeys.length === 0) continue;
         const volume = boundsVolume(bounds);
         if (best && volume >= bestVolume) continue;

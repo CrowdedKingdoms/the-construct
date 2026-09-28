@@ -164,13 +164,10 @@ export class ClaimedChunkLayer {
     scene.add(this.group);
   }
 
-  /**
-   * `avatar` is the local body. A claim the avatar is standing in drops its
-   * solid shell so the camera can look in from outside. Leaving puts it back.
-   */
   /** Advance the wall scan. `nowMs` is the frame clock. */
   tick(nowMs: number): void {
-    this.loadingMaterial.uniforms.uTime.value = nowMs / 1000;
+    const time = this.loadingMaterial.uniforms.uTime;
+    if (time) time.value = nowMs / 1000;
   }
 
   /**
