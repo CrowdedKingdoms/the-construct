@@ -1,28 +1,41 @@
 /**
  * Crowdy Studio, embedded — the in-game IDE where players write SERVER and
- * CLIENT Rust mods for the grid they stand on.
+ * CLIENT Rust mods for the grid they stand on. A project runs as a ck-exec mod
+ * (`serverEngine: 'ck-exec'`): its SERVER target is a `ckx-sdk` crate the
+ * platform builds, deploys to the grid and switches on, which players in the
+ * grid call as `mod:<name>`; its CLIENT target is a `crowdy-client-sdk` crate
+ * the platform builds as that mod's CLIENT half, which the grid serves to the
+ * players who stand in it.
  *
  * The SDK's embed kit owns the chrome (dock, fullscreen fallback, Context
  * drawer, focus trap, HUD sink). This service supplies what only the game
  * knows:
  *  - the grid the player is on and their effective permissions on it,
- *  - the same-origin glue worker that runs CLIENT mods,
- *  - the allowlisted host-call router (what a mod may read),
+ *  - the same-origin glue worker that runs CLIENT halves,
+ *  - the allowlisted host-call router (what a CLIENT half may read),
  *  - input suppression and layout hooks,
- *  - the visitor lifecycle: when you stand on someone else's grid, their
- *    trusted CLIENT mods run for you after you approve them, and
+ *  - the grid's CLIENT halves wherever you stand (`GridClientHalves`): the
+ *    ones you consented to, or whose author you trust, run for you, you are
+ *    asked about the rest, and they stop when you leave the grid, and
  *  - the Agentic Crowdy Studio host (Ask / Build / Play) when the platform
  *    policy and `use_studio_agent` are armed.
  *
- * CLIENT mods need `crossOriginIsolated` (COOP + COEP headers on the host). The
- * service checks that at construction and hides the CLIENT half when it is
- * missing, saying so in the HUD, rather than letting a worker fail silently.
+ * CLIENT halves need `crossOriginIsolated` (COOP + COEP headers on the host).
+ * The service checks that at construction and hides the CLIENT target when it
+ * is missing, saying so in the HUD, rather than letting a worker fail silently.
  */
-import { createGridHostCalls, type PlayerCodeHostCall } from '@crowdedkingdoms/crowdyjs';
+import {
+  createGridHostCalls,
+  type ExecClientHalfPrompt,
+  type ExecGridClientMod,
+  type PlayerCodeHostCall,
+} from '@crowdedkingdoms/crowdyjs';
 import {
   CrowdyStudioEmbed,
   CrowdyStudioTextHud,
+  type CrowdyStudioController,
   type CrowdyStudioEmbedContext,
+  type CrowdyStudioPlayerCompute,
 } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
 import glueWorkerAssetUrl from '@crowdedkingdoms/crowdyjs/player-glue-worker?worker&url';
 
@@ -33,7 +46,7 @@ import { messageOf } from '../network/NetworkManager';
 import { isTextEntry } from '../../engine/Input';
 import { chunkKey, worldToChunk, type ChunkCoord, type Vec3 } from '../realtime/space';
 import { AgentLocomotion } from './agentLocomotion';
-import { ClientModLifecycle, type ClientModScope } from './ClientModLifecycle';
+import { describeClientHalfPrompt, GridClientHalves, studioPreviewModName } from './clientHalves';
 import { ConstructPlayerHostAdapter } from './ConstructPlayerHostAdapter';
 import { HumanInputMonitor } from './HumanInputMonitor';
 import {
@@ -41,7 +54,6 @@ import {
   DEFAULT_VOXEL_STATE,
   routeClientHostCall,
   routeWithFallback,
-  runConsentedGridMod,
   voxelStateToWire,
   type ClientModHostReads,
   type ClientModHostWrites,
@@ -52,7 +64,7 @@ import type { Input } from '../../engine/Input';
 import { ModOverlayStore } from './modOverlay';
 import { ModSceneStore } from './modScene';
 import { GridService, type GridSnapshot } from './GridService';
-import { hasAnyStudioPermission, toBrokerBounds } from './permissions';
+import { hasAnyStudioPermission, toBrokerBounds, type GridBounds } from './permissions';
 import { Emitter } from '../util/Emitter';
 
 export interface StudioState {
@@ -60,6 +72,7 @@ export interface StudioState {
   grid: GridSnapshot | null;
   /** COOP/COEP present and the build flag on. */
   clientModsAvailable: boolean;
+  /** The grid's CLIENT halves running for this player. */
   clientModsRunning: number;
   /** Why CLIENT mods are unavailable, when they are. */
   clientModsReason: string | null;
@@ -73,8 +86,17 @@ export interface StudioHooks {
   suppressGameplayInput(): () => void;
   onLayoutChange(rightInsetPx: number): void;
   notify(text: string, tone?: 'info' | 'warn' | 'error'): void;
-  /** Ask the player whether to trust an author's mods; defaults to `confirm`. */
-  confirmTrust?(summary: string): Promise<boolean>;
+  /**
+   * Ask the player whether to run a grid's CLIENT halves; `summary` is the
+   * question as plain text. `signal` aborts when they leave the grid. Defaults
+   * to `confirm`.
+   */
+  confirmTrust?(
+    summary: string,
+    context: { prompt: ExecClientHalfPrompt; signal: AbortSignal },
+  ): Promise<boolean>;
+  /** Ask once per author (the default) or once per CLIENT half. */
+  clientHalfConsent?: 'author' | 'mod';
   /** Screenshot hook for the agent pane. */
   captureFrame?(): Promise<HTMLCanvasElement | ImageBitmap | Blob | null>;
   describeView?(): string | undefined;
@@ -115,6 +137,29 @@ function createConstructTextHud(): CrowdyStudioTextHud {
   return hud;
 }
 
+/**
+ * CrowdyJS 17's embed types a legacy player compute service, which it never
+ * calls while both targets run on ck-exec; this one refuses, so nothing can
+ * reach the switched-off engine.
+ */
+const NO_PLAYER_COMPUTE: CrowdyStudioPlayerCompute = {
+  deploy: refuseLegacyEngine,
+  versions: refuseLegacyEngine,
+  setEnabled: refuseLegacyEngine,
+  setRequires: refuseLegacyEngine,
+  artifactBytes: refuseLegacyEngine,
+  usage: refuseLegacyEngine,
+  runs: refuseLegacyEngine,
+  logs: refuseLegacyEngine,
+  invoke: refuseLegacyEngine,
+};
+
+function refuseLegacyEngine(): Promise<never> {
+  return Promise.reject(
+    new Error('Crowdy Studio runs mods on ck-exec here; legacy player compute is not used'),
+  );
+}
+
 const GRID_REFRESH_MS = 8_000;
 const MODS_REFRESH_MS = 10_000;
 /**
@@ -135,15 +180,13 @@ export class StudioService {
   /** CLIENT scene_catalog / scene_instances. Templates are cloned in the page. */
   readonly scene = new ModSceneStore();
   private readonly hud = createConstructTextHud();
-  private readonly lifecycle = new ClientModLifecycle();
-  private readonly declinedAuthors = new Set<string>();
-  private readonly approvedAuthors = new Set<string>();
   private readonly agentHost: ConstructPlayerHostAdapter;
   private readonly humanInput = new HumanInputMonitor();
   private readonly pointerClicks = new PointerClickBuffer();
   /** JS grid programs the agent (or the player) runs on the current grid. */
   readonly programs: GridProgramRunner;
   private gameplay: Input | null = null;
+  private halves: GridClientHalves | null = null;
   private gridEnteredAt = 0;
   private embed: CrowdyStudioEmbed | null = null;
   private hooks: StudioHooks | null = null;
@@ -152,7 +195,6 @@ export class StudioService {
   private lastGridChunkKey: string | null = null;
   private lastGridReadAt = 0;
   private lastModsReadAt = 0;
-  private modsInFlight = false;
   private timer: ReturnType<typeof setInterval> | null = null;
   /** Last GraphQL-persisted mailbox payload per cell, so roster ticks do not hammer updateVoxel. */
   private lastDurableVoxel = new Map<string, string>();
@@ -160,6 +202,10 @@ export class StudioService {
     string,
     { at: number; states: Array<{ x: number; y: number; z: number; state: string }> }
   >();
+  /** The grid the open Studio edits, and the mod its project runs as. */
+  private studioGridId: string | null = null;
+  private studioMod: string | null = null;
+  private unwatchStudio: (() => void) | null = null;
 
   constructor(private readonly session: GameSession) {
     this.grids = new GridService(session.network);
@@ -225,8 +271,10 @@ export class StudioService {
         get crowdyStudio() {
           return network().game.crowdyStudio;
         },
-        get playerCompute() {
-          return network().game.playerCompute;
+        playerCompute: NO_PLAYER_COMPUTE,
+        // Both targets' builds, deploys, switch and preview (`serverEngine` below).
+        get exec() {
+          return network().game.exec;
         },
         get playerWallet() {
           return network().game.playerWallet;
@@ -244,6 +292,9 @@ export class StudioService {
       },
       appId: () => this.session.appId,
       gameName: GAME_NAME,
+      // The SERVER target runs as the grid's mod and the CLIENT target as that mod's CLIENT
+      // half, which the grid serves to the players standing in it (GridClientHalves).
+      serverEngine: 'ck-exec',
       closeKeyCode: 'KeyM',
       dsh: {
         graphql: network().game.graphql,
@@ -258,7 +309,8 @@ export class StudioService {
         studioOrigin: STUDIO_ORIGIN ?? undefined,
         openOnMount: true,
       },
-      onAgentMounted: (_handle) => {
+      onAgentMounted: (handle) => {
+        this.watchStudio(handle.controller);
         this.state = { ...this.state, agentReady: true, agentReason: null };
         this.emit();
       },
@@ -267,6 +319,7 @@ export class StudioService {
         this.emit();
       },
       onAgentUnmounted: () => {
+        this.watchStudio(null);
         this.state = { ...this.state, agentReady: false, agentReason: null };
         this.emit();
       },
@@ -279,7 +332,9 @@ export class StudioService {
           this.scene.remove(source);
           this.hud.remove(source);
         }
+        this.studioGridId = null;
         this.setOpen(false);
+        void this.refreshClientHalves();
       },
     });
     if (!this.timer) this.timer = setInterval(() => void this.poll(), 2000);
@@ -351,7 +406,9 @@ export class StudioService {
   dispose(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    this.lifecycle.shutdown();
+    this.halves?.stop();
+    this.halves = null;
+    this.watchStudio(null);
     this.programs.stopAll();
     this.embed?.destroy();
     this.embed = null;
@@ -368,6 +425,7 @@ export class StudioService {
   private openOn(grid: GridSnapshot): void {
     if (!this.embed) throw new Error('Studio not attached');
     this.embed.toggle(this.contextFor(grid));
+    this.studioGridId = this.embed.open ? grid.gridId : null;
     this.setOpen(true);
   }
 
@@ -376,7 +434,7 @@ export class StudioService {
     const clientOk = this.state.clientModsAvailable;
     const reads = this.reads();
     const writes = this.writes();
-    const serverCalls = this.serverCallsFor(grid);
+    const serverCalls = this.serverCallsFor(grid.gridId, grid.bounds);
     const overlaySource = `studio:${grid.gridId}`;
     return {
       gridId: grid.gridId,
@@ -431,14 +489,86 @@ export class StudioService {
   }
 
   /**
-   * The rest of the CLIENT host catalog for a mod on `grid` (DN-10): channels,
-   * the player-tier model, sessions and user state through CrowdyJS, confined
-   * to the grid. The local router still answers world reads and voxel writes.
+   * The rest of the CLIENT host catalog for a mod on a grid (DN-10): channels,
+   * sessions and user state through CrowdyJS, confined to the grid. The local
+   * router still answers world reads and voxel writes.
    */
-  private serverCallsFor(grid: GridSnapshot): (call: PlayerCodeHostCall) => Promise<unknown> {
+  private serverCallsFor(
+    gridId: string,
+    bounds: GridBounds,
+  ): (call: PlayerCodeHostCall) => Promise<unknown> {
     const game = this.session.network.game;
-    const scope = game.grid(this.session.appId, grid.gridId, toBrokerBounds(grid.bounds));
+    const scope = game.grid(this.session.appId, gridId, toBrokerBounds(bounds));
     return createGridHostCalls({ scope, client: game });
+  }
+
+  /**
+   * The grid's CLIENT halves, made on first use: the app is entered by then,
+   * and the whole service is rebuilt for another app.
+   */
+  private clientHalves(): GridClientHalves {
+    this.halves ??= new GridClientHalves({
+      exec: () => this.session.network.game.exec,
+      appId: this.session.appId,
+      workerUrl: glueWorkerAssetUrl,
+      selfUserId: () => this.session.network.user?.userId ?? null,
+      reads: this.reads(),
+      writes: this.writes(),
+      input: this.hostInput(),
+      scene: this.scene,
+      serverCalls: (grid) =>
+        this.serverCallsFor(grid.gridId, {
+          low: stringCorner(grid.bounds.low),
+          high: stringCorner(grid.bounds.high),
+        }),
+      hud: this.hud,
+      overlay: this.overlay,
+      ask: this.hooks?.clientHalfConsent ?? 'author',
+      confirm: (prompt, signal) =>
+        this.confirmTrust(describeClientHalfPrompt(prompt, this.authorName(prompt)), {
+          prompt,
+          signal,
+        }),
+      filter: (mod) => !this.previewedByStudio(mod),
+      onChange: (running) => {
+        this.state = { ...this.state, clientModsRunning: running.length };
+        this.emit();
+      },
+      log: (line) => this.session.network.log(line),
+    });
+    return this.halves;
+  }
+
+  /** The open Studio previews its project's CLIENT half itself; the grid's copy waits. */
+  private previewedByStudio(mod: ExecGridClientMod): boolean {
+    return (
+      this.isOpen &&
+      this.studioMod !== null &&
+      String(mod.gridId) === this.studioGridId &&
+      mod.name === this.studioMod
+    );
+  }
+
+  private watchStudio(controller: CrowdyStudioController | null): void {
+    this.unwatchStudio?.();
+    this.unwatchStudio = null;
+    const follow = (mod: string | null) => {
+      if (mod === this.studioMod) return;
+      this.studioMod = mod;
+      void this.refreshClientHalves();
+    };
+    if (!controller) {
+      follow(null);
+      return;
+    }
+    this.unwatchStudio = controller.subscribe((state) =>
+      follow(state.project ? studioPreviewModName(state.project) : null),
+    );
+  }
+
+  private authorName(prompt: ExecClientHalfPrompt): string | null {
+    const grid = this.currentGrid;
+    return grid && grid.gridId === String(prompt.gridId) ? (grid.ownerName ?? null) : null;
   }
 
   private observationFrame() {
@@ -635,22 +765,25 @@ export class StudioService {
   }
 
   private adoptGrid(grid: GridSnapshot | null, chunk: ChunkCoord): void {
+    const entered = (grid?.gridId ?? null) !== (this.currentGrid?.gridId ?? null);
     this.currentGrid = grid;
     this.lastGridChunkKey = chunkKey(chunk);
     this.lastGridReadAt = Date.now();
-    if (this.lifecycle.enterGrid(grid?.gridId ?? null)) {
-      this.declinedAuthors.clear();
-      this.approvedAuthors.clear();
+    if (entered) {
       this.lastModsReadAt = 0;
       this.gridEnteredAt = Date.now();
       this.overlay.clear();
       this.scene.clear();
       clearModPose();
+      if (this.state.clientModsAvailable) {
+        this.clientHalves().enterGrid(
+          grid ? { gridId: grid.gridId, bounds: toBrokerBounds(grid.bounds) } : null,
+        );
+      }
     }
     this.state = {
       ...this.state,
       grid,
-      clientModsRunning: this.lifecycle.runningCount,
     };
     this.emit();
   }
@@ -668,7 +801,7 @@ export class StudioService {
     return Number.isFinite(px) ? px : 0;
   }
 
-  /** Periodic: which grid are we on, and are there mods to run for us? */
+  /** Periodic: which grid are we on, and are there CLIENT halves to run for us? */
   private async poll(): Promise<void> {
     if (!this.session.joined || !this.session.network.hasGame) return;
     const selfChunk = this.session.world.self.chunk;
@@ -684,121 +817,31 @@ export class StudioService {
         this.session.network.log(`grid lookup failed: ${messageOf(error)}`);
       }
     }
-    if (
-      this.state.clientModsAvailable &&
-      this.currentGrid &&
-      now - this.gridEnteredAt >= GRID_SETTLE_MS
-    ) {
-      await this.syncGridClientMods(this.currentGrid);
-    }
+    if (now - this.lastModsReadAt >= MODS_REFRESH_MS) await this.refreshClientHalves();
   }
 
   /**
-   * Fetch the grid's attached CLIENT mods and run the trusted ones, including
-   * for the owner. Studio's Test draft broker dies on reload, so the owner
-   * has to run the same attachment or their clicks never reach the mod.
-   * Re-run on a cadence so a hash change stops the old worker.
+   * Reconcile the grid's CLIENT halves: start the consented ones, ask about
+   * the rest, stop what changed or went. Waits out the presence race after
+   * entering a grid.
    */
-  private async syncGridClientMods(grid: GridSnapshot): Promise<void> {
-    const now = Date.now();
-    if (this.modsInFlight || now - this.lastModsReadAt < MODS_REFRESH_MS) return;
-    const scope = this.lifecycle.scope(grid.gridId);
-    if (!scope) return;
-    this.lastModsReadAt = now;
-    this.modsInFlight = true;
+  private async refreshClientHalves(): Promise<void> {
+    const halves = this.halves;
+    if (!halves || !this.currentGrid || !this.state.clientModsAvailable) return;
+    if (Date.now() - this.gridEnteredAt < GRID_SETTLE_MS) return;
+    this.lastModsReadAt = Date.now();
     try {
-      const client = this.session.network.game;
-      const appId = this.session.appId;
-      let mods = await client.marketplace.gridClientMods({ appId, gridId: grid.gridId });
-      if (!this.lifecycle.reconcile(scope, mods.map(descriptorOf))) return;
-
-      let trustedAny = false;
-      for (const mod of mods) {
-        if (mod.callerTrustsAuthor) continue;
-        const authorKey = `${mod.authorKind}:${mod.authorRef}:${mod.authorCapabilityHash}`;
-        if (this.declinedAuthors.has(authorKey)) continue;
-        const selfAuthored = String(mod.authorRef) === this.session.userId;
-        if (selfAuthored) this.approvedAuthors.add(authorKey);
-        if (!this.approvedAuthors.has(authorKey)) {
-          const approved = await this.confirmTrust(
-            `Trust ${String(mod.authorKind).toLowerCase()} ${mod.authorRef}'s mods on this grid?\n\n` +
-              'Their client code will run in a sandbox while you are here.\n\n' +
-              prettyCapabilities(mod.authorCapabilitySummaryJson),
-          );
-          if (!approved) {
-            this.declinedAuthors.add(authorKey);
-            continue;
-          }
-          // Remembered so a transient refusal (presence not registered yet)
-          // retries silently instead of asking the player again.
-          this.approvedAuthors.add(authorKey);
-        }
-        await client.marketplace.trustGridAuthor({
-          appId,
-          gridId: grid.gridId,
-          authorKind: mod.authorKind,
-          authorRef: mod.authorRef,
-          consentCapabilityHash: mod.authorCapabilityHash,
-        });
-        if (!this.lifecycle.isCurrent(scope)) return;
-        trustedAny = true;
-      }
-      if (trustedAny) {
-        mods = await client.marketplace.gridClientMods({ appId, gridId: grid.gridId });
-        if (!this.lifecycle.isCurrent(scope)) return;
-      }
-      for (const mod of mods) {
-        if (!this.lifecycle.isCurrent(scope)) return;
-        if (
-          (mod.callerTrustsAuthor || mod.callerConsented) &&
-          !this.lifecycle.has(mod.attachmentId)
-        ) {
-          await this.runGridMod(mod, grid, scope);
-        }
-      }
+      await halves.refresh();
     } catch (error) {
-      this.session.network.log(`grid client-mod refresh failed: ${messageOf(error)}`);
-    } finally {
-      this.modsInFlight = false;
-      this.state = { ...this.state, clientModsRunning: this.lifecycle.runningCount };
-      this.emit();
+      this.session.network.log(`grid CLIENT halves unavailable: ${messageOf(error)}`);
     }
   }
 
-  private async runGridMod(
-    mod: {
-      attachmentId: string;
-      clientArtifactHash: string;
-      capabilityHash: string;
-      listingName?: string | null;
-    },
-    grid: GridSnapshot,
-    scope: ClientModScope,
-  ): Promise<void> {
-    const handle = await runConsentedGridMod({
-      client: this.session.network.game,
-      appId: this.session.appId,
-      attachmentId: mod.attachmentId,
-      artifactCacheKey: mod.clientArtifactHash,
-      hudSource: `grid:${mod.attachmentId}`,
-      hudLabel: mod.listingName || 'Grid mod',
-      grid: toBrokerBounds(grid.bounds, grid.gridId),
-      workerUrl: glueWorkerAssetUrl,
-      serverCalls: this.serverCallsFor(grid),
-      reads: this.reads(),
-      writes: this.writes(),
-      hud: this.hud,
-      overlay: this.overlay,
-      scene: this.scene,
-      input: this.hostInput(),
-    });
-    if (handle) {
-      this.lifecycle.track(scope, descriptorOf(mod), handle);
-    }
-  }
-
-  private async confirmTrust(summary: string): Promise<boolean> {
-    if (this.hooks?.confirmTrust) return this.hooks.confirmTrust(summary);
+  private async confirmTrust(
+    summary: string,
+    context: { prompt: ExecClientHalfPrompt; signal: AbortSignal },
+  ): Promise<boolean> {
+    if (this.hooks?.confirmTrust) return this.hooks.confirmTrust(summary, context);
     return window.confirm(summary);
   }
 
@@ -807,29 +850,6 @@ export class StudioService {
   }
 }
 
-function descriptorOf(mod: {
-  attachmentId: string;
-  clientArtifactHash: string;
-  capabilityHash: string;
-}) {
-  return {
-    attachmentId: mod.attachmentId,
-    artifactHash: mod.clientArtifactHash,
-    capabilityHash: mod.capabilityHash,
-  };
-}
-
-function prettyCapabilities(json: string | null | undefined): string {
-  if (!json) return '(no capability summary)';
-  try {
-    const parsed = JSON.parse(json) as unknown;
-    if (parsed && typeof parsed === 'object') {
-      return Object.entries(parsed as Record<string, unknown>)
-        .map(([k, v]) => `• ${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
-        .join('\n');
-    }
-    return String(parsed);
-  } catch {
-    return json;
-  }
+function stringCorner(corner: { x: bigint; y: bigint; z: bigint }) {
+  return { x: corner.x.toString(), y: corner.y.toString(), z: corner.z.toString() };
 }

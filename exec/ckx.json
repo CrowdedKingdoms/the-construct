@@ -1,0 +1,7 @@
+{
+  "root": "construct",
+  "types": {
+    "construct": { "kind": "hub", "crate": "construct", "client": true },
+    "world": { "kind": "hub", "parent": "construct", "crate": "construct", "client": true }
+  }
+}

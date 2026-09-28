@@ -4,7 +4,7 @@ The Construct is a presentation-and-intent client. It renders, takes input,
 interpolates other players, and asks the platform to do things. It does not
 own anything a player could cheat by editing: inventories, scores, who owns a
 grid, and who may run code are decided by the Crowded Kingdoms platform and
-the game model deployed to it.
+the game's own server code, the world hub it deploys to ck-exec.
 
 ## Layers
 
@@ -12,9 +12,10 @@ the game model deployed to it.
 | --- | --- | --- |
 | **Scenes** (`src/scenes/*`) | Rendering, camera, input handling, the local player's position, pads and pickups | Talk to the network, hold a token, decide permissions |
 | **Engine** (`packages/construct/src/engine/`) | The frame loop, the scene router, keyboard/pointer state, feeding the local pose to replication | Know which renderer a scene uses |
-| **Platform** (`packages/construct/src/platform/`) | Hosted sign-in, app entry, tokens, presence, chunks, save, chat, webcam (`media/WebcamService`: capture → `sendVideoFrame`; `video` notifications → per-uuid bitmaps; ended on `actorLeft`), model reads, Studio, onboarding | Render (a bitmap is handed to the scene, which owns drawing and disposal) |
-| **CrowdyJS** | GraphQL + realtime transport, World Stores, Game Kit, Crowdy Studio chrome, the mod sandbox broker | — |
-| **Crowded Kingdoms** | Authorization, grids and claims, the game model, compile + admission of player code, presence, persistence | — |
+| **Platform** (`packages/construct/src/platform/`) | Hosted sign-in, app entry, tokens, presence, chunks, save, chat, webcam (`media/WebcamService`: capture → `sendVideoFrame`; `video` notifications → per-uuid bitmaps; ended on `actorLeft`), world hub calls, Studio, onboarding | Render (a bitmap is handed to the scene, which owns drawing and disposal) |
+| **World hub** (`exec/`) | The game's server code on ck-exec: the pulse, the program catalog, the claim registry, progression | Trust a client's word for who is calling |
+| **CrowdyJS** | GraphQL + realtime transport, World Stores, `client.exec` (ck-exec connections, builds, deploys, mods), Crowdy Studio chrome, the mod sandbox broker | — |
+| **Crowded Kingdoms** | Authorization, grids and claims, ck-exec (running the world hub and players' mods), compile + admission of player code, presence, persistence | — |
 
 ## The boot sequence
 
@@ -52,10 +53,11 @@ World Stores (`@crowdedkingdoms/crowdyjs/stores`) run over one shared
 - `actors` — everyone else, decoded once with the same `poseCodec` and
   reaped when stale. Scenes read `session.players(programId)`.
 - `chunks` — the voxel cache the Paint program draws on, the holodeck draws
-  as cubes, and CLIENT mods read and write (`voxel_set`). Realtime edits
+  as cubes, and CLIENT halves read and write (`voxel_set`). Realtime edits
   merge in; `markDirty` queues durable write-back.
 - `host` — 3 s heartbeats that keep the actor's presence fresh for the
-  server-side gates (player-compute occupancy, artifact fetches).
+  server-side gates (a CLIENT half is served only to a player standing in its
+  grid).
 - `save` — a JSON blob per user per app, autosaved.
 
 The pose is a fixed 64-byte struct (`packages/construct/src/platform/realtime/actorCodec.ts`):
@@ -66,38 +68,68 @@ the holodeck hides players whose `program` is not 0 and Paint shows only its own
 Presence is spatial: everything is addressed to a chunk (16 units) and fanned
 out within `REPLICATION_DISTANCE` chunks. Proximity chat rides the same path.
 
-## The game model
+## The world hub
 
-`model/blueprints.mjs` is the single definition, deployed by `npm run setup` and
-`npm run seed` through `client.kit(appId).deploy(...)`:
+The game's server code is `exec/`: a ck-exec manifest (`ckx.json`) and one Rust
+crate, `exec/construct`, built on the platform (`execBuild`) and deployed with
+the app (`execDeploy`) by `npm run setup`, `npm run seed` and `npm run
+deploy:exec`. It declares two hubs:
 
-- `progressionBlueprint` (XP/levels/skills, trusted grants only) and
-  `leaderboardsBlueprint` (keep-best scores, host-submitted) — two kit layers
-  most games need, as-is.
-- A hand-authored layer: `Program` catalog, a `WorldState` singleton with a
-  minute-interval automation, and `Claim` — the player-readable registry of
-  which chunk became which grid.
+- `construct`, the app's root hub, which only answers `status`. The platform
+  limits a root hub to 50 calls a second, so nothing polls it.
+- `world`, keyed `main` (it refuses any other key), which holds what the
+  legacy Game Model kept in containers:
+  - `pulses`, advanced by a 60-second hub timer. Hub timers run only while
+    players are in the app, as the `construct-pulse` automation did, and the
+    timer is re-armed whenever the hub starts, so missed pulses are never made
+    up. Each pulse is published on the `pulse` topic.
+  - the program catalog, compiled in from `model/catalog.mjs`
+    (`npm run build:exec-sources` writes `exec/construct/src/catalog.rs`);
+  - the claim registry: which chunk became which player's grid. `record_claim`
+    records for the calling player (the platform names the caller; a client
+    cannot name an owner), `claims` lists (by chunk, the caller's own, or all),
+    `release_claim` removes only the caller's own, and developers can
+    `forget_claim` anyone's;
+  - each player's progression (level, xp, skill points), created on first
+    read and read-only, as it was.
 
-Re-seeding is safe: definitions upsert by name, and since ck-api `v1.93.0`
-`gameModelSeed` upserts containers by `seed:<tempId>` (the client-side skip
-in `deployModel` is redundant, not wrong). `ModelService` reads the model
-with a player token.
+Endpoints reply with plain maps (camelCase keys); a refusal comes back as an
+`AppError` with the hub's reason. The hub is snapshotted every 30 seconds and
+at once after a claim or progression change.
 
-Two platform facts the model shows honestly: schedule automations run only
-while the app has a player (the presence rule), and model expressions can
-read `now()` (int milliseconds, one instant per invoke).
+The browser reaches it through `NetworkManager.worldHub`: one exec connection
+per page (`client.exec.connect(appId, { nodeType: 'world', key: 'main' })`,
+the app token as the session), opened by the first call and closed with the
+game client; after a failed connect, calls fail fast for 15 seconds instead of
+dialling again. `ModelService` (`world`, `programs`, `progress`) and
+`GridService` (the claim registry) call it and cache reads for 15 and 10
+seconds, because the HUD and the Studio poll. A game built on the framework
+names its own hub with `configureWorldHub({ nodeType, key })`.
+
+A running hub keeps the version it started with until it stops, and the world
+hub, its timer pending, does not stop while players are in the app:
+`npm run deploy:exec -- --restart` switches its type off and on so the next
+call starts it on the new version from its snapshot.
 
 ## Crowdy Studio and player code
 
 See [MODDING.md](MODDING.md). In one paragraph: a player claims a chunk
 (`claimGridChunk`, policy `SELF_CLAIM`); the platform returns the grid and the
-player's effective code keys; the SDK's embed kit renders the IDE; SERVER
-modules compile and run on the platform; CLIENT modules compile on the platform
-and run in a same-origin worker in the browser through a SharedArrayBuffer
-bridge, with every host call allowlisted by the SDK's broker and answered by
-this game's router (`world_read` only). Visitors run a grid's mods after
-trusting the author. All of that needs the page to be cross-origin isolated,
-which is why `security-headers.mjs` exists.
+player's effective code keys; the SDK's embed kit renders the IDE; a project
+runs as a ck-exec mod (`serverEngine: 'ck-exec'`). Its SERVER target builds on
+the platform into a hub on the grid that players there call by name; its
+CLIENT target builds on the platform (`modClientBuild`, a `crowdy-client-sdk`
+crate) into that mod's CLIENT half, which the grid serves to the players who
+stand in it. A CLIENT half runs in a same-origin worker through a
+SharedArrayBuffer bridge, with every host call allowlisted by the SDK's broker
+(`engine: 'ck-exec'`, bounded by the capability summary the player consented
+to) and answered by this game's router. `GridClientHalves`
+(`platform/studio/clientHalves.ts`, over CrowdyJS's `ExecClientHalves`) runs
+the CLIENT halves of whatever grid the player stands in: the player is asked
+once per author, in the HUD, before anything of someone else's runs, their own
+run without a question, and all of them stop when the player leaves the grid.
+All of that needs the page to be cross-origin isolated, which is why
+`security-headers.mjs` exists.
 
 The Ask/Build/Play agent is the same embed. `StudioService` passes
 `client.crowdyStudioAgent` and a `ConstructPlayerHostAdapter` (`observe`,
@@ -107,17 +139,18 @@ operator concern (this starter never reads or writes `cp*` fields). The Play
 safety banner lives outside the dock. Model usage is metered per request to
 the player's wallet by default (or the app's org wallet) — this game never
 holds a provider key. HUD **Wallet** links to Studio for the same wallet, which
-also covers grid / player-compute billing.
+also covers a player's mods.
 
 ## Generic versus demo
 
 Keep (or adapt) for any game: everything under `packages/construct/src/platform/`, `packages/construct/src/engine/`,
-`security-headers.mjs`, `scripts/`, `model/blueprints.mjs` as a pattern, the
-Studio integration, the shell Setup.
+`security-headers.mjs`, `scripts/`, `exec/` as a pattern, the Studio
+integration, the shell Setup.
 
-Replace with your game: `src/scenes/*` (the holodeck and Paint), `src/game/programs.ts`
-(the pad list), the hand-authored part of the model, `mods/templates/` (your
-starter mods), the HUD chrome in `src/ui/`.
+Replace with your game: `src/scenes/*` (the holodeck and Paint), `model/catalog.mjs`
+and `src/game/programs.ts` (the programs and their pads), the world hub's rules
+(`exec/construct`), `mods/templates/` and `exec/mods/` (your starter mods), the
+HUD chrome in `src/ui/`.
 
 ## Design rules this repo follows
 

@@ -11,7 +11,8 @@
  * IDENTITY session (org and app administration). Everything on the game plane
  * (claim policy, model, Studio common files) uses an APP-SCOPED token minted
  * for the new app — the caller supplies `enterApp(appId)` which returns a game
- * client holding one.
+ * client holding one. The ck-exec deploy uses the identity session again, on
+ * the app's own datacenter: the caller supplies `exec.client(appId)`.
  */
 
 /**
@@ -234,7 +235,60 @@ export async function ensureSelfClaimPolicy(client, { appId }, log = noop) {
 }
 
 /**
- * 5. Deploy the game model (kit blueprints).
+ * 5. Build and deploy the game's ck-exec code. The crates go to `execBuild` as
+ * sources (the platform compiles them, so no Rust toolchain is needed here) and
+ * the manifest to `execDeploy` with that build, which makes it the app's active
+ * version. Deploying the same sources again takes the build from the platform's
+ * cache and makes an identical version active.
+ *
+ * `exec` must hold the developer's own session (the org's `manage_compute`), not
+ * an app token, and point at the app's own datacenter: deploys go to that
+ * datacenter's execution manager.
+ *
+ * A running hub keeps the version it started with until it stops, and one whose
+ * timer is pending does not stop while players are in the app. `restart` names
+ * the types to switch off and on again after the deploy: they persist and stop,
+ * and their next call starts them on the new version from their snapshots.
+ * `retry` wraps each request (the scripts retry a busy game API).
+ */
+export async function deployExec(
+  exec,
+  { appId, manifest, crates, restart = [], retry = (fn) => fn(), restartPauseMs = 5_000 },
+  log = noop,
+) {
+  const queued = await retry(() => exec.exec.build(appId, crates));
+  log(`Building ${crates.map((c) => c.name).join(', ')} on the platform (build ${queued.buildId})`);
+  const build = await retry(() =>
+    exec.exec.waitForBuild(appId, queued.buildId, { timeoutMs: 900_000 }),
+  );
+  if (build.status !== 'succeeded') {
+    throw new Error(`ck-exec build ${build.buildId} ${build.status}:\n${build.log ?? ''}`.trim());
+  }
+  for (const a of build.artifacts ?? []) log(`  ${a.crate}: ${a.sizeBytes} bytes`);
+  const { version } = await retry(() =>
+    exec.exec.deploy({
+      appId,
+      root: manifest.root,
+      types: manifest.types,
+      buildId: build.buildId,
+    }),
+  );
+  log(`ck-exec version ${version} is active (${Object.keys(manifest.types).join(', ')})`);
+  if (restart.length > 0) {
+    for (const nodeType of restart) await retry(() => exec.exec.setEnabled(appId, false, nodeType));
+    // Stopping persists first; hosts read the switch on their next poll.
+    await new Promise((resolve) => setTimeout(resolve, restartPauseMs));
+    for (const nodeType of restart) await retry(() => exec.exec.setEnabled(appId, true, nodeType));
+    log(
+      `Switched ${restart.join(', ')} off and on: the next call starts them on version ${version}`,
+    );
+  }
+  return { buildId: build.buildId, version, restarted: restart };
+}
+
+/**
+ * Deploy a Game Model (kit blueprints), for a game that keeps one. The Construct
+ * starter keeps its state in its ck-exec world hub instead (`deployExec`).
  *
  * `gameModelSeed` upserts DEFINITIONS (types, properties, functions) by name,
  * but seed CONTAINERS are instances and are created every time they are sent.
@@ -462,7 +516,8 @@ function messageOf(error) {
 /**
  * The whole sequence. `enterApp(appId)` must return a client holding an
  * app-scoped token for `appId` (browser: NetworkManager.enterApp; Node: mint
- * and build a client). Returns a report the UI renders.
+ * and build a client). `exec` (the game's ck-exec code) and `blueprints` (a
+ * Game Model) are each deployed when given. Returns a report the UI renders.
  */
 export async function runOnboarding(options) {
   const {
@@ -475,6 +530,7 @@ export async function runOnboarding(options) {
     datacenter,
     redirectOrigins = [],
     blueprints,
+    exec,
     commonFiles = [],
     log = noop,
     onStep = noop,
@@ -521,7 +577,20 @@ export async function runOnboarding(options) {
   }
   const game = await step('enter', 'App token', () => enterApp(appId));
   await step('claims', 'Grid claim policy', () => ensureSelfClaimPolicy(identity, { appId }, log));
-  await step('model', 'Game model', () => deployModel(game, { appId, blueprints }, log));
+  if (blueprints) {
+    await step('model', 'Game model', () => deployModel(game, { appId, blueprints }, log));
+  }
+  if (exec) {
+    await step('exec', 'ck-exec code', async () => {
+      const client = await exec.client(appId);
+      try {
+        const { manifest, crates, restart, retry } = exec;
+        return await deployExec(client, { appId, manifest, crates, restart, retry }, log);
+      } finally {
+        client.close?.();
+      }
+    });
+  }
   await step('studio', 'Crowdy Studio starter files', () =>
     publishStarterFiles(game, { appId, commonFiles }, log),
   );

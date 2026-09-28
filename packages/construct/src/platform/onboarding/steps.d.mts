@@ -1,4 +1,4 @@
-import type { CrowdyClient } from '@crowdedkingdoms/crowdyjs';
+import type { CrowdyClient, ExecCrate, ExecNodeTypeInput } from '@crowdedkingdoms/crowdyjs';
 
 export const CONSTRUCTOR_TIER_NAME: string;
 export const CONSTRUCTOR_TIER_KEYS: readonly string[];
@@ -19,6 +19,7 @@ export interface OnboardingStepEvent {
     | 'enter'
     | 'claims'
     | 'model'
+    | 'exec'
     | 'studio'
     | 'agent'
     | 'github';
@@ -43,11 +44,41 @@ export interface OnboardingCommonFile {
   [key: string]: unknown;
 }
 
+/** A ck-exec manifest whose types name crates of the build (`exec/ckx.json`). */
+export interface ExecManifest {
+  root: string;
+  types: Record<string, ExecNodeTypeInput>;
+}
+
+/** Wraps each game API request of a deploy, e.g. to retry a busy API. */
+export type RequestRetry = <T>(request: () => Promise<T>) => Promise<T>;
+
+export interface DeployExecInput {
+  appId: string;
+  manifest: ExecManifest;
+  crates: ExecCrate[];
+  /** Types to switch off and on after the deploy, so running instances move to it. */
+  restart?: string[];
+  retry?: RequestRetry;
+  restartPauseMs?: number;
+}
+
+export interface OnboardingExec {
+  manifest: ExecManifest;
+  crates: ExecCrate[];
+  /** A client holding the developer's session on the app's own datacenter. */
+  client: (appId: string) => Promise<CrowdyClient>;
+  restart?: string[];
+  retry?: RequestRetry;
+}
+
 export interface RunOnboardingOptions {
   /** Origins to register as the app's redirect URIs (hosted sign-in + CORS). */
   redirectOrigins?: string[];
-  /** The game's Game Kit blueprints (the starter passes `constructBlueprints()`). */
-  blueprints: unknown[];
+  /** A Game Model's Game Kit blueprints, for a game that keeps one. */
+  blueprints?: unknown[];
+  /** The game's ck-exec code, built and deployed as a step (the starter's world hub). */
+  exec?: OnboardingExec;
   /** Studio Common Files to publish (starter templates); none by default. */
   commonFiles?: OnboardingCommonFile[];
   identity: CrowdyClient;
@@ -95,6 +126,11 @@ export function ensureSelfClaimPolicy(
   input: { appId: string },
   log?: Logger,
 ): Promise<{ policy: string; changed: boolean }>;
+export function deployExec(
+  exec: CrowdyClient,
+  input: DeployExecInput,
+  log?: Logger,
+): Promise<{ buildId: string; version: number; restarted: string[] }>;
 export function deployModel(
   game: CrowdyClient,
   input: { appId: string; blueprints: unknown[] },
