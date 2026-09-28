@@ -5,7 +5,12 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@crowdedkingdoms/crowdyjs', async () => {
   const dist = '../../../../../node_modules/@crowdedkingdoms/crowdyjs/dist';
   const halves = await import(/* @vite-ignore */ `${dist}/grid-mods/exec-client-halves.js`);
-  return { ExecClientHalves: halves.ExecClientHalves, PlayerCodeBroker: class {} };
+  return {
+    ExecClientHalves: halves.ExecClientHalves,
+    PlayerCodeBroker: class {},
+    CROWDY_DEFAULT_HTTP_ORIGIN: 'https://ck.dev.crowdedkingdoms.com',
+    CROWDY_DEFAULT_TIER: 'dev',
+  };
 });
 vi.mock('@crowdedkingdoms/crowdyjs/crowdy-studio', async () => {
   const dist = '../../../../../node_modules/@crowdedkingdoms/crowdyjs/dist';

@@ -39,7 +39,7 @@ export class AvatarPool {
   constructor(private readonly scene: THREE.Scene) {}
 
   /** Bring the pool in line with the players list and animate each one. */
-  sync(players: RemotePlayer[], nowMs: number): void {
+  sync(players: RemotePlayer[], nowMs: number, hideBody?: ReadonlySet<string>): void {
     const seen = new Set<string>();
     for (const player of players) {
       seen.add(player.uuid);
@@ -60,6 +60,10 @@ export class AvatarPool {
         FACE_EYE_HEIGHT,
         Math.cos(pose.yaw) * 0.37,
       );
+      const skinned = hideBody?.has(player.uuid) ?? false;
+      entry.body.visible = !skinned;
+      if (skinned) entry.face.visible = false;
+      else if (entry.faceTexture) entry.face.visible = true;
       entry.marker.visible = (pose.flags & FLAG_STUDIO_OPEN) !== 0;
       entry.marker.rotation.y = nowMs / 400;
       entry.marker.position.y = 2.15 + Math.sin(nowMs / 300) * 0.05;

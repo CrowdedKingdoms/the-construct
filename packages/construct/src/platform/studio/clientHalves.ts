@@ -38,6 +38,7 @@ import {
   type ClientModHostWrites,
 } from './clientModHost';
 import type { ModOverlayStore } from './modOverlay';
+import type { ModSceneStore } from './modScene';
 
 export type ClientHalvesExec = Pick<
   ExecAPI,
@@ -68,6 +69,8 @@ export interface GridClientHalvesOptions {
   serverCalls?: (grid: ClientHalvesGrid) => (call: PlayerCodeHostCall) => Promise<unknown>;
   hud: CrowdyStudioTextHud;
   overlay?: ModOverlayStore;
+  /** scene_catalog / scene_instances for each CLIENT half, keyed by its source. */
+  scene?: ModSceneStore;
   /** One question per author (the default), or one per CLIENT half. */
   ask?: 'author' | 'mod';
   /**
@@ -164,10 +167,19 @@ export class GridClientHalves {
     if (!this.serverCalls && this.options.serverCalls) {
       this.serverCalls = this.options.serverCalls(grid);
     }
-    const { reads, writes, input } = this.options;
+    const { reads, writes, input, scene } = this.options;
+    const source = clientHalfSource(mod);
     return routeWithFallback(
       call,
-      () => routeClientHostCall(call, reads, grid.bounds, writes, input),
+      () =>
+        routeClientHostCall(
+          call,
+          reads,
+          grid.bounds,
+          writes,
+          input,
+          scene ? { source, store: scene } : undefined,
+        ),
       this.serverCalls ?? undefined,
     );
   }
@@ -188,6 +200,7 @@ export class GridClientHalves {
     const source = clientHalfSource(mod);
     this.options.hud.remove(source);
     this.options.overlay?.remove(source);
+    this.options.scene?.remove(source);
     this.options.log?.(`CLIENT half of mod ${mod.name} stopped (${reason})`);
     this.options.onChange?.(this.running);
   }
