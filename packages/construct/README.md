@@ -16,7 +16,7 @@ and the games built on it share.
 
 It ships **TypeScript source** for Vite (it uses `?worker&url` and
 `import.meta.env`). Peer dependencies: `@crowdedkingdoms/crowdyjs` 18 (0.3.0
-and later; the 0.2 line peers on 17) and, for the Studio agent pane,
+and later, 18.0.1 from 0.3.1; the 0.2 line peers on 17) and, for the Studio agent pane,
 `@crowdedkingdoms/crowdy-dsh` 0.4+. On a
 prerelease tier the ranges name each `X.Y.Z` line they admit, because npm
 matches a prerelease only against a comparator on the same `X.Y.Z`. A game can
