@@ -1,9 +1,8 @@
 /**
  * Crowdy Studio, embedded — the in-game IDE where players write SERVER and
- * CLIENT Rust mods for the grid they stand on. A project runs as a ck-exec mod
- * (`serverEngine: 'ck-exec'`): its SERVER target is a `ckx-sdk` crate the
- * platform builds, deploys to the grid and switches on, which players in the
- * grid call as `mod:<name>`; its CLIENT target is a `crowdy-client-sdk` crate
+ * CLIENT Rust mods for the grid they stand on. A project runs as a ck-exec mod:
+ * its SERVER target is a `ckx-sdk` crate the platform builds, deploys to the
+ * grid and switches on, which players in the grid call as `mod:<name>`; its CLIENT target is a `crowdy-client-sdk` crate
  * the platform builds as that mod's CLIENT half, which the grid serves to the
  * players who stand in it.
  *
@@ -35,7 +34,6 @@ import {
   CrowdyStudioTextHud,
   type CrowdyStudioController,
   type CrowdyStudioEmbedContext,
-  type CrowdyStudioPlayerCompute,
 } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
 import glueWorkerAssetUrl from '@crowdedkingdoms/crowdyjs/player-glue-worker?worker&url';
 
@@ -120,29 +118,6 @@ function createConstructTextHud(): CrowdyStudioTextHud {
     },
   });
   return hud;
-}
-
-/**
- * CrowdyJS 17's embed types a legacy player compute service, which it never
- * calls while both targets run on ck-exec; this one refuses, so nothing can
- * reach the switched-off engine.
- */
-const NO_PLAYER_COMPUTE: CrowdyStudioPlayerCompute = {
-  deploy: refuseLegacyEngine,
-  versions: refuseLegacyEngine,
-  setEnabled: refuseLegacyEngine,
-  setRequires: refuseLegacyEngine,
-  artifactBytes: refuseLegacyEngine,
-  usage: refuseLegacyEngine,
-  runs: refuseLegacyEngine,
-  logs: refuseLegacyEngine,
-  invoke: refuseLegacyEngine,
-};
-
-function refuseLegacyEngine(): Promise<never> {
-  return Promise.reject(
-    new Error('Crowdy Studio runs mods on ck-exec here; legacy player compute is not used'),
-  );
 }
 
 const GRID_REFRESH_MS = 8_000;
@@ -232,8 +207,9 @@ export class StudioService {
         get crowdyStudio() {
           return network().game.crowdyStudio;
         },
-        playerCompute: NO_PLAYER_COMPUTE,
-        // Both targets' builds, deploys, switch and preview (`serverEngine` below).
+        // Both targets' builds, deploys, switch and preview: the SERVER target runs as the
+        // grid's mod and the CLIENT target as that mod's CLIENT half, which the grid serves to
+        // the players standing in it (GridClientHalves).
         get exec() {
           return network().game.exec;
         },
@@ -253,9 +229,6 @@ export class StudioService {
       },
       appId: () => this.session.appId,
       gameName: GAME_NAME,
-      // The SERVER target runs as the grid's mod and the CLIENT target as that mod's CLIENT
-      // half, which the grid serves to the players standing in it (GridClientHalves).
-      serverEngine: 'ck-exec',
       closeKeyCode: 'KeyM',
       dsh: {
         graphql: network().game.graphql,
@@ -451,7 +424,14 @@ export class StudioService {
   ): (call: PlayerCodeHostCall) => Promise<unknown> {
     const game = this.session.network.game;
     const scope = game.grid(this.session.appId, gridId, toBrokerBounds(bounds));
-    return createGridHostCalls({ scope, client: game });
+    return createGridHostCalls({
+      scope,
+      client: game,
+      local: {
+        gridPermissionKeys: () =>
+          this.currentGrid?.gridId === gridId ? this.currentGrid.permissions.effectiveKeys : [],
+      },
+    });
   }
 
   /**

@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+`@crowdedkingdoms/construct` **0.3.0** (breaking) and CrowdyJS `18.0.0-dev`: the
+legacy engines are gone from the platform on dev (ck-api v2.27.0) and from the
+SDK. The construct peers on CrowdyJS 18 only (`>=18.0.0-dev.0 <19`); the 0.2
+line stays on 17. crowdy-dsh `0.4.2-dev.1` (the CrowdyJS 18 slice; its peer range
+gains the 0.4.2 line).
+
+- Removed: `runConsentedGridMod` and the legacy artifact cache in
+  `clientModHost.ts`, `ClientModLifecycle`, and the onboarding step
+  `deployModel` with `runOnboarding`'s `blueprints` (no Game Model). A mod's
+  CLIENT half is the only browser code a grid serves; `GridClientHalves` runs
+  it.
+- Crowdy Studio is ck-exec only: `StudioService` passes neither
+  `serverEngine` nor a `playerCompute` service.
+- `GridClientHalves` forwards a CLIENT half's `crowdy::log` lines (`onLog`,
+  the network log by default) and calls its `handle_invoke` (`invoke`).
+- `createGridHostCalls` answers `grid_permission_check` from the keys the game
+  holds for the grid the player stands on.
+- A JS grid program's `grid_context` lists no grid sessions (they were the
+  game model's).
+- `ensureConstructorTier` decides whether to grant by the target user's access,
+  not the caller's: an org admin who held Constructor used to skip granting it
+  to another user.
+
 `@crowdedkingdoms/construct` 0.2.3 and CrowdyJS `17.14.0-dev.1`: a mod's
 CLIENT half on ck-exec, a dev-tier preview. A CLIENT half needs ck-api v2.24.0
 or later, and a Studio CLIENT project v2.25.1 (earlier, Studio refused to save

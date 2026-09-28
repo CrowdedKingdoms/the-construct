@@ -10,19 +10,8 @@
  * return only what the running player can already lawfully see. Writes go
  * through ChunkStore.setVoxel (optimistic + UDP) and markDirty (durable
  * write-back), the same route Paint uses. Never hand a mod the raw client.
- *
- * `runConsentedGridMod` starts a legacy grid-attached client mod, until
- * CrowdyJS 18 removes them.
  */
-import {
-  PlayerCodeBroker,
-  type CrowdyClient,
-  type PlayerCodeGridBounds,
-  type PlayerCodeHostCall,
-  type PlayerCodePresentation,
-} from '@crowdedkingdoms/crowdyjs';
-import type { CrowdyStudioTextHud } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
-import type { ModOverlayStore } from './modOverlay';
+import type { PlayerCodeGridBounds, PlayerCodeHostCall } from '@crowdedkingdoms/crowdyjs';
 
 export interface ClientModHostReads {
   actorsInChunk(x: bigint, y: bigint, z: bigint): Array<Record<string, unknown>>;
@@ -240,119 +229,6 @@ export function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
   return btoa(binary);
-}
-
-interface CachedArtifact {
-  bytes: Uint8Array;
-  artifactHash?: string;
-  fuelPerDispatch?: string | bigint;
-}
-
-const artifactCache = new Map<string, CachedArtifact>();
-
-/**
- * Fetch a consented grid-attached client mod's artifact and run it in a
- * hash-verified broker with the same allowlist, grid clamp, rate caps and
- * circuit breaker as the Studio's own Test/Run path. Its HUD output lands in
- * the persistent text HUD. Returns null (fails closed) when the artifact
- * cannot be fetched.
- *
- * @deprecated A legacy grid-attached client mod (`marketplace.gridClientMods`),
- * which CrowdyJS 18 removes. A ck-exec mod's CLIENT half runs through
- * `GridClientHalves` (`clientHalves.ts`).
- */
-export async function runConsentedGridMod(options: {
-  client: CrowdyClient;
-  appId: string;
-  attachmentId: string;
-  artifactCacheKey: string;
-  hudSource: string;
-  hudLabel: string;
-  /** The module's name, which addressed grid events target (default `hudLabel`). */
-  moduleName?: string;
-  grid: PlayerCodeGridBounds;
-  workerUrl: string;
-  reads: ClientModHostReads;
-  writes?: ClientModHostWrites;
-  hud: CrowdyStudioTextHud;
-  overlay?: ModOverlayStore;
-  input?: ClientModHostInput;
-  /**
-   * Answers the host calls this game does not route itself (DN-10: the rest
-   * of the client catalog, through CrowdyJS `createGridHostCalls`).
-   */
-  serverCalls?: (call: PlayerCodeHostCall) => Promise<unknown>;
-  /**
-   * How often the worker self-drives `on_tick`. Omitted/0 means invoke-only
-   * and a HUD mod then never runs (measured 2026-09-07: broker started, HUD
-   * stayed empty). Studio Test/Deploy reads `[package.metadata.crowdy]
-   * tick_interval_ms` from the CLIENT Cargo.toml (default 1000, clamped
-   * 16–1000). Pass this only for grid-attached visitors until that field is
-   * stored on the compiled version.
-   */
-  tickIntervalMs?: number;
-}): Promise<{ stop: () => void } | null> {
-  let fetched: { bytes: ArrayBuffer; artifactHash?: string; fuelPerDispatch?: string | bigint };
-  const cached = artifactCache.get(options.artifactCacheKey);
-  if (cached) {
-    fetched = {
-      bytes: cached.bytes.slice().buffer,
-      artifactHash: cached.artifactHash,
-      fuelPerDispatch: cached.fuelPerDispatch,
-    };
-  } else {
-    try {
-      fetched = await options.client.marketplace.clientArtifactBytes({
-        appId: options.appId,
-        attachmentId: options.attachmentId,
-      });
-    } catch {
-      return null;
-    }
-    artifactCache.set(options.artifactCacheKey, {
-      bytes: new Uint8Array(fetched.bytes).slice(),
-      artifactHash: fetched.artifactHash,
-      fuelPerDispatch: fetched.fuelPerDispatch,
-    });
-  }
-  const broker = new PlayerCodeBroker({
-    workerUrl: options.workerUrl,
-    grid: options.grid,
-    artifactHash: fetched.artifactHash,
-    fuelPerDispatch: fetched.fuelPerDispatch != null ? BigInt(fetched.fuelPerDispatch) : undefined,
-    tickIntervalMs: options.tickIntervalMs ?? 1000,
-    moduleName: options.moduleName ?? options.hudLabel,
-    onHostCall: (call) =>
-      routeWithFallback(
-        call,
-        () => routeClientHostCall(call, options.reads, options.grid, options.writes, options.input),
-        options.serverCalls,
-      ),
-    onPresentation: (presentation: PlayerCodePresentation) => {
-      if (presentation.channel === 'hud') {
-        options.hud.set({
-          source: options.hudSource,
-          label: options.hudLabel,
-          payload: presentation.payload,
-        });
-      }
-      if (presentation.channel === 'overlay') {
-        options.overlay?.apply(options.hudSource, presentation.payload, options.grid);
-      }
-    },
-    onCircuitOpen: () => {
-      options.hud.remove(options.hudSource);
-      options.overlay?.remove(options.hudSource);
-    },
-  });
-  await broker.start(fetched.bytes);
-  return {
-    stop: () => {
-      broker.stop();
-      options.hud.remove(options.hudSource);
-      options.overlay?.remove(options.hudSource);
-    },
-  };
 }
 
 /**

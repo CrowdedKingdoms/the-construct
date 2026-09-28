@@ -56,10 +56,7 @@ export class GridProgramRunner implements CrowdyStudioDshGridHost {
     const scope = this.options.client().grid(this.options.appId(), gridId);
     const token = await scope.mintToken(60).catch(() => null);
     if (!token) return null;
-    const [channels, sessions] = await Promise.all([
-      scope.channels.list().catch(() => []),
-      scope.sessions.list({ status: 'active' }).catch(() => []),
-    ]);
+    const channels = await scope.channels.list().catch(() => []);
     return {
       appId: this.options.appId(),
       gridId,
@@ -67,11 +64,8 @@ export class GridProgramRunner implements CrowdyStudioDshGridHost {
       high: token.highChunk,
       owned: this.options.owns?.(gridId) ?? false,
       channels: channels.map((c) => ({ groupId: String(c.groupId), name: c.name })),
-      sessions: sessions.map((s) => ({
-        sessionId: s.sessionId,
-        name: s.name ?? null,
-        status: s.status,
-      })),
+      // Grid sessions were the legacy game model's; the bridge's field stays until its protocol moves.
+      sessions: [],
     };
   }
 

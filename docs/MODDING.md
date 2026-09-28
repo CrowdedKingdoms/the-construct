@@ -7,8 +7,8 @@ optional **CLIENT** half (browser WASM the grid serves to the players standing
 in it, who run it in a sandbox once they consent to it). This page is the
 walkthrough and the security story, in that order.
 
-ck-exec is a dev-tier preview; so are both Studio targets on it
-(`serverEngine: 'ck-exec'` in `StudioService`, CrowdyJS 17.14). See
+ck-exec is a dev-tier preview, and Crowdy Studio runs on it only (CrowdyJS
+18). See
 [Mods](https://docs.crowdedkingdoms.com/exec/mods) in the platform docs.
 
 ## Prerequisites (Setup does all of this)
@@ -201,11 +201,12 @@ What the port could not keep, and why:
   sessions). Replace its Cargo.toml and src/lib.rs with a starter's. New
   projects start on the platform's mod starter and a `crowdy-client-sdk`
   crate.
-- **Legacy grid-attached client mods no longer run here.** The Studio attaches
-  CLIENT halves to mods, and `StudioService` runs only those
-  (`marketplace.gridClientMods` is superseded in CrowdyJS 17.14 and removed in
-  18.0). The framework still exports `runConsentedGridMod` and
-  `ClientModLifecycle` for a game that runs legacy ones until then.
+- **There are no legacy grid-attached client mods.** The platform deleted them
+  (with player compute, CrowdyJS 18), and the framework's `runConsentedGridMod`
+  and `ClientModLifecycle` went with construct 0.3.0; a mod's CLIENT half is
+  the only browser code a grid serves.
+- **JS grid programs host no grid sessions.** Grid sessions were the legacy
+  game model's; a program's `grid_context` lists none.
 
 ## Security posture
 
@@ -263,7 +264,7 @@ CrowdyJS SDK. The server never compiles or runs them; the Construct loads one
 into a hidden `sandbox="allow-scripts"` iframe (`grid-program.html`, served
 with `connect-src 'none'`), and `GridProgramRunner` relays its CrowdyJS
 traffic with a grid-scoped token. So a program can read and write inside the
-grid, post to the grid's channels, host grid sessions and send spatial
+grid, post to the grid's channels and send spatial
 messages that start in the grid (and reach past it), and nothing else.
 
 ```js

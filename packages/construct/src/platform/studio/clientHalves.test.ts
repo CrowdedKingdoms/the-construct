@@ -64,6 +64,7 @@ function harness(
     self?: string;
     confirm?: (prompt: unknown, signal: AbortSignal) => Promise<boolean>;
     filter?: (mod: { name: string }) => boolean;
+    log?: (line: string) => void;
   } = {},
 ) {
   const listings = options.listings ?? [[half({ callerConsented: true })]];
@@ -95,6 +96,7 @@ function harness(
     options: {
       onHostCall(call: unknown): Promise<unknown>;
       onPresentation?(presentation: unknown): void;
+      onLog?(line: unknown): void;
       consentedHostCalls?: readonly string[];
       engine?: string;
     };
@@ -117,11 +119,16 @@ function harness(
     overlay: overlay as never,
     ...(options.confirm ? { confirm: options.confirm as never } : {}),
     ...(options.filter ? { filter: options.filter as never } : {}),
+    ...(options.log ? { log: options.log } : {}),
     onChange: (running) => changes.push(running.length),
     brokerFactory: (brokerOptions) => {
       const broker = { options: brokerOptions as never, stop: vi.fn() };
       brokers.push(broker);
-      return { start: async () => {}, stop: broker.stop };
+      return {
+        start: async () => {},
+        stop: broker.stop,
+        invoke: async (payload: Uint8Array) => new Uint8Array([...payload].reverse()),
+      };
     },
   });
   return { halves, exec, brokers, hud, overlay, actorsInChunk, serverCall, serverCalls, changes };
@@ -157,6 +164,19 @@ describe('GridClientHalves', () => {
       broker!.options.onHostCall({ fn: 'user_state_get', args: { userId: '9' } }),
     ).resolves.toEqual({ state: 'from the server' });
     expect(h.serverCalls).toHaveBeenCalledWith(GRID);
+  });
+
+  it("forwards a CLIENT half's log lines and invokes its handle_invoke", async () => {
+    const lines: string[] = [];
+    const h = harness({ log: (line) => lines.push(line) });
+    h.halves.enterGrid(GRID);
+    await h.halves.refresh();
+    h.brokers[0]!.options.onLog?.({ level: 'info', message: 'ready', moduleName: 'greeter' });
+    expect(lines).toContain('CLIENT half of mod greeter info: ready');
+    await expect(h.halves.invoke('m1', new Uint8Array([1, 2, 3]))).resolves.toEqual(
+      new Uint8Array([3, 2, 1]),
+    );
+    await expect(h.halves.invoke('nope', new Uint8Array())).rejects.toThrow();
   });
 
   it('asks about another author, and a yes trusts them at the hash the grid listed', async () => {

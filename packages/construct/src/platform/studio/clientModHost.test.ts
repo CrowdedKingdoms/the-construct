@@ -1,6 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
-
-vi.mock('@crowdedkingdoms/crowdyjs', () => ({ PlayerCodeBroker: class {} }));
+import { describe, expect, it } from 'vitest';
 
 const {
   DEFAULT_VOXEL_STATE,

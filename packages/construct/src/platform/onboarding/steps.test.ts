@@ -35,6 +35,9 @@ function identityStub(overrides: Any = {}): Any {
         return { appId: '77', name: input.name, slug: input.slug };
       }),
     },
+    users: {
+      me: vi.fn(async () => ({ userId: overrides.callerId ?? '42' })),
+    },
     appAccess: {
       tiers: vi.fn(async () => overrides.tiers ?? []),
       createTier: vi.fn(async (input: Any) => {
@@ -46,6 +49,7 @@ function identityStub(overrides: Any = {}): Any {
         return { tierId: id, name: 'Constructor', permissionKeys: input.permissionKeys };
       }),
       myAccess: vi.fn(async () => overrides.myAccess ?? null),
+      usersByApp: vi.fn(async () => overrides.usersByApp ?? []),
       grant: vi.fn(async (input: Any) => {
         created.push(['grant', input]);
         return { tierId: input.tierId };
@@ -160,6 +164,43 @@ describe('onboarding steps', () => {
     expect(already.appAccess.updateTier).not.toHaveBeenCalled();
   });
 
+  it("grants another user by that user's access, not the caller's", async () => {
+    const tiers = [
+      {
+        tierId: 'd',
+        name: 'Default',
+        isDefault: true,
+        status: 'active',
+        permissionKeys: ['access', ...steps.VISITOR_RUN_KEYS],
+      },
+      {
+        tierId: 't1',
+        name: 'Constructor',
+        status: 'active',
+        permissionKeys: [...steps.CONSTRUCTOR_TIER_KEYS],
+      },
+    ];
+    // The caller (an org admin) holds Constructor; user 42 holds the default tier.
+    const admin = identityStub({
+      callerId: '1',
+      tiers,
+      myAccess: { tierId: 't1', status: 'active' },
+      usersByApp: [{ userId: '42', tierId: 'd', status: 'active' }],
+    });
+    const a = await steps.ensureConstructorTier(admin as never, { appId: '77', userId: '42' });
+    expect(a.granted).toBe(true);
+    expect(admin.appAccess.grant).toHaveBeenCalledWith({ appId: '77', userId: '42', tierId: 't1' });
+
+    const holds = identityStub({
+      callerId: '1',
+      tiers,
+      usersByApp: [{ userId: '42', tierId: 't1', status: 'active' }],
+    });
+    const b = await steps.ensureConstructorTier(holds as never, { appId: '77', userId: '42' });
+    expect(b.granted).toBe(false);
+    expect(holds.appAccess.grant).not.toHaveBeenCalled();
+  });
+
   it('only sets the claim policy when it differs', async () => {
     const game = {
       marketplace: {
@@ -177,37 +218,6 @@ describe('onboarding steps', () => {
       policy: 'SELF_CLAIM',
       changed: true,
     });
-  });
-
-  it('does not re-seed containers that already exist', async () => {
-    const deploy = vi.fn(async () => ({
-      seed: { containersCreated: 0 },
-      automations: [],
-      warnings: [],
-    }));
-    const game = {
-      kit: () => ({ deploy }),
-      gameModel: {
-        containers: vi.fn(async ({ typeName }: Any) =>
-          typeName === 'WorldState' ? [{ displayName: 'The Construct' }] : [],
-        ),
-      },
-    };
-    await steps.deployModel(game as never, {
-      appId: '77',
-      blueprints: [
-        {
-          name: 'construct-world',
-          containers: [
-            { typeName: 'WorldState', displayName: 'The Construct' },
-            { typeName: 'Program', displayName: 'Paint' },
-          ],
-        },
-      ],
-    });
-    const blueprints = (deploy.mock.calls as Any[][])[0]![0] as Any[];
-    const world = blueprints.find((b) => b.name === 'construct-world')!;
-    expect(world.containers.map((c: Any) => c.typeName)).toEqual(['Program']);
   });
 
   const execManifest = {

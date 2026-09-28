@@ -4,8 +4,7 @@
  * into the text HUD and the holodeck overlay. CrowdyJS's `ExecClientHalves`
  * lists what the grid serves, asks, fetches by digest and sandboxes each half
  * in a `PlayerCodeBroker` (`engine: 'ck-exec'`); this adds what only the game
- * knows. It replaces `runConsentedGridMod` + `ClientModLifecycle`, which run
- * the legacy grid-attached client mods.
+ * knows.
  *
  * The player's own CLIENT halves run without a question (on your own grid
  * every half is yours), unless one was installed from a marketplace listing:
@@ -22,6 +21,7 @@ import {
   type ExecGridClientMod,
   type PlayerCodeGridBounds,
   type PlayerCodeHostCall,
+  type PlayerCodeLogLine,
   type PlayerCodePresentation,
 } from '@crowdedkingdoms/crowdyjs';
 import {
@@ -80,6 +80,11 @@ export interface GridClientHalvesOptions {
   filter?: (mod: ExecGridClientMod) => boolean;
   /** After a CLIENT half starts or stops. */
   onChange?: (running: readonly ExecGridClientMod[]) => void;
+  /**
+   * A CLIENT half's `crowdy::log` lines (rate- and length-capped by the broker). The text is
+   * the mod author's: render it as text. Without it they go to `log`.
+   */
+  onLog?: (line: PlayerCodeLogLine, mod: ExecGridClientMod) => void;
   log?: (line: string) => void;
   brokerFactory?: ExecClientHalvesOptions['brokerFactory'];
   now?: () => number;
@@ -114,6 +119,10 @@ export class GridClientHalves {
       },
       onStopped: (mod, reason) => this.stopped(mod, reason),
       onError: (error) => this.options.log?.(this.describeError(error)),
+      onLog: (line, mod) => {
+        if (this.options.onLog) this.options.onLog(line, mod);
+        else this.options.log?.(`CLIENT half of mod ${mod.name} ${line.level}: ${line.message}`);
+      },
       ...(options.brokerFactory ? { brokerFactory: options.brokerFactory } : {}),
       ...(options.now ? { now: options.now } : {}),
     });
@@ -139,6 +148,18 @@ export class GridClientHalves {
   /** One reconcile of the grid's CLIENT halves; rejects when they cannot be listed. */
   refresh(): Promise<void> {
     return this.runner.refresh();
+  }
+
+  /**
+   * Calls the `handle_invoke` export of the running CLIENT half of mod `modId`. The reply is
+   * the mod author's bytes: treat them as untrusted input.
+   */
+  invoke(
+    modId: string,
+    payload: Uint8Array,
+    options?: { timeoutMs?: number },
+  ): Promise<Uint8Array> {
+    return this.runner.invoke(modId, payload, options);
   }
 
   stop(): void {
