@@ -10,6 +10,8 @@ import {
   claimedChunkAabb,
   claimedChunkBoxTransform,
   claimedChunksToDraw,
+  distanceOutsideClaim,
+  pointInClaimedChunk,
 } from '@/scenes/holodeck-three/claimedChunkBox';
 
 describe('claimedChunkAabb', () => {
@@ -78,7 +80,53 @@ describe('claimedChunksToDraw', () => {
   });
 });
 
+describe('pointInClaimedChunk', () => {
+  const bounds = {
+    low: { x: '-1', y: '0', z: '-1' },
+    high: { x: '-1', y: '0', z: '-1' },
+  };
+
+  it('is true only inside the claim the avatar is standing in', () => {
+    expect(pointInClaimedChunk(bounds, { x: -8, y: 0, z: -8 })).toBe(true);
+    expect(pointInClaimedChunk(bounds, { x: -20, y: 0, z: -8 })).toBe(false);
+    expect(pointInClaimedChunk(bounds, { x: 0, y: 0, z: -8 })).toBe(false);
+  });
+});
+
+describe('distanceOutsideClaim', () => {
+  const bounds = {
+    low: { x: '-1', y: '0', z: '-1' },
+    high: { x: '-1', y: '0', z: '-1' },
+  };
+
+  it('is zero inside and the ground gap outside', () => {
+    expect(distanceOutsideClaim(bounds, { x: -8, y: 0, z: -8 })).toBe(0);
+    expect(distanceOutsideClaim(bounds, { x: 4, y: 0, z: -8 })).toBe(4);
+  });
+});
+
 describe('claimed chunk shell', () => {
+  const bounds = {
+    low: { x: '-1', y: '0', z: '-1' },
+    high: { x: '-1', y: '0', z: '-1' },
+  };
+
+  it('hides the shell while the avatar is inside and restores it on leaving', () => {
+    const scene = new THREE.Scene();
+    const layer = new ClaimedChunkLayer(scene);
+    const spec = [{ gridId: '91159989710848', bounds }];
+    layer.sync(spec, { x: -8, y: 0, z: -8 });
+    const chunk = scene.getObjectByName('claimed-chunk:91159989710848') as THREE.Group;
+    const shell = chunk.children[0] as THREE.Mesh;
+    expect(shell.visible).toBe(true);
+    layer.sync(spec, { x: -8, y: 0, z: -8 }, new Set(['91159989710848']));
+    expect(shell.visible).toBe(false);
+    layer.sync(spec, { x: -8, y: 0, z: -8 }, new Set(), new Set(['91159989710848']));
+    expect(shell.visible).toBe(true);
+    expect(shell.material).toBeInstanceOf(THREE.ShaderMaterial);
+    layer.dispose();
+  });
+
   it('draws outward faces so the interior is open and the outside is solid', () => {
     const scene = new THREE.Scene();
     const layer = new ClaimedChunkLayer(scene);

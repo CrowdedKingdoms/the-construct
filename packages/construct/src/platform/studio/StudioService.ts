@@ -62,9 +62,15 @@ import { PointerClickBuffer } from './pointerClicks';
 import { clearModPose, setModPoseGrid } from './modPose';
 import type { Input } from '../../engine/Input';
 import { ModOverlayStore } from './modOverlay';
+import { bindModGrid, bindModSession, releaseModChunk } from './modChunkRuntime';
 import { ModSceneStore } from './modScene';
 import { GridService, type GridSnapshot } from './GridService';
-import { hasAnyStudioPermission, toBrokerBounds, type GridBounds } from './permissions';
+import {
+  hasAnyStudioPermission,
+  studioPermissions,
+  toBrokerBounds,
+  type GridBounds,
+} from './permissions';
 import { Emitter } from '../util/Emitter';
 
 export interface StudioState {
@@ -74,6 +80,8 @@ export interface StudioState {
   clientModsAvailable: boolean;
   /** The grid's CLIENT halves running for this player. */
   clientModsRunning: number;
+  /** The grid's client mods have finished their first fetch. Scene parts may still be arriving. */
+  clientModsReady: boolean;
   /** Why CLIENT mods are unavailable, when they are. */
   clientModsReason: string | null;
   /** Agent dock mounted (policy + permission + host). */
@@ -228,6 +236,7 @@ export class StudioService {
       grid: null,
       clientModsAvailable: CLIENT_MODS_ENABLED && isolated,
       clientModsRunning: 0,
+      clientModsReady: false,
       clientModsReason: !CLIENT_MODS_ENABLED
         ? 'CLIENT mods are disabled in this build (VITE_CONSTRUCT_CLIENT_MODS=0).'
         : isolated
@@ -243,6 +252,37 @@ export class StudioService {
   /** Grid the local player is standing on, if known. */
   get grid(): GridSnapshot | null {
     return this.currentGrid;
+  }
+
+  /**
+   * True while the avatar is at a claim wall waiting for its mod. Poll must
+   * not drop that grid just because the body is still standing outside it.
+   */
+  private approachHold = false;
+
+  /** Begin loading an owned claim while the avatar is still outside it. */
+  approachOwned(gridId: string): void {
+    const record = this.grids.ownedGrids().find((grid) => grid.gridId === gridId);
+    if (!record) return;
+    this.approach({
+      gridId: record.gridId,
+      bounds: record.bounds,
+      permissions: studioPermissions(record.effectiveKeys),
+      owned: true,
+    });
+  }
+
+  /** Begin loading `grid` while the avatar is still outside it. */
+  approach(grid: GridSnapshot): void {
+    this.approachHold = true;
+    if (this.currentGrid?.gridId === grid.gridId) return;
+    const low = grid.bounds.low;
+    this.adoptGrid(grid, { x: Number(low.x), y: Number(low.y), z: Number(low.z) });
+  }
+
+  /** The avatar left the approach margin; the next poll may drop the grid. */
+  releaseApproach(): void {
+    this.approachHold = false;
   }
 
   /** Gameplay keys and stick for generic client-mod input calls. */
@@ -417,6 +457,7 @@ export class StudioService {
     this.pointerClicks.dispose();
     this.hud.destroy();
     this.overlay.clear();
+    releaseModChunk();
     this.scene.clear();
   }
 
@@ -775,6 +816,8 @@ export class StudioService {
       this.overlay.clear();
       this.scene.clear();
       clearModPose();
+      if (grid) this.bindLiveMod(grid);
+      else releaseModChunk();
       if (this.state.clientModsAvailable) {
         this.clientHalves().enterGrid(
           grid ? { gridId: grid.gridId, bounds: toBrokerBounds(grid.bounds) } : null,
@@ -784,6 +827,7 @@ export class StudioService {
     this.state = {
       ...this.state,
       grid,
+      clientModsReady: entered ? false : this.state.clientModsReady,
     };
     this.emit();
   }
@@ -812,7 +856,12 @@ export class StudioService {
     if (key !== this.lastGridChunkKey || now - this.lastGridReadAt > GRID_REFRESH_MS) {
       try {
         const grid = await this.grids.lookup(chunk);
-        this.adoptGrid(grid, chunk);
+        if (!grid && this.approachHold && this.currentGrid) {
+          this.lastGridChunkKey = key;
+          this.lastGridReadAt = now;
+        } else {
+          this.adoptGrid(grid, chunk);
+        }
       } catch (error) {
         this.session.network.log(`grid lookup failed: ${messageOf(error)}`);
       }
@@ -825,6 +874,29 @@ export class StudioService {
    * the rest, stop what changed or went. Waits out the presence race after
    * entering a grid.
    */
+  /** The live session gameplay calls (pose, events, voice) read from. */
+  private bindLiveMod(grid: GridSnapshot): void {
+    const bounds = toBrokerBounds(grid.bounds, grid.gridId);
+    bindModGrid(bounds);
+    bindModSession({
+      client: this.session.network.game,
+      appId: this.session.appId,
+      gridId: grid.gridId,
+      selfUuid: this.session.selfUuid,
+      userId: this.session.userId,
+      moveTo: (chunk) => this.session.moveTo(chunk),
+      players: () =>
+        this.session.players().map((player) => ({
+          uuid: player.uuid,
+          pose: { x: player.pose.x, y: player.pose.y, z: player.pose.z },
+        })),
+      voiceStart: () => this.session.voice.start(),
+      voiceStop: () => this.session.voice.stop(),
+      videoStart: () => this.session.webcam.start(),
+      videoStop: () => this.session.webcam.stop(),
+    });
+  }
+
   private async refreshClientHalves(): Promise<void> {
     const halves = this.halves;
     if (!halves || !this.currentGrid || !this.state.clientModsAvailable) return;
@@ -835,6 +907,8 @@ export class StudioService {
     } catch (error) {
       this.session.network.log(`grid CLIENT halves unavailable: ${messageOf(error)}`);
     }
+    this.state = { ...this.state, clientModsReady: true };
+    this.emit();
   }
 
   private async confirmTrust(
