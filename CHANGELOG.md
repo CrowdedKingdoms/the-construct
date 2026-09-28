@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+`@crowdedkingdoms/construct` 0.3.1 and CrowdyJS `18.0.1-dev.1`, which only drops
+the SDK's super-admin and operator wrappers (nothing here used them). The peer
+range gains the 18.0.1 prerelease line, which npm would not match against the
+18.0.0 comparator.
+
 `@crowdedkingdoms/construct` **0.3.0** (breaking) and CrowdyJS `18.0.0-dev`: the
 legacy engines are gone from the platform on dev (ck-api v2.27.0) and from the
 SDK. The construct peers on CrowdyJS 18 only (`>=18.0.0-dev.0 <19`); the 0.2
