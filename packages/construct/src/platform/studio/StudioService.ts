@@ -65,7 +65,12 @@ import { ModOverlayStore } from './modOverlay';
 import { bindModGrid, bindModSession, releaseModChunk } from './modChunkRuntime';
 import { ModSceneStore } from './modScene';
 import { GridService, type GridSnapshot } from './GridService';
-import { hasAnyStudioPermission, studioPermissions, toBrokerBounds, type GridBounds } from './permissions';
+import {
+  hasAnyStudioPermission,
+  studioPermissions,
+  toBrokerBounds,
+  type GridBounds,
+} from './permissions';
 import { Emitter } from '../util/Emitter';
 
 export interface StudioState {
