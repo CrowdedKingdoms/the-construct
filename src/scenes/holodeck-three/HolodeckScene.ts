@@ -35,7 +35,13 @@ import {
   positionInModGrid,
   stepModPose,
 } from '@crowdedkingdoms/construct/platform/studio/modChunkRuntime';
-import { ClaimedChunkLayer, claimedChunksToDraw } from '@/scenes/holodeck-three/claimedChunkBox';
+import {
+  ClaimedChunkLayer,
+  claimedChunkAabb,
+  claimedChunksToDraw,
+  distanceOutsideClaim,
+  pointInClaimedChunk,
+} from '@/scenes/holodeck-three/claimedChunkBox';
 import { InstanceLayer } from '@/scenes/holodeck-three/instanceLayer';
 import { animatePads, buildPads, disposePads, padAt, type Pad } from '@/scenes/holodeck-three/pads';
 import { VoxelLayer } from '@/scenes/holodeck-three/voxels';
@@ -368,14 +374,55 @@ export class HolodeckScene implements GameScene {
       );
     }
     const claimed = claimedChunksToDraw(session.studio);
-    this.claimedChunks?.sync(claimed);
+    if (!held) {
+      for (const grid of claimed) {
+        if (!pointInClaimedChunk(grid.bounds, this.position)) continue;
+        const gate = session.studio.state;
+        const ready = gate.grid?.gridId === grid.gridId && gate.clientModsReady;
+        if (ready) continue;
+        const box = claimedChunkAabb(grid.bounds);
+        const pad = 0.4;
+        const faces = [
+          { gap: this.position.x - box.minX, apply: () => (this.position.x = box.minX - pad) },
+          { gap: box.maxX - this.position.x, apply: () => (this.position.x = box.maxX + pad) },
+          { gap: this.position.z - box.minZ, apply: () => (this.position.z = box.minZ - pad) },
+          { gap: box.maxZ - this.position.z, apply: () => (this.position.z = box.maxZ + pad) },
+        ];
+        faces.sort((a, b) => a.gap - b.gap)[0]?.apply();
+        this.velocity.set(0, 0, 0);
+        break;
+      }
+    }
+    const studioState = session.studio.state;
+    const open = new Set<string>();
+    const loading = new Set<string>();
+    let approachId: string | null = null;
+    let approachDist = 12;
+    for (const grid of claimed) {
+      const inside = pointInClaimedChunk(grid.bounds, this.position);
+      const outside = distanceOutsideClaim(grid.bounds, this.position);
+      const ready = studioState.grid?.gridId === grid.gridId && studioState.clientModsReady;
+      if (inside && ready) open.add(grid.gridId);
+      if ((inside || outside < 12) && !ready) {
+        loading.add(grid.gridId);
+        if (outside < approachDist) {
+          approachDist = outside;
+          approachId = grid.gridId;
+        }
+      }
+    }
+    if (approachId) session.studio.approachOwned(approachId);
+    else if (!studioState.grid) session.studio.releaseApproach();
+    this.claimedChunks?.tick(nowMs);
+    this.claimedChunks?.sync(claimed, this.position, open, loading);
     renderer.domElement.dataset.claimedChunks = String(claimed.length);
+    renderer.domElement.dataset.modLoading = loading.size > 0 ? '1' : '0';
 
     // Pads
     const pad = padAt(this.pads, this.position.x, this.position.z);
-    if (pad !== this.activePad) {
+    const hint = loading.size > 0 ? 'Loading mod…' : pad ? `Press E — ${pad.label}` : IDLE_HINT;
+    if (pad !== this.activePad || hint !== this.lastHint) {
       this.activePad = pad;
-      const hint = pad ? `Press E — ${pad.label}` : IDLE_HINT;
       if (hint !== this.lastHint) {
         this.lastHint = hint;
         context.hud.setHint(hint);

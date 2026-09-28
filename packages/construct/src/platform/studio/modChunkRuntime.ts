@@ -181,12 +181,12 @@ export async function routeModGameplay(call: PlayerCodeHostCall): Promise<unknow
     }
     case 'voice_set':
       if (!port) return { ok: false };
-      if (args.action === 'stop') port.voiceStop();
+      if (stopped(args)) port.voiceStop();
       else await port.voiceStart();
       return { ok: true };
     case 'video_set':
       if (!port) return { ok: false };
-      if (args.action === 'stop') port.videoStop();
+      if (stopped(args)) port.videoStop();
       else await port.videoStart();
       return { ok: true };
     case 'avatar_appearance': {
@@ -266,13 +266,14 @@ function poseSet(args: Record<string, unknown>): { ok: boolean; error?: string }
 }
 
 async function actorPose(args: Record<string, unknown>, spawn: boolean): Promise<unknown> {
-  const uuid = String(args.uuid ?? '');
+  const uuid = String(args.uuid ?? args.actorId ?? '');
   if (!uuid || (port && uuid === port.selfUuid)) {
     return { ok: false, error: 'refusing a live player uuid' };
   }
-  const x = num(args.x);
-  const y = num(args.y);
-  const z = num(args.z);
+  const pose = record(args.pose) ?? args;
+  const x = num(pose.x);
+  const y = num(pose.y);
+  const z = num(pose.z);
   if (
     !positionInModGrid(x, y, z) &&
     !chunkInModGrid(num(args.chunkX), num(args.chunkY), num(args.chunkZ))
@@ -284,9 +285,9 @@ async function actorPose(args: Record<string, unknown>, spawn: boolean): Promise
     x,
     y,
     z,
-    yaw: num(args.yaw),
-    pitch: num(args.pitch),
-    roll: num(args.roll),
+    yaw: num(pose.yaw),
+    pitch: num(pose.pitch),
+    roll: num(pose.roll),
   };
   owned.set(uuid, actor);
   if (port) {
@@ -305,13 +306,12 @@ async function actorPose(args: Record<string, unknown>, spawn: boolean): Promise
 async function sendClientEvent(args: Record<string, unknown>): Promise<unknown> {
   noteProjectile(args);
   if (!port) return { ok: false };
-  const payload = String(args.payloadBase64 ?? '');
   await port.client.udp.sendClientEvent({
     appId: port.appId,
-    chunk: { x: String(args.x), y: String(args.y), z: String(args.z) },
+    chunk: chunkCoord(args),
     uuid: port.selfUuid,
     eventType: Number(args.eventType ?? 1),
-    state: payload,
+    state: encodeState(args),
     distance: 8,
   });
   return { ok: true };
@@ -321,7 +321,7 @@ async function sendText(args: Record<string, unknown>): Promise<unknown> {
   if (!port) return { ok: false };
   await port.client.udp.sendTextPacket({
     appId: port.appId,
-    chunk: { x: String(args.x), y: String(args.y), z: String(args.z) },
+    chunk: chunkCoord(args),
     uuid: port.selfUuid,
     text: String(args.text ?? ''),
     distance: 8,
@@ -331,17 +331,15 @@ async function sendText(args: Record<string, unknown>): Promise<unknown> {
 
 async function sendActorMessage(args: Record<string, unknown>): Promise<unknown> {
   if (!port) return { ok: false };
-  const target = String(args.targetUuid ?? '');
+  const target = String(args.targetUuid ?? args.actorId ?? '');
   if (!actorInside(target)) return { ok: false, error: 'target is outside the grid' };
+  const chunk = messageChunk(target, args);
+  if (!chunk) return { ok: false, error: 'target chunk is unknown' };
   await port.client.udp.sendSingleActorMessage({
     appId: port.appId,
-    chunk: {
-      x: String(args.targetChunkX),
-      y: String(args.targetChunkY),
-      z: String(args.targetChunkZ),
-    },
+    chunk,
     targetUuid: target,
-    payload: String(args.payloadBase64 ?? ''),
+    payload: encodeState(args),
   });
   return { ok: true };
 }
@@ -730,8 +728,65 @@ function actorInside(uuid: string): boolean {
     );
 }
 
+/** `crowdy-client-sdk` says `enabled: false`. Older callers say `action: 'stop'`. */
+function stopped(args: Record<string, unknown>): boolean {
+  return args.action === 'stop' || args.enabled === false;
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** Chunk from `x,y,z` or the SDK's `chunkX,chunkY,chunkZ`. */
+function chunkCoord(args: Record<string, unknown>) {
+  return {
+    x: String(args.x ?? args.chunkX ?? 0),
+    y: String(args.y ?? args.chunkY ?? 0),
+    z: String(args.z ?? args.chunkZ ?? 0),
+  };
+}
+
+/** Wire state: an already-encoded `payloadBase64`, or the SDK's JSON `payload`. */
+function encodeState(args: Record<string, unknown>): string {
+  if (typeof args.payloadBase64 === 'string' && args.payloadBase64.length > 0) {
+    return args.payloadBase64;
+  }
+  const payload = args.payload;
+  if (payload && typeof payload === 'object') return utf8Base64(JSON.stringify(payload));
+  if (typeof payload === 'string') return payload;
+  return '';
+}
+
+function utf8Base64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function messageChunk(target: string, args: Record<string, unknown>) {
+  if (args.targetChunkX != null) {
+    return {
+      x: String(args.targetChunkX),
+      y: String(args.targetChunkY ?? 0),
+      z: String(args.targetChunkZ ?? 0),
+    };
+  }
+  const mine = owned.get(target);
+  if (mine) {
+    const chunk = worldToChunk({ x: mine.x, y: mine.y, z: mine.z });
+    return { x: String(chunk.x), y: String(chunk.y), z: String(chunk.z) };
+  }
+  const player = port?.players().find((row) => row.uuid === target);
+  if (!player) return null;
+  const chunk = worldToChunk(player.pose);
+  return { x: String(chunk.x), y: String(chunk.y), z: String(chunk.z) };
+}
+
 function noteProjectile(args: Record<string, unknown>): void {
-  const raw = decodePayload(args.payloadBase64);
+  const raw = record(args.payload) ?? decodePayload(args.payloadBase64);
   if (!raw || raw.kind !== 'projectile') return;
   const origin = (raw.origin ?? {}) as Record<string, unknown>;
   const direction = (raw.direction ?? { z: -1 }) as Record<string, unknown>;

@@ -70,6 +70,7 @@ describe('routeClientHostCall', () => {
       'teleport_request',
       'scene_catalog',
       'scene_instances',
+      'clock',
     ]);
   });
 
@@ -95,7 +96,7 @@ describe('routeClientHostCall', () => {
     expect(r.calls.every((c) => c.split(',').every((v) => Math.abs(Number(v)) <= 1))).toBe(true);
   });
 
-  it('reads crowdy-client-sdk radii and clamps them as the platform does (3 across, 1 up)', async () => {
+  it('reads crowdy-client-sdk radii and keeps a claim-wide scan inside the grid', async () => {
     const r = reads();
     const wide = { low: { x: -9n, y: -9n, z: -9n }, high: { x: 9n, y: 9n, z: 9n } };
     await routeClientHostCall(
@@ -106,10 +107,11 @@ describe('routeClientHostCall', () => {
       r.reads,
       wide,
     );
-    expect(r.calls.length).toBe(7 * 3 * 7);
+    // radiusXz 9 covers the grid (±9). Vertical radius stays 1.
+    expect(r.calls.length).toBe(19 * 3 * 19);
     const ys = new Set(r.calls.map((c) => Number(c.split(',')[1])));
     expect([...ys].sort()).toEqual([-1, 0, 1]);
-    expect(r.calls.every((c) => Math.abs(Number(c.split(',')[0])) <= 3)).toBe(true);
+    expect(r.calls.every((c) => Math.abs(Number(c.split(',')[0])) <= 9)).toBe(true);
   });
 
   it('serves chunk_get as base64 and voxels_list as sparse rows', async () => {
@@ -333,6 +335,27 @@ describe('routeClientHostCall', () => {
               lifeMs: 1000,
             }),
           ),
+        },
+      } as never,
+      reads().reads,
+      grid,
+    );
+    expect(modProjectiles(0)).toHaveLength(1);
+    releaseModChunk();
+    await routeClientHostCall(
+      {
+        fn: 'send_client_event',
+        args: {
+          chunkX: -2,
+          chunkY: 0,
+          chunkZ: -1,
+          payload: {
+            kind: 'projectile',
+            origin: { x: 4, y: 1.7, z: 5 },
+            direction: { x: 1, y: 0, z: 0 },
+            speed: 1320,
+            lifeMs: 1800,
+          },
         },
       } as never,
       reads().reads,

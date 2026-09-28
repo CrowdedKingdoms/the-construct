@@ -94,13 +94,14 @@ export const OFFERED_HOST_CALLS = [
   'teleport_request',
   'scene_catalog',
   'scene_instances',
+  'clock',
 ] as const;
 
 /** One zero byte, base64: the smallest non-empty voxel state the API accepts. */
 export const DEFAULT_VOXEL_STATE = 'AA==';
 
-/** `actors_list_radius` reaches this far, as the platform clamps it. */
-const MAX_RADIUS_XZ = 3;
+/** `actors_list_radius` reaches this far. The claim arena is wider than the platform default of 3. */
+const MAX_RADIUS_XZ = 32;
 const MAX_RADIUS_Y = 1;
 
 function toBigInt(value: unknown): bigint {
@@ -186,6 +187,8 @@ export async function routeClientHostCall(
       if (!input) throw new HostCallRefusedError(fn);
       return input.drainPointerClicks();
     }
+    case 'clock':
+      return { ms: Date.now() };
     case 'input_key':
       return { down: input?.keyDown?.(String(args.code ?? '')) ?? false };
     case 'scene_catalog':
