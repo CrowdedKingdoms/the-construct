@@ -24,7 +24,6 @@
  * is missing, saying so in the HUD, rather than letting a worker fail silently.
  */
 import {
-  createGridHostCalls,
   type ExecClientHalfPrompt,
   type ExecGridClientMod,
   type PlayerCodeHostCall,
@@ -39,6 +38,7 @@ import glueWorkerAssetUrl from '@crowdedkingdoms/crowdyjs/player-glue-worker?wor
 
 import { API_HTTP_URL, API_WS_URL, CLIENT_MODS_ENABLED, GAME_NAME, STUDIO_ORIGIN } from '../config';
 import { GridProgramRunner } from '../../grid/GridProgramRunner';
+import { gridServerCalls } from './gridServerCalls';
 import type { GameSession } from '../GameSession';
 import { messageOf } from '../network/NetworkManager';
 import { isTextEntry } from '../../engine/Input';
@@ -422,15 +422,14 @@ export class StudioService {
     gridId: string,
     bounds: GridBounds,
   ): (call: PlayerCodeHostCall) => Promise<unknown> {
-    const game = this.session.network.game;
-    const scope = game.grid(this.session.appId, gridId, toBrokerBounds(bounds));
-    return createGridHostCalls({
-      scope,
-      client: game,
-      local: {
-        gridPermissionKeys: () =>
-          this.currentGrid?.gridId === gridId ? this.currentGrid.permissions.effectiveKeys : [],
-      },
+    return gridServerCalls({
+      game: this.session.network.game,
+      appId: this.session.appId,
+      gridId,
+      bounds,
+      userId: this.session.network.user?.userId,
+      permissionKeys: () =>
+        this.currentGrid?.gridId === gridId ? this.currentGrid.permissions.effectiveKeys : [],
     });
   }
 
