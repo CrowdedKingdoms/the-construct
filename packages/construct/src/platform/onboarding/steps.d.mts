@@ -75,8 +75,6 @@ export interface OnboardingExec {
 export interface RunOnboardingOptions {
   /** Origins to register as the app's redirect URIs (hosted sign-in + CORS). */
   redirectOrigins?: string[];
-  /** A Game Model's Game Kit blueprints, for a game that keeps one. */
-  blueprints?: unknown[];
   /** The game's ck-exec code, built and deployed as a step (the starter's world hub). */
   exec?: OnboardingExec;
   /** Studio Common Files to publish (starter templates); none by default. */
@@ -131,11 +129,6 @@ export function deployExec(
   input: DeployExecInput,
   log?: Logger,
 ): Promise<{ buildId: string; version: number; restarted: string[] }>;
-export function deployModel(
-  game: CrowdyClient,
-  input: { appId: string; blueprints: unknown[] },
-  log?: Logger,
-): Promise<unknown>;
 export function publishStarterFiles(
   game: CrowdyClient,
   input: { appId: string; commonFiles?: OnboardingCommonFile[] },

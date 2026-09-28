@@ -81,7 +81,6 @@ export {
 export {
   routeClientHostCall,
   routeWithFallback,
-  runConsentedGridMod,
   type ClientModHostReads,
   type ClientModHostWrites,
 } from './platform/studio/clientModHost';

@@ -130,8 +130,6 @@ reserved for that org) through the same command a third party runs.
   `npm run deploy:exec -- --restart` switches every type off and on so a
   running hub (the world hub never idles while players are in) starts again
   on the new version.
-- `deployModel` stays in `steps.mjs` for games that keep a Game Model; the
-  starter no longer seeds one.
 
 ## Platform facts this code depends on (measured 2026-09-07, dev tier)
 
@@ -142,7 +140,7 @@ reserved for that org) through the same command a third party runs.
   (developers can `forget_claim`). The hub does not ask the platform who owns
   a grid, so a player can still record a grid id they do not own if no one
   recorded it first.
-- A CLIENT half (CrowdyJS 17.14, ck-api ≥ v2.24.0) is served by its mod's grid
+- A CLIENT half (CrowdyJS 17.14 and 18, ck-api ≥ v2.24.0) is served by its mod's grid
   only while the mod is on and running as the grid's owner, to a player whose
   **own** tier holds `run_client_code`, who stands in the grid, and who
   consented to it at its capability hash or trusts its author at a union no
@@ -184,8 +182,12 @@ reserved for that org) through the same command a third party runs.
   (CLIENT) keeps its compute-SDK crate, which a mod build refuses and the
   Studio refuses as a CLIENT half before building: players import a starter's
   `Cargo.toml` and `src/lib.rs` over it.
-- CrowdyJS 17's embed still types a `playerCompute` service it never calls
-  with `serverEngine: 'ck-exec'`; `StudioService` passes one that refuses.
+- CrowdyJS 18 (construct 0.3.0) has no legacy engines: Studio is ck-exec only
+  (no `serverEngine`, no `playerCompute`), there is no Game Model, and the
+  legacy grid-attached client mods and `runConsentedGridMod` /
+  `ClientModLifecycle` are gone. A CLIENT half's `crowdy::log` lines reach
+  `GridClientHalves`' `onLog` (the network log by default) and the page can
+  call its `handle_invoke` with `GridClientHalves.invoke`.
 
 ## ck-exec facts this code depends on (2026-09-26, local cluster and ck-api source)
 

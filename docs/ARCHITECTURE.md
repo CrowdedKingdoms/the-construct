@@ -116,7 +116,7 @@ call starts it on the new version from its snapshot.
 See [MODDING.md](MODDING.md). In one paragraph: a player claims a chunk
 (`claimGridChunk`, policy `SELF_CLAIM`); the platform returns the grid and the
 player's effective code keys; the SDK's embed kit renders the IDE; a project
-runs as a ck-exec mod (`serverEngine: 'ck-exec'`). Its SERVER target builds on
+runs as a ck-exec mod. Its SERVER target builds on
 the platform into a hub on the grid that players there call by name; its
 CLIENT target builds on the platform (`modClientBuild`, a `crowdy-client-sdk`
 crate) into that mod's CLIENT half, which the grid serves to the players who
