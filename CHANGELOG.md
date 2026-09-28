@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+`@crowdedkingdoms/construct` 0.3.2: a CLIENT half's `grid_permission_check`
+gets a real answer. The Studio preview and `GridClientHalves` passed the grid's
+permission keys to CrowdyJS's `createGridHostCalls` but not the player's user id,
+so the SDK refused every check. The wiring is `gridServerCalls` now (exported),
+with the signed-in player's id. Peers as 0.3.1.
+
 `@crowdedkingdoms/construct` 0.3.1 and CrowdyJS `18.0.1-dev.1`, which only drops
 the SDK's super-admin and operator wrappers (nothing here used them). The peer
 range gains the 18.0.1 prerelease line, which npm would not match against the

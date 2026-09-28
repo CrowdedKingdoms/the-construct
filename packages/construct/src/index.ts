@@ -91,4 +91,5 @@ export {
   type ClientHalvesGrid,
   type GridClientHalvesOptions,
 } from './platform/studio/clientHalves';
+export { gridServerCalls, type GridServerCallsOptions } from './platform/studio/gridServerCalls';
 export { GridProgramRunner, type GridProgramRunnerOptions } from './grid/GridProgramRunner';
