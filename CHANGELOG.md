@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+`@crowdedkingdoms/construct` 0.3.3, CrowdyJS `18.0.3-dev.1` (the P3 W5 client
+security review). Peers on CrowdyJS `>=18.0.3-dev.0 <19` (it calls the SDK's
+revoke calls) and admits crowdy-dsh 0.4.3.
+
+- A CLIENT half could write voxels outside its grid: `parseVoxelSetArgs` read
+  `args.chunk` (or `chunk_x`…) before the `chunkX/Y/Z` the broker checks, and the
+  write sink never checked the grid. The flat fields win now, and
+  `routeClientHostCall` refuses a `voxel_set` outside the grid (and without one).
+- "Stop" and "Forget author" beside each CLIENT half running for the player
+  (`ui/Hud.ts`): `GridClientHalves.revoke` / `forgetAuthor`,
+  `StudioService.stopClientHalf` / `forgetClientHalfAuthor`, and the running
+  halves in `StudioState.clientHalves`. A revoke the platform refuses stays
+  stopped here and says so.
+- The consent question says in plain words what the calls that act as the
+  player can do (`describeClientCapabilities`).
+
 `@crowdedkingdoms/construct` 0.3.2: a CLIENT half's `grid_permission_check`
 gets a real answer. The Studio preview and `GridClientHalves` passed the grid's
 permission keys to CrowdyJS's `createGridHostCalls` but not the player's user id,

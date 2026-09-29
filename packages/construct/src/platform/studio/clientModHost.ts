@@ -110,9 +110,10 @@ export async function routeClientHostCall(
         : { voxels: voxelsFromBase64(chunk.voxelsBase64) };
     }
     case 'voxel_set': {
-      if (!writes) throw new HostCallRefusedError(fn);
+      if (!writes || !grid) throw new HostCallRefusedError(fn);
       const parsed = parseVoxelSetArgs(args);
       if (!parsed) return { ok: false, error: 'invalid voxel_set arguments' };
+      if (!chunkInGrid(parsed.chunk, grid)) return { ok: false, error: 'out_of_grid' };
       const ok = await writes.setVoxel({
         chunk: parsed.chunk,
         x: parsed.x,
@@ -163,7 +164,11 @@ function asCoord3(value: unknown): { x: unknown; y: unknown; z: unknown } | null
   return null;
 }
 
-/** Accept the SDKs' flattened host-call JSON (the broker clamps its chunk) and the tuple shape. */
+/**
+ * Accept the SDKs' flattened host-call JSON and the tuple shape. The chunk is `chunkX/Y/Z`, the
+ * fields the broker checks against the grid, whenever any of them is present; `args.chunk` only
+ * when none is. The caller still checks the chunk against the grid.
+ */
 export function parseVoxelSetArgs(args: Record<string, unknown>): {
   chunk: { x: number; y: number; z: number };
   x: number;
@@ -172,13 +177,15 @@ export function parseVoxelSetArgs(args: Record<string, unknown>): {
   voxelType: number;
   state: string;
 } | null {
-  const chunkRaw =
-    asCoord3(args.chunk) ??
-    ({
-      x: coordField(args, 'chunkX', 'chunk_x'),
-      y: coordField(args, 'chunkY', 'chunk_y'),
-      z: coordField(args, 'chunkZ', 'chunk_z'),
-    } as { x: unknown; y: unknown; z: unknown });
+  const flat = ['chunkX', 'chunkY', 'chunkZ'].some((key) => args[key] !== undefined);
+  const chunkRaw = flat
+    ? { x: args.chunkX, y: args.chunkY, z: args.chunkZ }
+    : (asCoord3(args.chunk) ??
+      ({
+        x: coordField(args, 'chunk_x'),
+        y: coordField(args, 'chunk_y'),
+        z: coordField(args, 'chunk_z'),
+      } as { x: unknown; y: unknown; z: unknown }));
   const voxelRaw =
     asCoord3(args.voxel) ??
     ({
@@ -246,6 +253,23 @@ export async function routeWithFallback(
     if (error instanceof HostCallRefusedError && serverCalls) return serverCalls(call);
     throw error;
   }
+}
+
+function chunkInGrid(
+  chunk: { x: number; y: number; z: number },
+  grid: PlayerCodeGridBounds,
+): boolean {
+  const x = BigInt(chunk.x);
+  const y = BigInt(chunk.y);
+  const z = BigInt(chunk.z);
+  return (
+    x >= grid.low.x &&
+    x <= grid.high.x &&
+    y >= grid.low.y &&
+    y <= grid.high.y &&
+    z >= grid.low.z &&
+    z <= grid.high.z
+  );
 }
 
 function minBig(a: bigint, b: bigint): bigint {
