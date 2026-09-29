@@ -68,12 +68,25 @@ export interface StudioState {
   clientModsAvailable: boolean;
   /** The grid's CLIENT halves running for this player. */
   clientModsRunning: number;
+  /** Those CLIENT halves, for the controls that take them back. */
+  clientHalves: readonly RunningClientHalf[];
   /** Why CLIENT mods are unavailable, when they are. */
   clientModsReason: string | null;
   /** Agent dock mounted (policy + permission + host). */
   agentReady: boolean;
   /** Why the agent dock is hidden or dead, when it is. */
   agentReason: string | null;
+}
+
+/** A CLIENT half running for this player, and whose it is. */
+export interface RunningClientHalf {
+  modId: string;
+  name: string;
+  authorId: string;
+  /** The grid owner's display name, when the game knows it. */
+  authorName: string | null;
+  /** Written by this player (their own grid, not installed from a listing). */
+  own: boolean;
 }
 
 export interface StudioHooks {
@@ -179,6 +192,7 @@ export class StudioService {
       grid: null,
       clientModsAvailable: CLIENT_MODS_ENABLED && isolated,
       clientModsRunning: 0,
+      clientHalves: [],
       clientModsReason: !CLIENT_MODS_ENABLED
         ? 'CLIENT mods are disabled in this build (VITE_CONSTRUCT_CLIENT_MODS=0).'
         : isolated
@@ -326,6 +340,37 @@ export class StudioService {
     this.openOn(grid);
   }
 
+  /** "Stop running this": the player takes back their consent to one CLIENT half here. */
+  async stopClientHalf(modId: string): Promise<void> {
+    await this.takeBack(`stopped the CLIENT half of mod ${modId}`, (halves) =>
+      halves.revoke(modId),
+    );
+  }
+
+  /** "Forget this author": the player takes back their trust in an author on this grid. */
+  async forgetClientHalfAuthor(authorId: string): Promise<void> {
+    await this.takeBack(`forgot author ${authorId} on this grid`, (halves) =>
+      halves.forgetAuthor(authorId),
+    );
+  }
+
+  private async takeBack(
+    done: string,
+    work: (halves: GridClientHalves) => Promise<boolean>,
+  ): Promise<void> {
+    const halves = this.halves;
+    if (!halves) return;
+    try {
+      await work(halves);
+      this.session.network.log(`CLIENT halves: ${done}`);
+    } catch (error) {
+      this.hooks?.notify(
+        `Stopped here, but the platform did not record it (${messageOf(error)}); it may run on your next visit.`,
+        'warn',
+      );
+    }
+  }
+
   close(): void {
     this.embed?.close();
     if (this.currentGrid) {
@@ -461,7 +506,18 @@ export class StudioService {
         }),
       filter: (mod) => !this.previewedByStudio(mod),
       onChange: (running) => {
-        this.state = { ...this.state, clientModsRunning: running.length };
+        const self = this.session.network.user?.userId ?? null;
+        const clientHalves = running.map((mod) => ({
+          modId: String(mod.modId),
+          name: mod.name,
+          authorId: String(mod.authorId),
+          authorName:
+            this.currentGrid?.gridId === String(mod.gridId)
+              ? (this.currentGrid.ownerName ?? null)
+              : null,
+          own: self !== null && String(mod.authorId) === String(self) && mod.listingId == null,
+        }));
+        this.state = { ...this.state, clientModsRunning: running.length, clientHalves };
         this.emit();
       },
       log: (line) => this.session.network.log(line),

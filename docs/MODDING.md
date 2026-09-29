@@ -131,12 +131,16 @@ voxel writes and clicks reach this game's router,
 | `actors_list_radius(x,y,z,radius_xz,radius_y)` | The same across a box of chunks, as the platform clamps it: `radiusXz` ≤ 3, `radiusY` ≤ 1, inside the grid |
 | `chunk_get(x,y,z)` | The cached dense voxel grid, base64 |
 | `voxels_list(x,y,z)` | The non-zero cells as rows |
-| `voxel_set` | One voxel write, as the player running it, through World Stores `chunks.setVoxel` + `markDirty`. Replicates to other players and persists. Args as `crowdy::api::voxel_set` sends them: `chunkX/Y/Z`, in-chunk `voxelX/Y/Z` (0–15), `voxelType`, `stateBase64`. |
+| `voxel_set` | One voxel write, as the player running it, through World Stores `chunks.setVoxel` + `markDirty`. Replicates to other players and persists. Args as `crowdy::api::voxel_set` sends them: `chunkX/Y/Z`, in-chunk `voxelX/Y/Z` (0–15), `voxelType`, `stateBase64`. The chunk is the one the broker checked (`chunkX/Y/Z`), and the write is refused (`{ ok: false, error: 'out_of_grid' }`) unless it is inside the half's grid (0.3.3: a second spelling such as `chunk` used to win and could write outside the grid). |
 | `pointer_clicks` | Drain holodeck mouse clicks since the last call. `{ nowMs, buttons, holdingMs, clicks }`. `clicks` is `{ t:"down"\|"up", button, atMs, heldMs?, nx, ny }` (canvas NDC, +ny up). `holdingMs["0"]` is left-button charge time. Studio chrome is omitted. Call every tick. |
 
 The rest (`user_state_get` / `user_state_set`, `avatar_state_get`,
 `grid_permission_check`, `emit_spatial`, `emit_channel`) goes through
-CrowdyJS's `createGridHostCalls`, confined to the grid, as the player.
+CrowdyJS's `createGridHostCalls`, confined to the grid, as the player. Since
+CrowdyJS 18.0.2 it answers `grid_permission_check` only for the four
+code-permission keys (the only keys this game knows for a grid; any other key is
+refused, not answered false), and a half's spatial and channel sends go out
+under an actor uuid the page derives for the grid, never one the half names.
 
 `voxel_set` is occupancy: floors, walls, claim-aligned blocks. Voxels cannot
 rotate. `overlay_draw` is **local** presentation (aim assist, author preview)
@@ -231,7 +235,16 @@ What the port could not keep, and why:
   runs a half only with its SHA-256 digest, its fuel budget and the host calls
   both the consented summary and the served module list. Your own CLIENT
   halves run for you without a question, except one installed from someone's
-  marketplace listing.
+  marketplace listing. The question says in plain words what the calls that act
+  as you can do (replace your saved state, change blocks, message players near
+  you, see your clicks).
+- **A player can take it back.** The HUD lists the CLIENT halves running for
+  you on the grid: **Stop** stops one and takes back your consent to it (and
+  your trust in its author, when it ran through that trust, keeping their other
+  halves), **Forget author** stops all of that author's and takes the trust
+  back (`StudioService.stopClientHalf` / `forgetClientHalfAuthor`, over
+  CrowdyJS `ExecClientHalves.revoke` / `forgetAuthor`, construct 0.3.3). Neither
+  is asked about again on the grid until it changes; a new visit asks again.
 - **A build switch exists.** `VITE_CONSTRUCT_CLIENT_MODS=0` ships SERVER-only
   Studio for a fork that does not want browser execution.
 

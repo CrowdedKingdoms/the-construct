@@ -166,6 +166,8 @@ async function startGame(): Promise<void> {
     signOut: () => void signOut(),
     toggleCamera: () => void session.webcam.toggle(),
     toggleVoice: () => void session.voice.toggle(),
+    stopClientHalf: (modId) => void session.studio.stopClientHalf(modId),
+    forgetClientHalfAuthor: (authorId) => void session.studio.forgetClientHalfAuthor(authorId),
     ...(studioWalletUrl
       ? {
           openWallet: () => {
