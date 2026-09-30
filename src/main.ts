@@ -198,6 +198,7 @@ async function startGame(): Promise<void> {
 
   const game: RunningGame = { session, loop, router, hud, chat, timers: [], disposers: [] };
   running = game;
+  game.disposers.push(session.guardWriteBacks((text, tone) => hud.toast(text, tone)));
 
   game.disposers.push(session.studio.events.on('state', (state) => hud.renderStudio(state)));
   hud.renderStudio(session.studio.snapshot);

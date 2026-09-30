@@ -145,8 +145,10 @@ export class PaintScene implements GameScene {
   }
 
   unmount(): void {
-    // Persist any paint still queued before the scene goes away.
-    void this.context?.session.world.chunks.flush().catch(() => undefined);
+    // Persist any paint still queued before the scene goes away. What the server
+    // refuses comes back as dropped writes, which the session's write-back guard
+    // (GameSession.guardWriteBacks) has already undone and told the player about.
+    void this.context?.session.world.chunks.flush().catch(() => []);
     for (const dispose of this.disposables) dispose();
     this.disposables = [];
     for (const entry of this.chunkGraphics.values()) entry.graphics.destroy();

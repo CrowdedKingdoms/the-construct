@@ -54,7 +54,11 @@ World Stores (`@crowdedkingdoms/crowdyjs/stores`) run over one shared
   reaped when stale. Scenes read `session.players(programId)`.
 - `chunks` — the voxel cache the Paint program draws on, the holodeck draws
   as cubes, and CLIENT halves read and write (`voxel_set`). Realtime edits
-  merge in; `markDirty` queues durable write-back.
+  merge in; `markDirty` queues durable write-back. A write-back the server
+  refuses (someone else's claim, a safe zone, a closed wilderness) is sent once
+  and dropped; one it never accepts is dropped after five tries.
+  `GameSession.guardWriteBacks` (`platform/realtime/writeBackGuard.ts`, wired
+  in `main.ts`) puts that chunk back to the server's copy and tells the player.
 - `host` — 3 s heartbeats that keep the actor's presence fresh for the
   server-side gates (a CLIENT half is served only to a player standing in its
   grid).
