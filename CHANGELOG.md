@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+`@crowdedkingdoms/construct` 0.3.4, CrowdyJS `18.0.4-dev.1`. Peers on CrowdyJS
+`>=18.0.4-dev.0 <19` (it needs `ChunkStore.onWriteBackFailed`).
+
+- A voxel the server will not save is undone. CrowdyJS 18.0.4's chunk store
+  sends a refused write-back (FORBIDDEN: someone else's claim, a safe zone, a
+  closed wilderness) once instead of forever, retries anything else five times,
+  and reports the drop without undoing it. `GameSession.guardWriteBacks`
+  (`platform/realtime/writeBackGuard.ts`, exported, wired in `main.ts`) puts the
+  chunk back to the server's copy (or empty when the server never stored it)
+  and toasts "You can't build here…", once per stroke. It covers Paint, the
+  holodeck and CLIENT `voxel_set`.
+- Paint's `flush()` on leaving the scene finishes now; before, it never did once
+  a write was refused.
+
 `@crowdedkingdoms/construct` 0.3.3, CrowdyJS `18.0.3-dev.1` (the P3 W5 client
 security review). Peers on CrowdyJS `>=18.0.3-dev.0 <19` (it calls the SDK's
 revoke calls) and admits crowdy-dsh 0.4.3.

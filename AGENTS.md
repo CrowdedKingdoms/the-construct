@@ -169,7 +169,11 @@ reserved for that org) through the same command a third party runs.
 - The API refuses an empty `voxelState`; `ChunkStore.setVoxel` sends `''`
   without a `state`. Paint sends one byte.
 - Realtime voxel updates are live-only; durability is the chunk store's
-  write-back (`markDirty` → `chunks.update`).
+  write-back (`markDirty` → `chunks.update`). Since CrowdyJS 18.0.4 the store
+  drops a refused write-back (FORBIDDEN on someone else's grid or a safe zone)
+  after one try and keeps the local voxels; `GameSession.guardWriteBacks`
+  (construct 0.3.4) reloads the chunk and toasts "You can't build here…".
+  `chunks.flush()` resolves with the dropped writes and no longer hangs.
 - pixi.js v8 needs `import 'pixi.js/unsafe-eval'` under a CSP without
   `unsafe-eval`.
 - A new Studio project's SERVER target is the platform's mod starter
