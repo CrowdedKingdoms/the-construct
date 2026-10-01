@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+`@crowdedkingdoms/construct` 0.3.5, CrowdyJS `18.1.0-dev.1` and crowdy-dsh
+`0.4.4-dev.1`, with no code change. The peer ranges gain the 18.1.0 and 0.4.4
+prerelease lines, which npm would not match against the 18.0.4 and 0.4.3
+comparators. CrowdyJS 18.1.0 adds `gameApps.setOpenPermissions` /
+`openPermissions`, dials an exec gateway only on the game API's domain or the
+release's default origin, and reports a refused connect token as `Denied`.
+
 `@crowdedkingdoms/construct` 0.3.4, CrowdyJS `18.0.4-dev.1`. Peers on CrowdyJS
 `>=18.0.4-dev.0 <19` (it needs `ChunkStore.onWriteBackFailed`).
 
