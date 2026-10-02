@@ -9,7 +9,7 @@ walkthrough and the security story, in that order.
 
 ck-exec is a dev-tier preview, and Crowdy Studio runs on it only (CrowdyJS
 18). See
-[Mods](https://docs.crowdedkingdoms.com/exec/mods) in the platform docs.
+[Mods](https://docs.dev.crowdedkingdoms.com/exec/mods) in the platform docs.
 
 ## Prerequisites (Setup does all of this)
 
@@ -110,7 +110,7 @@ module):
 The *Presence beacon* counts the players in its grid as they come and go
 (`on_world`, then `world.actors`, and again every 10 s) and answers `present`
 with `{ "present": n }`. See the platform's
-[Mods](https://docs.crowdedkingdoms.com/exec/mods) page.
+[Mods](https://docs.dev.crowdedkingdoms.com/exec/mods) page.
 
 ## What a CLIENT half can do here
 
@@ -267,7 +267,7 @@ and the SERVER-only path are here so it can be a deliberate one.
 - **Marketplace listings** — `client.exec.modPublish` / `modInstall`. A listing
   carries the mod's CLIENT half, and an installer's grid serves it once the
   installer consents to it afresh. Read
-  [Mods](https://docs.crowdedkingdoms.com/exec/mods).
+  [Mods](https://docs.dev.crowdedkingdoms.com/exec/mods).
 
 ## JS grid programs
 

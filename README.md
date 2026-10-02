@@ -1,6 +1,6 @@
 # The Construct
 
-A starter repository for building browser games on [Crowded Kingdoms](https://docs.crowdedkingdoms.com)
+A starter repository for building browser games on [Crowded Kingdoms](https://docs.dev.crowdedkingdoms.com)
 with the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) SDK.
 
 The SDK gives you the platform. This repo gives you the rest of a game: an
@@ -58,7 +58,7 @@ npm install
 
    ck-exec is a **dev-tier preview**, so the world hub deploys only where the
    installed SDK is a `-dev.N` build (the `dev` branch); see
-   [ck-exec](https://docs.crowdedkingdoms.com/exec/intro).
+   [ck-exec](https://docs.dev.crowdedkingdoms.com/exec/intro).
 
    Why a shell and not the browser: creating an app needs your account's
    session, and a game on its own domain never holds one -- see step 2.
@@ -178,8 +178,8 @@ player's own wallet after a monthly trial. Crowdy Agent tokens are
 **platform-funded** on Crowded Kingdoms (this game never asks for an OpenRouter
 key). The HUD Wallet link is for the player's wallet, not the agent. Current
 figures:
-[Shared environment](https://docs.crowdedkingdoms.com/management-api/shared-environment)
-and [Player billing](https://docs.crowdedkingdoms.com/management-api/player-billing).
+[Shared environment](https://docs.dev.crowdedkingdoms.com/management-api/shared-environment)
+and [Player billing](https://docs.dev.crowdedkingdoms.com/management-api/player-billing).
 
 ## Hosting: one command, or yours
 
