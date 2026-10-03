@@ -34,13 +34,13 @@
     "publish": "node scripts/publish.mjs"
   },
   "dependencies": {
-    "@crowdedkingdoms/construct": "0.3.6",
-    "@crowdedkingdoms/crowdyjs": "18.1.0-dev.1",
+    "@crowdedkingdoms/construct": "0.3.7",
+    "@crowdedkingdoms/crowdyjs": "18.2.0-dev.1",
     "pixi.js": "^8.20.1",
     "three": "^0.185.1"
   },
   "devDependencies": {
-    "@crowdedkingdoms/crowdy-dsh": "0.4.4-dev.1",
+    "@crowdedkingdoms/crowdy-dsh": "0.4.5-dev.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^20.19.0",

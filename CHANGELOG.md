@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+`@crowdedkingdoms/construct` 0.3.7, CrowdyJS `18.2.0-dev.1` and crowdy-dsh
+`0.4.5-dev.1`. 0.3.6's hydration was not enough on its own: CrowdyJS's chunk
+store put a chunk's stored grid back over the edits it had hydrated whenever a
+later bulk load returned that chunk again, which happens as soon as the player
+moves (the holodeck's cube and Paint's overlap), and never hydrated it again.
+CrowdyJS 18.2.0 keeps a chunk it has already loaded. The peer ranges gain the
+18.2.0 and 0.4.5 prerelease lines.
+
 `@crowdedkingdoms/construct` 0.3.6: blocks a SERVER mod placed come back after
 a reload. Since ck-api v2.33.0 every voxel edit that is not a chunk write-back
 (a mod's or hub's `world.set_voxels`, `updateVoxel`, a realtime voxel update)

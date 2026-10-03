@@ -71,6 +71,13 @@ describe('chunkStoreConfig', () => {
     expect(store.voxelTypeAt(STORED, 8, 0, 8)).toBe(4);
     expect(store.voxelStateAt(STORED, 8, 0, 8)).toBe('AA==');
     expect(store.voxelTypeAt(STORED, 2, 0, 2)).toBe(0);
+
+    // Moving on loads the next cube, which returns this chunk again (CrowdyJS 18.2.0 keeps it).
+    await store.ensureAround({ x: 3, y: 0, z: 4 }, 1);
+    expect(client.chunks.byDistance).toHaveBeenCalledTimes(2);
+    expect(store.voxelTypeAt(STORED, 6, 1, 7)).toBe(1);
+    expect(store.voxelTypeAt(STORED, 2, 0, 2)).toBe(0);
+    expect(client.chunks.get).toHaveBeenCalledTimes(1);
   });
 
   it('shows only the stored grid when the store does not hydrate (the construct before 0.3.6)', async () => {
