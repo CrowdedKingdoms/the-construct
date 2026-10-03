@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+`@crowdedkingdoms/construct` 0.3.6: blocks a SERVER mod placed come back after
+a reload. Since ck-api v2.33.0 every voxel edit that is not a chunk write-back
+(a mod's or hub's `world.set_voxels`, `updateVoxel`, a realtime voxel update)
+reaches a reload only as a `getChunk` `voxelStates` entry, and the bulk load's
+`voxels` hold none of them. The chunk store hydrated loaded chunks only with a
+voxel-state codec, which The Construct has none of, so the pool cue's table and
+the spinning child's blocks were live only. The World Stores chunk settings
+(`platform/realtime/chunkStoreConfig.ts`) now set `hydrateVoxelStates: true`:
+one `chunks.get` per stored chunk the store loads, eight at a time. No SDK
+change; still CrowdyJS `18.1.0-dev.1`.
+
 `@crowdedkingdoms/construct` 0.3.5, CrowdyJS `18.1.0-dev.1` and crowdy-dsh
 `0.4.4-dev.1`, with no code change. The peer ranges gain the 18.1.0 and 0.4.4
 prerelease lines, which npm would not match against the 18.0.4 and 0.4.3

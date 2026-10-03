@@ -169,7 +169,13 @@ reserved for that org) through the same command a third party runs.
 - The API refuses an empty `voxelState`; `ChunkStore.setVoxel` sends `''`
   without a `state`. Paint sends one byte.
 - Realtime voxel updates are live-only; durability is the chunk store's
-  write-back (`markDirty` → `chunks.update`). Since CrowdyJS 18.0.4 the store
+  write-back (`markDirty` → `chunks.update`).
+- A voxel edit that is not a chunk write-back (a SERVER mod's or hub's
+  `world.set_voxels`, `updateVoxel`, a realtime voxel update) reaches a reload
+  only as a `getChunk` `voxelStates` entry (ck-api v2.33.0); the bulk load's
+  `voxels` never carry it. So the chunk store hydrates every loaded chunk
+  (`hydrateVoxelStates: true`, `platform/realtime/chunkStoreConfig.ts`). An
+  edit in a chunk the server has never stored is not returned at all. Since CrowdyJS 18.0.4 the store
   drops a refused write-back (FORBIDDEN on someone else's grid or a safe zone)
   after one try and keeps the local voxels; `GameSession.guardWriteBacks`
   (construct 0.3.4) reloads the chunk and toasts "You can't build here…".
