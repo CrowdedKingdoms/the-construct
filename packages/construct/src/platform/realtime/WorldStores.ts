@@ -9,7 +9,8 @@
  *               would get their own lane.
  *  - `chunks` — the voxel cache Paint draws in 2D and the holodeck draws as
  *               cubes. CLIENT `voxel_set` writes here so other players see
- *               the same blocks.
+ *               the same blocks. Every loaded chunk is hydrated, so blocks a
+ *               SERVER mod placed come back after a reload.
  *  - `errors` — server-reported send failures attributed to what we sent.
  *  - `events` — SERVER `emit_spatial("server_event")` catalog/pose packets
  *               for the replicated instance layer (construct.scene.v1).
@@ -32,6 +33,7 @@ import { ACTOR_SYNC_INTERVAL_MS, REPLICATION_DISTANCE, STALE_ACTOR_TIMEOUT_MS } 
 import { envScopedKey } from '../envScope';
 import { NetworkManager } from '../network/NetworkManager';
 import { NEUTRAL_POSE, poseCodec, type Pose } from './actorCodec';
+import { chunkStoreConfig } from './chunkStoreConfig';
 import { InstanceStore } from '../studio/instanceStore';
 
 /** What survives between sessions. Deliberately small; add fields freely. */
@@ -62,13 +64,7 @@ function buildConfig() {
         players: () => true,
       },
     },
-    chunks: {
-      distance: REPLICATION_DISTANCE,
-      // The Construct has no terrain to generate: a chunk the server has never
-      // stored is simply empty. Seed it locally (no write-back) so the paint
-      // program and CLIENT mods always see a dense grid.
-      onMissing: () => ({ voxels: new Uint8Array(4096), writeBack: false }),
-    },
+    chunks: chunkStoreConfig(),
     errors: true as const,
     events: true as const,
     host: {

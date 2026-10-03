@@ -54,7 +54,11 @@ World Stores (`@crowdedkingdoms/crowdyjs/stores`) run over one shared
   reaped when stale. Scenes read `session.players(programId)`.
 - `chunks` — the voxel cache the Paint program draws on, the holodeck draws
   as cubes, and CLIENT halves read and write (`voxel_set`). Realtime edits
-  merge in; `markDirty` queues durable write-back. A write-back the server
+  merge in; `markDirty` queues durable write-back. Each loaded chunk is
+  hydrated with `getChunk` (`hydrateVoxelStates`,
+  `platform/realtime/chunkStoreConfig.ts`): its `voxelStates` carry every voxel
+  edit recorded for it, a SERVER mod's `world.set_voxels` included, and the
+  bulk load's `voxels` hold none of them. A write-back the server
   refuses (someone else's claim, a safe zone, a closed wilderness) is sent once
   and dropped; one it never accepts is dropped after five tries.
   `GameSession.guardWriteBacks` (`platform/realtime/writeBackGuard.ts`, wired
