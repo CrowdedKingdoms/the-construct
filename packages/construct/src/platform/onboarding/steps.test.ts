@@ -35,6 +35,9 @@ function identityStub(overrides: Any = {}): Any {
         return { appId: '77', name: input.name, slug: input.slug };
       }),
     },
+    users: {
+      me: vi.fn(async () => ({ userId: overrides.callerId ?? '42' })),
+    },
     appAccess: {
       tiers: vi.fn(async () => overrides.tiers ?? []),
       createTier: vi.fn(async (input: Any) => {
@@ -46,6 +49,7 @@ function identityStub(overrides: Any = {}): Any {
         return { tierId: id, name: 'Constructor', permissionKeys: input.permissionKeys };
       }),
       myAccess: vi.fn(async () => overrides.myAccess ?? null),
+      usersByApp: vi.fn(async () => overrides.usersByApp ?? []),
       grant: vi.fn(async (input: Any) => {
         created.push(['grant', input]);
         return { tierId: input.tierId };
@@ -160,6 +164,43 @@ describe('onboarding steps', () => {
     expect(already.appAccess.updateTier).not.toHaveBeenCalled();
   });
 
+  it("grants another user by that user's access, not the caller's", async () => {
+    const tiers = [
+      {
+        tierId: 'd',
+        name: 'Default',
+        isDefault: true,
+        status: 'active',
+        permissionKeys: ['access', ...steps.VISITOR_RUN_KEYS],
+      },
+      {
+        tierId: 't1',
+        name: 'Constructor',
+        status: 'active',
+        permissionKeys: [...steps.CONSTRUCTOR_TIER_KEYS],
+      },
+    ];
+    // The caller (an org admin) holds Constructor; user 42 holds the default tier.
+    const admin = identityStub({
+      callerId: '1',
+      tiers,
+      myAccess: { tierId: 't1', status: 'active' },
+      usersByApp: [{ userId: '42', tierId: 'd', status: 'active' }],
+    });
+    const a = await steps.ensureConstructorTier(admin as never, { appId: '77', userId: '42' });
+    expect(a.granted).toBe(true);
+    expect(admin.appAccess.grant).toHaveBeenCalledWith({ appId: '77', userId: '42', tierId: 't1' });
+
+    const holds = identityStub({
+      callerId: '1',
+      tiers,
+      usersByApp: [{ userId: '42', tierId: 't1', status: 'active' }],
+    });
+    const b = await steps.ensureConstructorTier(holds as never, { appId: '77', userId: '42' });
+    expect(b.granted).toBe(false);
+    expect(holds.appAccess.grant).not.toHaveBeenCalled();
+  });
+
   it('only sets the claim policy when it differs', async () => {
     const game = {
       marketplace: {
@@ -179,35 +220,139 @@ describe('onboarding steps', () => {
     });
   });
 
-  it('does not re-seed containers that already exist', async () => {
-    const deploy = vi.fn(async () => ({
-      seed: { containersCreated: 0 },
-      automations: [],
-      warnings: [],
-    }));
-    const game = {
-      kit: () => ({ deploy }),
-      gameModel: {
-        containers: vi.fn(async ({ typeName }: Any) =>
-          typeName === 'WorldState' ? [{ displayName: 'The Construct' }] : [],
-        ),
-      },
+  const execManifest = {
+    root: 'construct',
+    types: {
+      construct: { kind: 'hub', crate: 'construct', client: true },
+      world: { kind: 'hub', parent: 'construct', crate: 'construct', client: true },
+    },
+  };
+  const execCrates = [{ name: 'construct', files: { 'Cargo.toml': '', 'src/lib.rs': '' } }];
+
+  function execStub(build: Any = { status: 'succeeded', log: '' }) {
+    const calls: string[] = [];
+    const exec = {
+      build: vi.fn(async () => {
+        calls.push('build');
+        return { buildId: 'b1', status: 'queued' };
+      }),
+      waitForBuild: vi.fn(async () => {
+        calls.push('wait');
+        return {
+          buildId: 'b1',
+          artifacts: [{ crate: 'construct', sizeBytes: 10, digest: 'd' }],
+          ...build,
+        };
+      }),
+      deploy: vi.fn(async () => {
+        calls.push('deploy');
+        return { version: 3 };
+      }),
+      setEnabled: vi.fn(async (_appId: string, on: boolean, nodeType: string) => {
+        calls.push(`${nodeType}:${on ? 'on' : 'off'}`);
+      }),
     };
-    await steps.deployModel(game as never, {
+    return { client: { exec, close: vi.fn() }, exec, calls };
+  }
+
+  it('builds the ck-exec crates on the platform and deploys that build', async () => {
+    const { client, exec, calls } = execStub();
+    const result = await steps.deployExec(client as never, {
       appId: '77',
-      blueprints: [
-        {
-          name: 'construct-world',
-          containers: [
-            { typeName: 'WorldState', displayName: 'The Construct' },
-            { typeName: 'Program', displayName: 'Paint' },
-          ],
-        },
-      ],
+      manifest: execManifest as never,
+      crates: execCrates,
     });
-    const blueprints = (deploy.mock.calls as Any[][])[0]![0] as Any[];
-    const world = blueprints.find((b) => b.name === 'construct-world')!;
-    expect(world.containers.map((c: Any) => c.typeName)).toEqual(['Program']);
+    expect(result).toEqual({ buildId: 'b1', version: 3, restarted: [] });
+    expect(exec.build).toHaveBeenCalledWith('77', execCrates);
+    expect(exec.deploy).toHaveBeenCalledWith({
+      appId: '77',
+      root: 'construct',
+      types: execManifest.types,
+      buildId: 'b1',
+    });
+    expect(calls).toEqual(['build', 'wait', 'deploy']);
+  });
+
+  it('switches the named types off and on after the deploy when asked to restart', async () => {
+    const { client, calls } = execStub();
+    let retried = 0;
+    await steps.deployExec(client as never, {
+      appId: '77',
+      manifest: execManifest as never,
+      crates: execCrates,
+      restart: ['construct', 'world'],
+      restartPauseMs: 0,
+      retry: async (request) => {
+        retried += 1;
+        return request();
+      },
+    });
+    expect(calls).toEqual([
+      'build',
+      'wait',
+      'deploy',
+      'construct:off',
+      'world:off',
+      'construct:on',
+      'world:on',
+    ]);
+    expect(retried).toBe(7);
+  });
+
+  it('refuses to deploy a failed build and shows why', async () => {
+    const { client, exec } = execStub({ status: 'failed', log: 'error[E0425]: cannot find value' });
+    await expect(
+      steps.deployExec(client as never, {
+        appId: '77',
+        manifest: execManifest as never,
+        crates: execCrates,
+      }),
+    ).rejects.toThrow(/build b1 failed:\nerror\[E0425\]/);
+    expect(exec.deploy).not.toHaveBeenCalled();
+  });
+
+  it('runs the ck-exec step, on its own client, where a game has no model', async () => {
+    const identity = identityStub();
+    identity.marketplace = {
+      gridClaimPolicy: vi.fn(async () => 'SELF_CLAIM'),
+      setGridClaimPolicy: vi.fn(),
+    };
+    identity.graphql = {
+      query: vi.fn(async () => {
+        throw new Error('manage_compute required');
+      }),
+    };
+    const game = { crowdyStudio: { listCommonFiles: vi.fn(async () => []) }, kit: vi.fn() };
+    const { client, calls } = execStub();
+    const clientFor = vi.fn(async () => client);
+    const done: string[] = [];
+    const report = await steps.runOnboarding({
+      identity,
+      userId: '42',
+      enterApp: async () => game as never,
+      orgName: 'My studio',
+      appName: 'The Construct',
+      exec: { manifest: execManifest as never, crates: execCrates, client: clientFor as never },
+      onStep: (event) => {
+        if (event.status === 'done') done.push(event.id);
+      },
+    });
+    expect(report.appId).toBe('77');
+    expect(done).toEqual([
+      'org',
+      'app',
+      'tier',
+      'enter',
+      'claims',
+      'exec',
+      'studio',
+      'agent',
+      'github',
+    ]);
+    expect(clientFor).toHaveBeenCalledWith('77');
+    expect(calls).toEqual(['build', 'wait', 'deploy']);
+    expect(client.close).toHaveBeenCalled();
+    expect(game.kit).not.toHaveBeenCalled();
   });
 
   it('keeps use_studio_agent on Constructor and off the visitor default', () => {

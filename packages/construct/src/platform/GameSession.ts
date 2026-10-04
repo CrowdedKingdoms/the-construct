@@ -18,6 +18,7 @@ import {
   type RemotePlayer,
   type SaveState,
 } from './realtime/WorldStores';
+import { guardWriteBacks, type WriteBackTone } from './realtime/writeBackGuard';
 import { WebcamService } from './media/WebcamService';
 import { VoiceService } from './media/VoiceService';
 import { ModelService } from './model/ModelService';
@@ -123,6 +124,22 @@ export class GameSession {
 
   get joined(): boolean {
     return this.joinedFlag;
+  }
+
+  /**
+   * Undo each chunk write-back the server refuses (or never accepts) and tell
+   * the player through `notify`. @returns off.
+   */
+  guardWriteBacks(notify: (text: string, tone: WriteBackTone) => void): () => void {
+    return guardWriteBacks(this.world.chunks, {
+      onServer: async (coord) =>
+        (await this.network.game.chunks.get({
+          appId: this.appId,
+          coordinates: chunkInput(coord),
+        })) != null,
+      notify,
+      log: (message) => this.network.log(message),
+    });
   }
 
   /** The World Stores session for this app (lazily created). */

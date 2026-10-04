@@ -5,14 +5,22 @@
  * the step that fixes it.
  *
  *   CONSTRUCT_EMAIL=... CONSTRUCT_PASSWORD=... APP_ID=<id> npm run smoke
+ *
+ * The world hub is called as the signed-in player over an exec connection, which is a
+ * WebSocket: `npm run smoke` passes Node 20 `--experimental-websocket`.
  */
-import { MODEL_NAMES } from '../model/blueprints.mjs';
+import { readFileSync } from 'node:fs';
+
+import { PROGRAM_CATALOG } from '../model/catalog.mjs';
 import { STARTER_TEMPLATES, commonFilesFor } from '../mods/templates/index.mjs';
 import {
   CONSTRUCTOR_TIER_KEYS,
   CONSTRUCTOR_TIER_NAME,
 } from '@crowdedkingdoms/construct/platform/onboarding/steps';
-import { enterApp, loadDotEnv, messageOf, requireEnv, signIn } from './lib/cli.mjs';
+import { developerOnApp, enterApp, loadDotEnv, messageOf, requireEnv, signIn } from './lib/cli.mjs';
+
+/** The framework's default world hub (`platform/exec/worldHub.ts`), as `exec/ckx.json` deploys it. */
+const WORLD = { nodeType: 'world', key: 'main' };
 
 loadDotEnv();
 const appId =
@@ -26,6 +34,12 @@ function check(ok, label, hint = '') {
 }
 
 try {
+  const manifest = JSON.parse(readFileSync(new URL('../exec/ckx.json', import.meta.url), 'utf8'));
+  check(
+    manifest.types[WORLD.nodeType]?.client === true,
+    `exec/ckx.json deploys the "${WORLD.nodeType}" hub for players`,
+  );
+
   const { identity, user } = await signIn(() => {});
   const game = await enterApp(identity, appId, () => {});
 
@@ -76,14 +90,57 @@ try {
     'run npm run seed',
   );
 
-  const programs = await game.gameModel.containers({ appId, typeName: MODEL_NAMES.programType });
-  check(
-    programs.length > 0,
-    `Program catalog seeded (${programs.length} programs)`,
-    'run npm run seed',
-  );
-  const world = await game.gameModel.containers({ appId, typeName: MODEL_NAMES.worldStateType });
-  check(world.length === 1, 'WorldState singleton exists', 'run npm run seed');
+  // The world hub, as the game reaches it: the player's app token, one exec connection.
+  let hub = null;
+  try {
+    hub = await game.exec.connect(appId, WORLD);
+  } catch (error) {
+    check(false, `world hub reachable (${messageOf(error)})`, 'run npm run deploy:exec');
+  }
+  if (hub) {
+    const call = (method, args) =>
+      hub.call(WORLD.nodeType, WORLD.key, method, args).catch((error) => ({ error }));
+    const status = await call('status');
+    check(
+      status.ok === true,
+      `world hub answers status${status.error ? ` (${messageOf(status.error)})` : ''}`,
+      'run npm run deploy:exec',
+    );
+    const { programs = [] } = await call('programs');
+    check(
+      PROGRAM_CATALOG.every((p) =>
+        programs.some((q) => q.programId === p.programId && q.sceneId === p.sceneId),
+      ),
+      `world hub serves the program catalog (${programs.length} programs)`,
+      'run npm run deploy:exec -- --restart',
+    );
+    const world = await call('world');
+    check(
+      typeof world.pulses === 'number',
+      `world pulses: ${world.pulses} (one a minute while players are in the app)`,
+    );
+    const progress = await call('progress');
+    check(Number(progress.level) >= 1, `progression reads (level ${progress.level})`);
+    const mine = await call('claims', { mine: true });
+    check(
+      Array.isArray(mine.claims),
+      `claim registry answers (${mine.claims?.length ?? '?'} yours of ${mine.total ?? '?'})`,
+    );
+    hub.close();
+  }
+
+  try {
+    const exec = await developerOnApp(identity, appId, () => {});
+    const status = await exec.exec.status(appId);
+    check(
+      status.activeVersion != null && !status.disabled && !status.budgetPaused,
+      `ck-exec version ${status.activeVersion} is active and switched on`,
+      'run npm run deploy:exec',
+    );
+    exec.close();
+  } catch {
+    // Readable only with view_compute_diagnostics. Third-party smoke still passes.
+  }
 
   const common = await game.crowdyStudio.listCommonFiles({ appId, gridId: '' });
   for (const file of STARTER_TEMPLATES.flatMap(commonFilesFor)) {

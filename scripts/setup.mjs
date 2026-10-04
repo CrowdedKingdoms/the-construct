@@ -6,8 +6,8 @@
  *     npm run setup -- --org "My studio" --app "The Construct" [--slug the-construct] \
  *       [--datacenter or] [--origin https://play.example.com]
  *
- * Creating the org and the app, seeding the model and registering redirect URIs
- * all need an identity session, and a browser game on its own domain cannot
+ * Creating the org and the app, deploying the world hub (ck-exec) and registering redirect
+ * URIs all need an identity session, and a browser game on its own domain cannot
  * hold one (ck-api v1.88.0 serves the direct sign-in mutations only to
  * first-party origins and to non-browser callers like this script). So the
  * in-game wizard is gone and this is the door. It registers the Vite dev
@@ -16,18 +16,21 @@
  * allow-list for the app.
  *
  * Prints the app id at the end; put it in `.env.local` as VITE_APP_ID to pin
- * the checkout to that app. Idempotent: re-running finds instead of creating.
+ * the checkout to that app. Idempotent: re-running finds instead of creating
+ * (and deploys the same ck-exec code again, from the platform's build cache).
  */
-import { constructBlueprints } from '../model/blueprints.mjs';
 import { STARTER_TEMPLATES, commonFilesFor, programCommonFiles } from '../mods/templates/index.mjs';
 import { runOnboarding, slugify } from '@crowdedkingdoms/construct/platform/onboarding/steps';
-import { enterApp, loadDotEnv, messageOf, parseArgs, signIn } from './lib/cli.mjs';
+import { whenNotBusy } from './lib/busy-retry.mjs';
+import { developerOnApp, enterApp, loadDotEnv, messageOf, parseArgs, signIn } from './lib/cli.mjs';
+import { execSources } from './lib/exec-sources.mjs';
 
 loadDotEnv();
 const args = parseArgs(process.argv.slice(2));
 const log = (line) => console.log(`  ${line}`);
 
 try {
+  const exec = execSources();
   const { identity, user } = await signIn(log);
   const orgName = args.org ?? `${user.gamertag ?? 'my'} studio`;
   const appName = args.app ?? 'The Construct';
@@ -39,7 +42,11 @@ try {
     appName,
     appSlug: args.slug ?? slugify(appName),
     datacenter: args.datacenter,
-    blueprints: constructBlueprints(),
+    exec: {
+      ...exec,
+      client: (appId) => developerOnApp(identity, appId, log),
+      retry: whenNotBusy,
+    },
     commonFiles: [...STARTER_TEMPLATES.flatMap(commonFilesFor), ...programCommonFiles()],
     redirectOrigins: [
       'http://localhost:5175',
