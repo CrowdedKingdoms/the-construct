@@ -201,9 +201,8 @@ reserved for that org) through the same command a third party runs.
 
 ## ck-exec facts this code depends on (2026-09-26, local cluster and ck-api source)
 
-- ck-exec is a **dev-tier preview**: `setup`, `seed` and `deploy:exec` work
-  only against dev. Do not promote this to `test` / `prod` before ck-exec
-  reaches those tiers.
+- `setup`, `seed` and `deploy:exec` need ck-exec on the tier the SDK pin
+  targets. Do not promote this to a tier before ck-exec runs there.
 - The root hub takes at most 50 calls a second; the HUD's polling goes to
   `world/main`, never the root.
 - A pending timer keeps a hub running only while players are in the app, and

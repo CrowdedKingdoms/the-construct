@@ -7,8 +7,7 @@ optional **CLIENT** half (browser WASM the grid serves to the players standing
 in it, who run it in a sandbox once they consent to it). This page is the
 walkthrough and the security story, in that order.
 
-ck-exec is a dev-tier preview, and Crowdy Studio runs on it only (CrowdyJS
-18). See
+Crowdy Studio runs mods on ck-exec only (CrowdyJS 18). See
 [Mods](https://docs.dev.crowdedkingdoms.com/exec/mods) in the platform docs.
 
 ## Prerequisites (Setup does all of this)
