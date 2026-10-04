@@ -11,7 +11,8 @@
  * IDENTITY session (org and app administration). Everything on the game plane
  * (claim policy, model, Studio common files) uses an APP-SCOPED token minted
  * for the new app — the caller supplies `enterApp(appId)` which returns a game
- * client holding one.
+ * client holding one. The ck-exec deploy uses the identity session again, on
+ * the app's own datacenter: the caller supplies `exec.client(appId)`.
  */
 
 /**
@@ -197,14 +198,35 @@ export async function ensureConstructorTier(identity, { appId, userId }, log = n
   // 2026-09-07 the replay path of grantAppAccess answered a DateTime
   // serialization error on dev, and "already on this tier" is the honest
   // idempotent answer anyway.
-  const mine = await identity.appAccess.myAccess(appId).catch(() => null);
-  if (mine && String(mine.tierId) === String(tier.tierId) && mine.status !== 'revoked') {
+  const held = await accessOf(identity, appId, userId);
+  if (held && String(held.tierId) === String(tier.tierId) && held.status !== 'revoked') {
     log(`User ${userId} already holds "${CONSTRUCTOR_TIER_NAME}"`);
     return { tier, created, updated, granted: false };
   }
   await identity.appAccess.grant({ appId, userId, tierId: tier.tierId });
   log(`Granted "${CONSTRUCTOR_TIER_NAME}" to user ${userId}`);
   return { tier, created, updated, granted: true };
+}
+
+/** `userId`'s access to the app: the caller's own grant, or theirs among the app's grants. */
+async function accessOf(identity, appId, userId) {
+  let me = null;
+  try {
+    me = await identity.users.me();
+  } catch {
+    // Unknown caller: look the user up among the app's grants.
+  }
+  if (me && String(me.userId) === String(userId)) {
+    return identity.appAccess.myAccess(appId).catch(() => null);
+  }
+  const page = 100;
+  for (let offset = 0; ; offset += page) {
+    const rows = await identity.appAccess
+      .usersByApp(appId, { limit: page, offset })
+      .catch(() => []);
+    const row = rows.find((r) => String(r.userId) === String(userId));
+    if (row || rows.length < page) return row ?? null;
+  }
 }
 
 /** 4. Players may claim an unowned chunk for themselves (the Claim pad). */
@@ -234,50 +256,55 @@ export async function ensureSelfClaimPolicy(client, { appId }, log = noop) {
 }
 
 /**
- * 5. Deploy the game model (kit blueprints).
+ * 5. Build and deploy the game's ck-exec code. The crates go to `execBuild` as
+ * sources (the platform compiles them, so no Rust toolchain is needed here) and
+ * the manifest to `execDeploy` with that build, which makes it the app's active
+ * version. Deploying the same sources again takes the build from the platform's
+ * cache and makes an identical version active.
  *
- * `gameModelSeed` upserts DEFINITIONS (types, properties, functions) by name,
- * but seed CONTAINERS are instances and are created every time they are sent.
- * Re-running a seed that lists containers therefore duplicates them — measured
- * on 2026-09-07: two runs, two `WorldState`s. So before deploying, drop every
- * seed container whose type already has an instance with the same display
- * name. Definitions still refresh; existing data is left alone.
+ * `exec` must hold the developer's own session (the org's `manage_compute`), not
+ * an app token, and point at the app's own datacenter: deploys go to that
+ * datacenter's execution manager.
+ *
+ * A running hub keeps the version it started with until it stops, and one whose
+ * timer is pending does not stop while players are in the app. `restart` names
+ * the types to switch off and on again after the deploy: they persist and stop,
+ * and their next call starts them on the new version from their snapshots.
+ * `retry` wraps each request (the scripts retry a busy game API).
  */
-export async function deployModel(game, { appId, blueprints }, log = noop) {
-  if (!Array.isArray(blueprints)) {
-    throw new Error("deployModel needs the game's blueprints (e.g. constructBlueprints())");
-  }
-  for (const blueprint of blueprints) {
-    if (!blueprint.containers?.length) continue;
-    const keep = [];
-    const seenTypes = new Map();
-    for (const container of blueprint.containers) {
-      let existing = seenTypes.get(container.typeName);
-      if (!existing) {
-        existing = await game.gameModel
-          .containers({ appId, typeName: container.typeName })
-          .catch(() => []);
-        seenTypes.set(container.typeName, existing);
-      }
-      if (existing.some((row) => row.displayName === container.displayName)) {
-        log(
-          `Container "${container.displayName}" (${container.typeName}) already exists; not re-seeding`,
-        );
-      } else {
-        keep.push(container);
-      }
-    }
-    blueprint.containers = keep;
-  }
-  const result = await game.kit(appId).deploy(blueprints);
-  const seed = result.seed ?? {};
-  log(
-    `Model deployed: ${seed.containerTypesCreated ?? 0} new types, ` +
-      `${seed.functionsCreated ?? 0} new functions, ${seed.containersCreated ?? 0} new containers, ` +
-      `${result.automations?.length ?? 0} automations upserted`,
+export async function deployExec(
+  exec,
+  { appId, manifest, crates, restart = [], retry = (fn) => fn(), restartPauseMs = 5_000 },
+  log = noop,
+) {
+  const queued = await retry(() => exec.exec.build(appId, crates));
+  log(`Building ${crates.map((c) => c.name).join(', ')} on the platform (build ${queued.buildId})`);
+  const build = await retry(() =>
+    exec.exec.waitForBuild(appId, queued.buildId, { timeoutMs: 900_000 }),
   );
-  for (const warning of result.warnings ?? seed.warnings ?? []) log(`  seed warning: ${warning}`);
-  return result;
+  if (build.status !== 'succeeded') {
+    throw new Error(`ck-exec build ${build.buildId} ${build.status}:\n${build.log ?? ''}`.trim());
+  }
+  for (const a of build.artifacts ?? []) log(`  ${a.crate}: ${a.sizeBytes} bytes`);
+  const { version } = await retry(() =>
+    exec.exec.deploy({
+      appId,
+      root: manifest.root,
+      types: manifest.types,
+      buildId: build.buildId,
+    }),
+  );
+  log(`ck-exec version ${version} is active (${Object.keys(manifest.types).join(', ')})`);
+  if (restart.length > 0) {
+    for (const nodeType of restart) await retry(() => exec.exec.setEnabled(appId, false, nodeType));
+    // Stopping persists first; hosts read the switch on their next poll.
+    await new Promise((resolve) => setTimeout(resolve, restartPauseMs));
+    for (const nodeType of restart) await retry(() => exec.exec.setEnabled(appId, true, nodeType));
+    log(
+      `Switched ${restart.join(', ')} off and on: the next call starts them on version ${version}`,
+    );
+  }
+  return { buildId: build.buildId, version, restarted: restart };
 }
 
 const PUBLISH_COMMON = `mutation PublishCommon($input: PublishCrowdyStudioCommonFileInput!) {
@@ -462,7 +489,8 @@ function messageOf(error) {
 /**
  * The whole sequence. `enterApp(appId)` must return a client holding an
  * app-scoped token for `appId` (browser: NetworkManager.enterApp; Node: mint
- * and build a client). Returns a report the UI renders.
+ * and build a client). `exec` (the game's ck-exec code) is built and deployed
+ * when given. Returns a report the UI renders.
  */
 export async function runOnboarding(options) {
   const {
@@ -474,7 +502,7 @@ export async function runOnboarding(options) {
     appSlug,
     datacenter,
     redirectOrigins = [],
-    blueprints,
+    exec,
     commonFiles = [],
     log = noop,
     onStep = noop,
@@ -521,7 +549,17 @@ export async function runOnboarding(options) {
   }
   const game = await step('enter', 'App token', () => enterApp(appId));
   await step('claims', 'Grid claim policy', () => ensureSelfClaimPolicy(identity, { appId }, log));
-  await step('model', 'Game model', () => deployModel(game, { appId, blueprints }, log));
+  if (exec) {
+    await step('exec', 'ck-exec code', async () => {
+      const client = await exec.client(appId);
+      try {
+        const { manifest, crates, restart, retry } = exec;
+        return await deployExec(client, { appId, manifest, crates, restart, retry }, log);
+      } finally {
+        client.close?.();
+      }
+    });
+  }
   await step('studio', 'Crowdy Studio starter files', () =>
     publishStarterFiles(game, { appId, commonFiles }, log),
   );

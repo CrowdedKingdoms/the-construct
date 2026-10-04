@@ -1,7 +1,8 @@
 /**
- * The in-game HUD: who/where chips, hint line, toasts, the client-mods
- * banner, and the top-right actions. DOM only; scenes talk to it through the
- * `SceneHud` interface and never reach into it.
+ * The in-game HUD: who/where chips, hint line, toasts, questions (whether to
+ * run a grid's CLIENT halves), the client-mods banner, and the top-right
+ * actions. DOM only; scenes talk to it through the `SceneHud` interface and
+ * never reach into it.
  */
 import type { SceneHud } from '@crowdedkingdoms/construct/engine/GameScene';
 import type { GameSession } from '@crowdedkingdoms/construct/platform/GameSession';
@@ -18,6 +19,10 @@ export interface HudActions {
   toggleVoice(): void;
   /** Open Crowdy Studio's player wallet (grid/compute billing). */
   openWallet?: () => void;
+  /** "Stop running this": take back consent to one of the grid's CLIENT halves. */
+  stopClientHalf?: (modId: string) => void;
+  /** "Forget this author": take back trust in the author of the grid's CLIENT halves. */
+  forgetClientHalfAuthor?: (authorId: string) => void;
 }
 
 export class Hud implements SceneHud {
@@ -25,8 +30,11 @@ export class Hud implements SceneHud {
   private readonly identity: HTMLElement;
   private readonly world: HTMLElement;
   private readonly studioChip: HTMLElement;
+  private readonly clientHalves: HTMLElement;
+  private readonly actions: HudActions;
   private readonly hint: HTMLElement;
   private readonly toasts: HTMLElement;
+  private readonly questions: HTMLElement;
   private readonly banner: HTMLElement;
   private readonly bannerText: HTMLElement;
   private readonly cameraButton: HTMLButtonElement;
@@ -38,11 +46,18 @@ export class Hud implements SceneHud {
   private lastModel: { pulses?: number; level?: number } | null = null;
 
   constructor(parent: HTMLElement, actions: HudActions) {
+    this.actions = actions;
     this.identity = el('div', { class: 'panel chip' });
     this.world = el('div', { class: 'panel chip' });
     this.studioChip = el('div', { class: 'panel chip' });
+    this.clientHalves = el('div', {
+      class: 'panel chip client-halves hidden',
+      role: 'group',
+      'aria-label': 'CLIENT halves running here',
+    });
     this.hint = el('div', { class: 'panel hud-hint hidden', role: 'status' });
     this.toasts = el('div', { class: 'toasts', 'aria-live': 'polite' });
+    this.questions = el('div', { class: 'questions' });
     this.bannerText = el('span');
     const dismiss = el('button', { text: 'Dismiss' });
     dismiss.addEventListener('click', () => {
@@ -103,15 +118,58 @@ export class Hud implements SceneHud {
     });
 
     this.root = el('div', {}, [
-      el('div', { class: 'hud-top-left' }, [this.identity, this.world, this.studioChip]),
+      el('div', { class: 'hud-top-left' }, [
+        this.identity,
+        this.world,
+        this.studioChip,
+        this.clientHalves,
+      ]),
       el('div', { class: 'hud-top-right' }, [voice, camera, studio, setup, wallet, signOut]),
       this.hint,
       this.help,
       this.toasts,
+      this.questions,
       this.banner,
       this.preview,
     ]);
     parent.appendChild(this.root);
+  }
+
+  /**
+   * A yes/no question in the HUD; the first line of `text` is its title, and
+   * all of it is rendered as text. The game keeps running while it waits (a
+   * native `confirm` would stop the frame loop). Resolves false when `signal`
+   * aborts.
+   */
+  ask(text: string, answers: { yes: string; no: string; signal?: AbortSignal }): Promise<boolean> {
+    const [title = '', ...body] = text.split('\n');
+    return new Promise((resolve) => {
+      if (answers.signal?.aborted) {
+        resolve(false);
+        return;
+      }
+      const yes = el('button', { text: answers.yes });
+      const no = el('button', { class: 'ghost', text: answers.no });
+      const card = el(
+        'div',
+        { class: 'panel question', role: 'alertdialog', 'aria-label': title },
+        [
+          el('strong', { text: title }),
+          el('div', { class: 'question-body', text: body.join('\n').trim() }),
+          el('div', { class: 'actions' }, [yes, no]),
+        ],
+      );
+      const settle = (answer: boolean) => {
+        answers.signal?.removeEventListener('abort', abort);
+        card.remove();
+        resolve(answer);
+      };
+      const abort = () => settle(false);
+      answers.signal?.addEventListener('abort', abort, { once: true });
+      yes.addEventListener('click', () => settle(true));
+      no.addEventListener('click', () => settle(false));
+      this.questions.appendChild(card);
+    });
   }
 
   /** Reflect the local camera state on the button and the self-preview. */
@@ -188,15 +246,21 @@ export class Hud implements SceneHud {
       ]),
     );
     const worldRows: Node[] = [];
-    if (!model) worldRows.push(el('div', { class: 'muted', text: 'reading the game model…' }));
+    if (!model) worldRows.push(el('div', { class: 'muted', text: 'reading the world hub…' }));
     else {
       if (model.pulses !== undefined)
         worldRows.push(el('div', { text: `world pulses ${model.pulses}` }));
       if (model.level !== undefined) worldRows.push(el('div', { text: `level ${model.level}` }));
       if (worldRows.length === 0)
-        worldRows.push(el('div', { class: 'muted', text: 'model not seeded — run npm run setup' }));
+        worldRows.push(
+          el('div', { class: 'muted', text: 'world hub not deployed — run npm run setup' }),
+        );
     }
     this.world.replaceChildren(...worldRows);
+  }
+
+  private renderClientHalves(state: StudioState): void {
+    renderClientHalfRows(this.clientHalves, state.clientHalves ?? [], this.actions);
   }
 
   renderStudio(state: StudioState): void {
@@ -217,6 +281,7 @@ export class Hud implements SceneHud {
       ]),
       el('div', { class: 'row muted' }, [perms ? `${perms} · ` : '', mods, ` · ${agent}`]),
     );
+    this.renderClientHalves(state);
     const bannerText =
       state.clientModsReason ?? (state.agentReason && !state.open ? state.agentReason : null);
     if (bannerText && !this.bannerDismissed) {
@@ -225,6 +290,43 @@ export class Hud implements SceneHud {
     } else {
       this.banner.classList.add('hidden');
     }
+  }
+}
+
+/**
+ * The grid's CLIENT halves running for this player, each with "Stop" (take back the consent to
+ * it) and, for someone else's code, "Forget author" (take back the trust in its author here).
+ */
+function renderClientHalfRows(
+  root: HTMLElement,
+  halves: StudioState['clientHalves'],
+  actions: HudActions,
+): void {
+  root.replaceChildren();
+  root.classList.toggle('hidden', halves.length === 0);
+  if (halves.length === 0) return;
+  root.append(el('strong', { text: 'Running here' }));
+  for (const half of halves) {
+    const who = half.own ? 'you' : half.authorName || `player ${half.authorId}`;
+    const stop = el('button', {
+      class: 'ghost',
+      text: 'Stop',
+      title: `Stop ${half.name} and take back your consent to it`,
+      'data-client-half-stop': half.modId,
+    });
+    stop.addEventListener('click', () => actions.stopClientHalf?.(half.modId));
+    const row = el('div', { class: 'row' }, [el('span', { text: `${half.name} by ${who}` }), stop]);
+    if (!half.own) {
+      const forget = el('button', {
+        class: 'ghost',
+        text: 'Forget author',
+        title: `Stop everything ${who} runs here and stop trusting them on this grid`,
+        'data-client-half-forget': half.authorId,
+      });
+      forget.addEventListener('click', () => actions.forgetClientHalfAuthor?.(half.authorId));
+      row.append(forget);
+    }
+    root.append(row);
   }
 }
 

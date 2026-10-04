@@ -19,14 +19,14 @@ export function showNoApp(card: BootCard, onAppId: (appId: string) => void, reas
   const form = el('form', {}, [
     reason ? el('p', { class: 'error-text', text: reason }) : el('span'),
     el('p', {}, [
-      'This checkout is not pinned to a Crowded Kingdoms app yet. Create one and its game model from a shell:',
+      'This checkout is not pinned to a Crowded Kingdoms app yet. Create one and its world hub from a shell:',
     ]),
     el('pre', { class: 'code' }, [
       'CONSTRUCT_EMAIL=you@example.com CONSTRUCT_PASSWORD=... \\\n' +
         '  npm run setup -- --org "My studio" --app "The Construct"',
     ]),
     el('p', {}, [
-      'Setup creates the org and app, seeds the model, registers this dev server as a redirect URI, ',
+      'Setup creates the org and app, deploys the world hub, registers this dev server as a redirect URI, ',
       'and prints the app id. Put it in ',
       el('code', { text: '.env.local' }),
       ' as ',
