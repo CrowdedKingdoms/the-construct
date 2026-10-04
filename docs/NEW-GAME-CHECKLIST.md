@@ -74,8 +74,6 @@ A checklist, in the order that keeps everything working at every step.
       `NetworkManager.on(kind)` slot — mirror it in your scenes or hide it.
 - [ ] Watch the presence rule in your hubs' timers: nothing ticks while nobody
       plays.
-- [ ] ck-exec is a dev-tier preview: a branch that deploys `exec/` cannot be
-      promoted to a tier ck-exec has not reached.
 
 ## 8. Things this starter leaves to you
 

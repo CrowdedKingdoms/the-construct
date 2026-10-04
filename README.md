@@ -56,8 +56,7 @@ npm install
    clone cannot). It prints an app id; copy `.env.example` to `.env.local` and
    set `VITE_APP_ID` to it.
 
-   ck-exec is a **dev-tier preview**, so the world hub deploys only where the
-   installed SDK is a `-dev.N` build (the `dev` branch); see
+   The world hub runs on ck-exec, the platform's execution service; see
    [ck-exec](https://docs.dev.crowdedkingdoms.com/exec/intro).
 
    Why a shell and not the browser: creating an app needs your account's

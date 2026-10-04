@@ -88,7 +88,7 @@ which is why Setup adds the two `run_*` keys to the default tier.
 - Client workflow: <https://docs.dev.crowdedkingdoms.com/overview/client-workflow>
 - Before you ship: <https://docs.dev.crowdedkingdoms.com/overview/before-you-ship>
 - World Stores: <https://docs.dev.crowdedkingdoms.com/crowdyjs/stores>
-- ck-exec (dev-tier preview): <https://docs.dev.crowdedkingdoms.com/exec/intro>,
+- ck-exec: <https://docs.dev.crowdedkingdoms.com/exec/intro>,
   [timers and presence](https://docs.dev.crowdedkingdoms.com/exec/timers-and-presence),
   [connect from a game](https://docs.dev.crowdedkingdoms.com/exec/connect-from-a-game),
   [builds](https://docs.dev.crowdedkingdoms.com/exec/builds),
