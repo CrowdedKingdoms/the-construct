@@ -15,10 +15,9 @@ and the games built on it share.
 | `sandbox/boot` | The grid program sandbox bootstrap |
 
 It ships **TypeScript source** for Vite (it uses `?worker&url` and
-`import.meta.env`). Peer dependencies: `@crowdedkingdoms/crowdyjs` 17.7+ (17.12
-for `ModelService`, `GridService` and the Studio's SERVER target on ck-exec,
-17.14 for its CLIENT target and `GridClientHalves`) and, for the Studio agent
-pane, `@crowdedkingdoms/crowdy-dsh` 0.4+. On a
+`import.meta.env`). Peer dependencies: `@crowdedkingdoms/crowdyjs` 18 (0.3.0
+and later, 18.0.1 from 0.3.1; the 0.2 line peers on 17) and, for the Studio agent pane,
+`@crowdedkingdoms/crowdy-dsh` 0.4+. On a
 prerelease tier the ranges name each `X.Y.Z` line they admit, because npm
 matches a prerelease only against a comparator on the same `X.Y.Z`. A game can
 take a new CrowdyJS line only once a construct release names it (until then
@@ -78,7 +77,6 @@ plugins: constructHeaderPlugins({
 
 `@crowdedkingdoms/construct/platform/onboarding/steps` provisions an app
 (org, app, access tier, redirect URIs, grid claim policy, your ck-exec code
-(`deployExec`: `execBuild` + `execDeploy`), a Game Model if you keep one, Studio
-Common Files, agent policy). Pass your own `exec` (manifest, crates, and a
-client holding your session on the app's datacenter), `blueprints` and
-`commonFiles`.
+(`deployExec`: `execBuild` + `execDeploy`), Studio Common Files, agent policy).
+Pass your own `exec` (manifest, crates, and a client holding your session on
+the app's datacenter) and `commonFiles`.

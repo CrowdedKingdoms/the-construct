@@ -54,7 +54,15 @@ World Stores (`@crowdedkingdoms/crowdyjs/stores`) run over one shared
   reaped when stale. Scenes read `session.players(programId)`.
 - `chunks` — the voxel cache the Paint program draws on, the holodeck draws
   as cubes, and CLIENT halves read and write (`voxel_set`). Realtime edits
-  merge in; `markDirty` queues durable write-back.
+  merge in; `markDirty` queues durable write-back. Each loaded chunk is
+  hydrated with `getChunk` (`hydrateVoxelStates`,
+  `platform/realtime/chunkStoreConfig.ts`): its `voxelStates` carry every voxel
+  edit recorded for it, a SERVER mod's `world.set_voxels` included, and the
+  bulk load's `voxels` hold none of them. A write-back the server
+  refuses (someone else's claim, a safe zone, a closed wilderness) is sent once
+  and dropped; one it never accepts is dropped after five tries.
+  `GameSession.guardWriteBacks` (`platform/realtime/writeBackGuard.ts`, wired
+  in `main.ts`) puts that chunk back to the server's copy and tells the player.
 - `host` — 3 s heartbeats that keep the actor's presence fresh for the
   server-side gates (a CLIENT half is served only to a player standing in its
   grid).
@@ -116,7 +124,7 @@ call starts it on the new version from its snapshot.
 See [MODDING.md](MODDING.md). In one paragraph: a player claims a chunk
 (`claimGridChunk`, policy `SELF_CLAIM`); the platform returns the grid and the
 player's effective code keys; the SDK's embed kit renders the IDE; a project
-runs as a ck-exec mod (`serverEngine: 'ck-exec'`). Its SERVER target builds on
+runs as a ck-exec mod. Its SERVER target builds on
 the platform into a hub on the grid that players there call by name; its
 CLIENT target builds on the platform (`modClientBuild`, a `crowdy-client-sdk`
 crate) into that mod's CLIENT half, which the grid serves to the players who

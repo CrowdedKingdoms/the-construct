@@ -81,7 +81,6 @@ export {
 export {
   routeClientHostCall,
   routeWithFallback,
-  runConsentedGridMod,
   type ClientModHostReads,
   type ClientModHostWrites,
 } from './platform/studio/clientModHost';
@@ -92,4 +91,15 @@ export {
   type ClientHalvesGrid,
   type GridClientHalvesOptions,
 } from './platform/studio/clientHalves';
+export { gridServerCalls, type GridServerCallsOptions } from './platform/studio/gridServerCalls';
+export {
+  EXHAUSTED_MESSAGE,
+  REFUSED_MESSAGE,
+  describeWriteBackFailure,
+  guardWriteBacks,
+  reloadChunk,
+  type GuardedChunkStore,
+  type WriteBackGuardOptions,
+  type WriteBackTone,
+} from './platform/realtime/writeBackGuard';
 export { GridProgramRunner, type GridProgramRunnerOptions } from './grid/GridProgramRunner';

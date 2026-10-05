@@ -198,14 +198,35 @@ export async function ensureConstructorTier(identity, { appId, userId }, log = n
   // 2026-09-07 the replay path of grantAppAccess answered a DateTime
   // serialization error on dev, and "already on this tier" is the honest
   // idempotent answer anyway.
-  const mine = await identity.appAccess.myAccess(appId).catch(() => null);
-  if (mine && String(mine.tierId) === String(tier.tierId) && mine.status !== 'revoked') {
+  const held = await accessOf(identity, appId, userId);
+  if (held && String(held.tierId) === String(tier.tierId) && held.status !== 'revoked') {
     log(`User ${userId} already holds "${CONSTRUCTOR_TIER_NAME}"`);
     return { tier, created, updated, granted: false };
   }
   await identity.appAccess.grant({ appId, userId, tierId: tier.tierId });
   log(`Granted "${CONSTRUCTOR_TIER_NAME}" to user ${userId}`);
   return { tier, created, updated, granted: true };
+}
+
+/** `userId`'s access to the app: the caller's own grant, or theirs among the app's grants. */
+async function accessOf(identity, appId, userId) {
+  let me = null;
+  try {
+    me = await identity.users.me();
+  } catch {
+    // Unknown caller: look the user up among the app's grants.
+  }
+  if (me && String(me.userId) === String(userId)) {
+    return identity.appAccess.myAccess(appId).catch(() => null);
+  }
+  const page = 100;
+  for (let offset = 0; ; offset += page) {
+    const rows = await identity.appAccess
+      .usersByApp(appId, { limit: page, offset })
+      .catch(() => []);
+    const row = rows.find((r) => String(r.userId) === String(userId));
+    if (row || rows.length < page) return row ?? null;
+  }
 }
 
 /** 4. Players may claim an unowned chunk for themselves (the Claim pad). */
@@ -284,54 +305,6 @@ export async function deployExec(
     );
   }
   return { buildId: build.buildId, version, restarted: restart };
-}
-
-/**
- * Deploy a Game Model (kit blueprints), for a game that keeps one. The Construct
- * starter keeps its state in its ck-exec world hub instead (`deployExec`).
- *
- * `gameModelSeed` upserts DEFINITIONS (types, properties, functions) by name,
- * but seed CONTAINERS are instances and are created every time they are sent.
- * Re-running a seed that lists containers therefore duplicates them — measured
- * on 2026-09-07: two runs, two `WorldState`s. So before deploying, drop every
- * seed container whose type already has an instance with the same display
- * name. Definitions still refresh; existing data is left alone.
- */
-export async function deployModel(game, { appId, blueprints }, log = noop) {
-  if (!Array.isArray(blueprints)) {
-    throw new Error("deployModel needs the game's blueprints (e.g. constructBlueprints())");
-  }
-  for (const blueprint of blueprints) {
-    if (!blueprint.containers?.length) continue;
-    const keep = [];
-    const seenTypes = new Map();
-    for (const container of blueprint.containers) {
-      let existing = seenTypes.get(container.typeName);
-      if (!existing) {
-        existing = await game.gameModel
-          .containers({ appId, typeName: container.typeName })
-          .catch(() => []);
-        seenTypes.set(container.typeName, existing);
-      }
-      if (existing.some((row) => row.displayName === container.displayName)) {
-        log(
-          `Container "${container.displayName}" (${container.typeName}) already exists; not re-seeding`,
-        );
-      } else {
-        keep.push(container);
-      }
-    }
-    blueprint.containers = keep;
-  }
-  const result = await game.kit(appId).deploy(blueprints);
-  const seed = result.seed ?? {};
-  log(
-    `Model deployed: ${seed.containerTypesCreated ?? 0} new types, ` +
-      `${seed.functionsCreated ?? 0} new functions, ${seed.containersCreated ?? 0} new containers, ` +
-      `${result.automations?.length ?? 0} automations upserted`,
-  );
-  for (const warning of result.warnings ?? seed.warnings ?? []) log(`  seed warning: ${warning}`);
-  return result;
 }
 
 const PUBLISH_COMMON = `mutation PublishCommon($input: PublishCrowdyStudioCommonFileInput!) {
@@ -516,8 +489,8 @@ function messageOf(error) {
 /**
  * The whole sequence. `enterApp(appId)` must return a client holding an
  * app-scoped token for `appId` (browser: NetworkManager.enterApp; Node: mint
- * and build a client). `exec` (the game's ck-exec code) and `blueprints` (a
- * Game Model) are each deployed when given. Returns a report the UI renders.
+ * and build a client). `exec` (the game's ck-exec code) is built and deployed
+ * when given. Returns a report the UI renders.
  */
 export async function runOnboarding(options) {
   const {
@@ -529,7 +502,6 @@ export async function runOnboarding(options) {
     appSlug,
     datacenter,
     redirectOrigins = [],
-    blueprints,
     exec,
     commonFiles = [],
     log = noop,
@@ -577,9 +549,6 @@ export async function runOnboarding(options) {
   }
   const game = await step('enter', 'App token', () => enterApp(appId));
   await step('claims', 'Grid claim policy', () => ensureSelfClaimPolicy(identity, { appId }, log));
-  if (blueprints) {
-    await step('model', 'Game model', () => deployModel(game, { appId, blueprints }, log));
-  }
   if (exec) {
     await step('exec', 'ck-exec code', async () => {
       const client = await exec.client(appId);

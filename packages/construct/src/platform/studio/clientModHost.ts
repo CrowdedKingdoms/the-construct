@@ -11,22 +11,10 @@
  * running player can already lawfully see. Writes go through
  * ChunkStore.setVoxel (optimistic + UDP) and markDirty (durable write-back),
  * the same route Paint uses. Never hand a mod the raw client.
- *
- * `runConsentedGridMod` starts a legacy grid-attached client mod, until
- * CrowdyJS 18 removes them.
  */
-import {
-  PlayerCodeBroker,
-  type CrowdyClient,
-  type PlayerCodeGridBounds,
-  type PlayerCodeHostCall,
-  type PlayerCodePresentation,
-} from '@crowdedkingdoms/crowdyjs';
-import type { CrowdyStudioTextHud } from '@crowdedkingdoms/crowdyjs/crowdy-studio';
-import type { ModOverlayStore } from './modOverlay';
+import type { PlayerCodeGridBounds, PlayerCodeHostCall } from '@crowdedkingdoms/crowdyjs';
 import { routeModGameplay } from './modChunkRuntime';
 import type { ModSceneStore } from './modScene';
-import { setModPoseGrid } from './modPose';
 
 export interface ClientVoxelState {
   x: number;
@@ -170,9 +158,10 @@ export async function routeClientHostCall(
         : { voxels: voxelsListRows(chunk.voxelsBase64, chunk.states) };
     }
     case 'voxel_set': {
-      if (!writes) throw new HostCallRefusedError(fn);
+      if (!writes || !grid) throw new HostCallRefusedError(fn);
       const parsed = parseVoxelSetArgs(args);
       if (!parsed) return { ok: false, error: 'invalid voxel_set arguments' };
+      if (!chunkInGrid(parsed.chunk, grid)) return { ok: false, error: 'out_of_grid' };
       const ok = await writes.setVoxel({
         chunk: parsed.chunk,
         x: parsed.x,
@@ -243,7 +232,11 @@ function asCoord3(value: unknown): { x: unknown; y: unknown; z: unknown } | null
   return null;
 }
 
-/** Accept the SDKs' flattened host-call JSON (the broker clamps its chunk) and the tuple shape. */
+/**
+ * Accept the SDKs' flattened host-call JSON and the tuple shape. The chunk is `chunkX/Y/Z`, the
+ * fields the broker checks against the grid, whenever any of them is present; `args.chunk` only
+ * when none is. The caller still checks the chunk against the grid.
+ */
 export function parseVoxelSetArgs(args: Record<string, unknown>): {
   chunk: { x: number; y: number; z: number };
   x: number;
@@ -252,13 +245,15 @@ export function parseVoxelSetArgs(args: Record<string, unknown>): {
   voxelType: number;
   state: string;
 } | null {
-  const chunkRaw =
-    asCoord3(args.chunk) ??
-    ({
-      x: coordField(args, 'chunkX', 'chunk_x'),
-      y: coordField(args, 'chunkY', 'chunk_y'),
-      z: coordField(args, 'chunkZ', 'chunk_z'),
-    } as { x: unknown; y: unknown; z: unknown });
+  const flat = ['chunkX', 'chunkY', 'chunkZ'].some((key) => args[key] !== undefined);
+  const chunkRaw = flat
+    ? { x: args.chunkX, y: args.chunkY, z: args.chunkZ }
+    : (asCoord3(args.chunk) ??
+      ({
+        x: coordField(args, 'chunk_x'),
+        y: coordField(args, 'chunk_y'),
+        z: coordField(args, 'chunk_z'),
+      } as { x: unknown; y: unknown; z: unknown }));
   const voxelRaw =
     asCoord3(args.voxel) ??
     ({
@@ -335,132 +330,6 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-interface CachedArtifact {
-  bytes: Uint8Array;
-  artifactHash?: string;
-  fuelPerDispatch?: string | bigint;
-}
-
-const artifactCache = new Map<string, CachedArtifact>();
-
-/**
- * Fetch a consented grid-attached client mod's artifact and run it in a
- * hash-verified broker with the same allowlist, grid clamp, rate caps and
- * circuit breaker as the Studio's own Test/Run path. Its HUD output lands in
- * the persistent text HUD. Returns null (fails closed) when the artifact
- * cannot be fetched.
- *
- * @deprecated A legacy grid-attached client mod (`marketplace.gridClientMods`),
- * which CrowdyJS 18 removes. A ck-exec mod's CLIENT half runs through
- * `GridClientHalves` (`clientHalves.ts`).
- */
-export async function runConsentedGridMod(options: {
-  client: CrowdyClient;
-  appId: string;
-  attachmentId: string;
-  artifactCacheKey: string;
-  hudSource: string;
-  hudLabel: string;
-  /** The module's name, which addressed grid events target (default `hudLabel`). */
-  moduleName?: string;
-  grid: PlayerCodeGridBounds;
-  workerUrl: string;
-  reads: ClientModHostReads;
-  writes?: ClientModHostWrites;
-  hud: CrowdyStudioTextHud;
-  overlay?: ModOverlayStore;
-  scene?: ModSceneStore;
-  input?: ClientModHostInput;
-  /**
-   * Answers the host calls this game does not route itself (DN-10: the rest
-   * of the client catalog, through CrowdyJS `createGridHostCalls`).
-   */
-  serverCalls?: (call: PlayerCodeHostCall) => Promise<unknown>;
-  /**
-   * How often the worker self-drives `on_tick`. Omitted/0 means invoke-only
-   * and a HUD mod then never runs (measured 2026-09-07: broker started, HUD
-   * stayed empty). Studio Test/Deploy reads `[package.metadata.crowdy]
-   * tick_interval_ms` from the CLIENT Cargo.toml (default 1000, clamped
-   * 16–1000). Pass this only for grid-attached visitors until that field is
-   * stored on the compiled version.
-   */
-  tickIntervalMs?: number;
-}): Promise<{ stop: () => void } | null> {
-  let fetched: { bytes: ArrayBuffer; artifactHash?: string; fuelPerDispatch?: string | bigint };
-  const cached = artifactCache.get(options.artifactCacheKey);
-  if (cached) {
-    fetched = {
-      bytes: cached.bytes.slice().buffer,
-      artifactHash: cached.artifactHash,
-      fuelPerDispatch: cached.fuelPerDispatch,
-    };
-  } else {
-    try {
-      fetched = await options.client.marketplace.clientArtifactBytes({
-        appId: options.appId,
-        attachmentId: options.attachmentId,
-      });
-    } catch {
-      return null;
-    }
-    artifactCache.set(options.artifactCacheKey, {
-      bytes: new Uint8Array(fetched.bytes).slice(),
-      artifactHash: fetched.artifactHash,
-      fuelPerDispatch: fetched.fuelPerDispatch,
-    });
-  }
-  const broker = new PlayerCodeBroker({
-    workerUrl: options.workerUrl,
-    grid: options.grid,
-    artifactHash: fetched.artifactHash,
-    fuelPerDispatch: fetched.fuelPerDispatch != null ? BigInt(fetched.fuelPerDispatch) : undefined,
-    tickIntervalMs: options.tickIntervalMs ?? 50,
-    moduleName: options.moduleName ?? options.hudLabel,
-    onHostCall: (call) => {
-      setModPoseGrid(options.grid);
-      return routeWithFallback(
-        call,
-        () =>
-          routeClientHostCall(
-            call,
-            options.reads,
-            options.grid,
-            options.writes,
-            options.input,
-            options.scene ? { source: options.hudSource, store: options.scene } : undefined,
-          ),
-        options.serverCalls,
-      );
-    },
-    onPresentation: (presentation: PlayerCodePresentation) => {
-      if (presentation.channel === 'hud') {
-        options.hud.set({
-          source: options.hudSource,
-          label: options.hudLabel,
-          payload: presentation.payload,
-        });
-      }
-      if (presentation.channel === 'overlay') {
-        options.overlay?.apply(options.hudSource, presentation.payload, options.grid);
-      }
-    },
-    onCircuitOpen: () => {
-      options.hud.remove(options.hudSource);
-      options.overlay?.remove(options.hudSource);
-      options.scene?.remove(options.hudSource);
-    },
-  });
-  await broker.start(fetched.bytes);
-  return {
-    stop: () => {
-      broker.stop();
-      options.hud.remove(options.hudSource);
-      options.overlay?.remove(options.hudSource);
-      options.scene?.remove(options.hudSource);
-    },
-  };
-}
-
 /**
  * The game's own router first (local reads, optimistic writes); anything it
  * does not offer goes to `serverCalls` when the game supplied it.
@@ -476,6 +345,23 @@ export async function routeWithFallback(
     if (error instanceof HostCallRefusedError && serverCalls) return serverCalls(call);
     throw error;
   }
+}
+
+function chunkInGrid(
+  chunk: { x: number; y: number; z: number },
+  grid: PlayerCodeGridBounds,
+): boolean {
+  const x = BigInt(chunk.x);
+  const y = BigInt(chunk.y);
+  const z = BigInt(chunk.z);
+  return (
+    x >= grid.low.x &&
+    x <= grid.high.x &&
+    y >= grid.low.y &&
+    y <= grid.high.y &&
+    z >= grid.low.z &&
+    z <= grid.high.z
+  );
 }
 
 function minBig(a: bigint, b: bigint): bigint {

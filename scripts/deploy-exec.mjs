@@ -12,8 +12,7 @@
  * the manifest off and on (each persists and stops), so the next call starts it on the new
  * version from its snapshot.
  *
- * Needs the org's `manage_compute` on your account (an org's owner has it). ck-exec is a dev-tier
- * preview, so this works against the dev tier only.
+ * Needs the org's `manage_compute` on your account (an org's owner has it).
  */
 import { deployExec } from '@crowdedkingdoms/construct/platform/onboarding/steps';
 import { whenNotBusy } from './lib/busy-retry.mjs';
