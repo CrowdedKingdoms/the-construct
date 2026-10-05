@@ -4,8 +4,7 @@
  * into the text HUD and the holodeck overlay. CrowdyJS's `ExecClientHalves`
  * lists what the grid serves, asks, fetches by digest and sandboxes each half
  * in a `PlayerCodeBroker` (`engine: 'ck-exec'`); this adds what only the game
- * knows. It replaces `runConsentedGridMod` + `ClientModLifecycle`, which run
- * the legacy grid-attached client mods.
+ * knows.
  *
  * The player's own CLIENT halves run without a question (on your own grid
  * every half is yours), unless one was installed from a marketplace listing:
@@ -22,6 +21,7 @@ import {
   type ExecGridClientMod,
   type PlayerCodeGridBounds,
   type PlayerCodeHostCall,
+  type PlayerCodeLogLine,
   type PlayerCodePresentation,
 } from '@crowdedkingdoms/crowdyjs';
 import {
@@ -42,7 +42,12 @@ import type { ModSceneStore } from './modScene';
 
 export type ClientHalvesExec = Pick<
   ExecAPI,
-  'gridClientMods' | 'consentClientMod' | 'trustAuthor' | 'modClientArtifactBytes'
+  | 'gridClientMods'
+  | 'consentClientMod'
+  | 'trustAuthor'
+  | 'modClientArtifactBytes'
+  | 'revokeClientModConsent'
+  | 'revokeAuthorTrust'
 >;
 
 /** The grid the player stands in: its id and chunk box. */
@@ -83,6 +88,11 @@ export interface GridClientHalvesOptions {
   filter?: (mod: ExecGridClientMod) => boolean;
   /** After a CLIENT half starts or stops. */
   onChange?: (running: readonly ExecGridClientMod[]) => void;
+  /**
+   * A CLIENT half's `crowdy::log` lines (rate- and length-capped by the broker). The text is
+   * the mod author's: render it as text. Without it they go to `log`.
+   */
+  onLog?: (line: PlayerCodeLogLine, mod: ExecGridClientMod) => void;
   log?: (line: string) => void;
   brokerFactory?: ExecClientHalvesOptions['brokerFactory'];
   now?: () => number;
@@ -103,6 +113,9 @@ export class GridClientHalves {
         trustAuthor: (appId, gridId, authorId, hash) =>
           exec().trustAuthor(appId, gridId, authorId, hash),
         modClientArtifactBytes: (appId, modId) => exec().modClientArtifactBytes(appId, modId),
+        revokeClientModConsent: (appId, modId) => exec().revokeClientModConsent(appId, modId),
+        revokeAuthorTrust: (appId, gridId, authorId) =>
+          exec().revokeAuthorTrust(appId, gridId, authorId),
       },
       appId: options.appId,
       workerUrl: options.workerUrl,
@@ -117,6 +130,10 @@ export class GridClientHalves {
       },
       onStopped: (mod, reason) => this.stopped(mod, reason),
       onError: (error) => this.options.log?.(this.describeError(error)),
+      onLog: (line, mod) => {
+        if (this.options.onLog) this.options.onLog(line, mod);
+        else this.options.log?.(`CLIENT half of mod ${mod.name} ${line.level}: ${line.message}`);
+      },
       ...(options.brokerFactory ? { brokerFactory: options.brokerFactory } : {}),
       ...(options.now ? { now: options.now } : {}),
     });
@@ -142,6 +159,36 @@ export class GridClientHalves {
   /** One reconcile of the grid's CLIENT halves; rejects when they cannot be listed. */
   refresh(): Promise<void> {
     return this.runner.refresh();
+  }
+
+  /**
+   * Calls the `handle_invoke` export of the running CLIENT half of mod `modId`. The reply is
+   * the mod author's bytes: treat them as untrusted input.
+   */
+  invoke(
+    modId: string,
+    payload: Uint8Array,
+    options?: { timeoutMs?: number },
+  ): Promise<Uint8Array> {
+    return this.runner.invoke(modId, payload, options);
+  }
+
+  /**
+   * "Stop running this": stops the CLIENT half of mod `modId` and takes back the player's consent
+   * to it (and their trust in its author, when it ran through that trust, keeping the author's
+   * other halves). Not asked about again on this grid until it changes. Rejects when the platform
+   * refuses; the half stays stopped here.
+   */
+  revoke(modId: string): Promise<boolean> {
+    return this.runner.revoke(modId);
+  }
+
+  /**
+   * "Forget this author": stops every CLIENT half of `authorId` on this grid and takes back the
+   * player's trust in them here, with every consent to their halves.
+   */
+  forgetAuthor(authorId: string): Promise<boolean> {
+    return this.runner.forgetAuthor(authorId);
   }
 
   stop(): void {
@@ -265,6 +312,16 @@ export function describeClientHalfPrompt(
   return lines.join('\n');
 }
 
+/** What the host calls that act as the player let a CLIENT half do, in the player's words. */
+const ACTS_AS_YOU: Record<string, string> = {
+  user_state_get: 'read your saved state in this game',
+  user_state_set: 'replace your saved state in this game',
+  voxel_set: 'change blocks on this grid as you',
+  emit_spatial: 'send messages and effects to players near you, from your game',
+  emit_channel: "post in this grid's channels, from your game",
+  pointer_clicks: 'see your mouse clicks',
+};
+
 export function describeClientCapabilities(
   summary: ExecClientCapabilitySummary | null,
   json: string,
@@ -275,6 +332,9 @@ export function describeClientCapabilities(
   ];
   if (summary.capabilityGroups.length > 0) {
     rows.push(`• groups: ${summary.capabilityGroups.join(', ')}`);
+  }
+  for (const fn of summary.hostFunctions) {
+    if (Object.hasOwn(ACTS_AS_YOU, fn)) rows.push(`• it can ${ACTS_AS_YOU[fn]}`);
   }
   return rows.join('\n');
 }

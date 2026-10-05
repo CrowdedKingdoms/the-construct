@@ -1,8 +1,8 @@
 # Game concept → platform surface
 
 Where each thing a game needs lives on Crowded Kingdoms, how this repo uses it,
-and where to read more. The canonical reference is
-[docs.crowdedkingdoms.com](https://docs.crowdedkingdoms.com); the CrowdyJS README
+and where to read more. The canonical reference is the
+docs site of the tier this branch targets ([docs.dev.crowdedkingdoms.com](https://docs.dev.crowdedkingdoms.com) on `dev`, where ck-exec's pages exist); the CrowdyJS README
 and its `AGENTS.md` carry the concept→API table this one extends.
 
 | Game concept | Platform surface | In this repo |
@@ -12,7 +12,7 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 | Org / app creation, tiers | `organizations.create`, `apps.create`, `appAccess.createTier` / `grant` | `platform/onboarding/steps.mjs` |
 | Version floor, UDP status | `serverStatus.gameClientBootstrap(appId)` | `NetworkManager#bootstrap` |
 | Presence & movement | World Stores `self` / `actors` over `udp.subscribe`; chunk-addressed fan-out | `platform/realtime/WorldStores.ts`, `engine/GameLoop.ts` |
-| Terrain / shared canvas / mod-placed blocks | World Stores `chunks` (cache + realtime merge), `markDirty` → `chunks.update` for durability. CLIENT `voxel_set` uses this path. The holodeck draws cubes; Paint draws the y=0 layer in 2D. | `scenes/holodeck-three/voxels.ts`, `scenes/program-pixi/PaintScene.ts`, `platform/studio/clientModHost.ts` |
+| Terrain / shared canvas / mod-placed blocks | World Stores `chunks` (cache + realtime merge), `markDirty` → `chunks.update` for durability; a refused save is undone and reported (`platform/realtime/writeBackGuard.ts`). Each loaded chunk is hydrated (`chunks.get`): a SERVER mod's `world.set_voxels` and every other recorded edit come back only in its `voxelStates` (`platform/realtime/chunkStoreConfig.ts`). CLIENT `voxel_set` uses this path. The holodeck draws cubes; Paint draws the y=0 layer in 2D. | `scenes/holodeck-three/voxels.ts`, `scenes/program-pixi/PaintScene.ts`, `platform/studio/clientModHost.ts` |
 | Replicated 3D instances (quats, procedural meshes) | Legacy SERVER `emit_spatial("server_event")` eventTypes `0xC501`/`0xC502`; World Stores `events` + `InstanceStore`. `overlay_draw` is local gizmos on the same schema. A ck-exec mod cannot emit, so the Studio's SERVER target no longer feeds it. | `platform/studio/instanceSchema.ts`, `platform/studio/instanceStore.ts`, `scenes/holodeck-three/instanceLayer.ts` |
 | Save game | World Stores `save` (per-user `state.*` blob) | `GameSession#loadSave` / `rememberPosition` |
 | Chat | `udp.sendTextPacket` + `text` notifications (proximity); `channels.*` for named rooms | `platform/social/ChatService.ts` |
@@ -20,12 +20,12 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 | Scheduled world life | Hub timers (`ctx.timer_every`); they run only while players are in the app | The world hub's minute `pulse` timer (`exec/construct`) |
 | Player-owned land | `marketplace.claimGridChunk` under `SELF_CLAIM`; grids carry effective permission keys | `platform/studio/GridService.ts` |
 | Who is on which grid | Admin-only `gameApps.nearbyPermissions`; players read the game's own claim registry in its world hub | `GridService#lookup`, the world hub's `claims` / `record_claim` / `release_claim` |
-| In-game IDE | `@crowdedkingdoms/crowdyjs/crowdy-studio` embed kit over `crowdyStudio` and `exec` (`serverEngine: 'ck-exec'`: the SERVER target as the grid's mod, the CLIENT target as its CLIENT half) | `platform/studio/StudioService.ts` |
+| In-game IDE | `@crowdedkingdoms/crowdyjs/crowdy-studio` embed kit over `crowdyStudio` and `exec` (ck-exec only: the SERVER target as the grid's mod, the CLIENT target as its CLIENT half) | `platform/studio/StudioService.ts` |
 | Players' server code | ck-exec mods: `modBuild` → `modDeploy` → `modSetEnabled`, a hub `mod:<name>` per grid; node API confined to the grid, no emits | `exec/mods/` (the SERVER starters), [MODDING.md](MODDING.md) |
 | Players' browser code | A mod's CLIENT half: `modClientBuild` (a `crowdy-client-sdk` crate) → `modClientDeploy` onto the mod | `mods/templates/` (the CLIENT starters), [MODDING.md](MODDING.md) |
 | Crowdy Agent | `client.crowdyStudioAgent` + `context.playerHost`; Constructor `use_studio_agent`; **app** policy (`setCrowdyStudioAgentPolicy`) | `platform/studio/StudioService.ts`, `ConstructPlayerHostAdapter.ts`. Setup writes the app row only — never `cp*` / platform catalog. Model usage is metered to the player wallet by default (or the app's org wallet); no provider key in the game. |
 | Player wallet | Studio `/account/wallet` (the player's mods and grid billing, not agent tokens) | HUD **Wallet**; origin from `VITE_AUTHORIZE_URL` / `VITE_STUDIO_URL` |
-| A grid's CLIENT halves, for whoever stands in it | CrowdyJS `ExecClientHalves`: `exec.gridClientMods` → `trustAuthor` (or `consentClientMod`) → `modClientArtifactBytes` (digest checked) → `PlayerCodeBroker({ engine: 'ck-exec' })`, stopped on leaving the grid | `platform/studio/clientHalves.ts` (`GridClientHalves`), host calls in `clientModHost.ts`, the question in `ui/Hud.ts#ask` |
+| A grid's CLIENT halves, for whoever stands in it | CrowdyJS `ExecClientHalves`: `exec.gridClientMods` → `trustAuthor` (or `consentClientMod`) → `modClientArtifactBytes` (digest checked) → `PlayerCodeBroker({ engine: 'ck-exec' })`, stopped on leaving the grid; `revoke` / `forgetAuthor` take them back (`exec.revokeClientModConsent` / `revokeAuthorTrust`) | `platform/studio/clientHalves.ts` (`GridClientHalves`), host calls in `clientModHost.ts`, the question in `ui/Hud.ts#ask`, Stop / Forget author in `ui/Hud.ts` |
 | CLIENT mouse clicks | Host call `pointer_clicks` (broker `input` family); Construct drains holodeck canvas down/up each tick | `platform/studio/pointerClicks.ts`, `clientModHost.ts` |
 | Starter mod files | `crowdyStudioCommonPublish` (common-file catalog) | `mods/templates/`, `exec/mods/`, `steps.mjs#publishStarterFiles` |
 | Progression | A hub's own state (the world hub's `progress`, created on first read); `ckx_sdk::model` for typed containers | `ModelService#progress` |
@@ -85,16 +85,16 @@ which is why Setup adds the two `run_*` keys to the default tier.
 
 ## Reading more
 
-- Client workflow: <https://docs.crowdedkingdoms.com/overview/client-workflow>
-- Before you ship: <https://docs.crowdedkingdoms.com/overview/before-you-ship>
-- World Stores: <https://docs.crowdedkingdoms.com/crowdyjs/stores>
-- ck-exec (dev-tier preview): <https://docs.crowdedkingdoms.com/exec/intro>,
-  [timers and presence](https://docs.crowdedkingdoms.com/exec/timers-and-presence),
-  [connect from a game](https://docs.crowdedkingdoms.com/exec/connect-from-a-game),
-  [builds](https://docs.crowdedkingdoms.com/exec/builds),
-  [mods](https://docs.crowdedkingdoms.com/exec/mods),
-  [operations](https://docs.crowdedkingdoms.com/exec/operations)
-- Grids and permissions: <https://docs.crowdedkingdoms.com/game-api/grids-and-permissions>
-- Player code: <https://docs.crowdedkingdoms.com/game-api/player-code>
-- Embed Crowdy Studio: <https://docs.crowdedkingdoms.com/crowdyjs/crowdy-studio-embed>
-- Datacenter routing: <https://docs.crowdedkingdoms.com/game-api/datacenter-routing>
+- Client workflow: <https://docs.dev.crowdedkingdoms.com/overview/client-workflow>
+- Before you ship: <https://docs.dev.crowdedkingdoms.com/overview/before-you-ship>
+- World Stores: <https://docs.dev.crowdedkingdoms.com/crowdyjs/stores>
+- ck-exec: <https://docs.dev.crowdedkingdoms.com/exec/intro>,
+  [timers and presence](https://docs.dev.crowdedkingdoms.com/exec/timers-and-presence),
+  [connect from a game](https://docs.dev.crowdedkingdoms.com/exec/connect-from-a-game),
+  [builds](https://docs.dev.crowdedkingdoms.com/exec/builds),
+  [mods](https://docs.dev.crowdedkingdoms.com/exec/mods),
+  [operations](https://docs.dev.crowdedkingdoms.com/exec/operations)
+- Grids and permissions: <https://docs.dev.crowdedkingdoms.com/game-api/grids-and-permissions>
+- From the legacy engines (player code included): <https://docs.dev.crowdedkingdoms.com/exec/from-the-legacy-engines>
+- Embed Crowdy Studio: <https://docs.dev.crowdedkingdoms.com/crowdyjs/crowdy-studio-embed>
+- Datacenter routing: <https://docs.dev.crowdedkingdoms.com/game-api/datacenter-routing>

@@ -1,10 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
-
-vi.mock('@crowdedkingdoms/crowdyjs', () => ({
-  PlayerCodeBroker: class {},
-  CROWDY_DEFAULT_HTTP_ORIGIN: 'https://api.example.test',
-  CROWDY_DEFAULT_TIER: 'dev',
-}));
+import { describe, expect, it } from 'vitest';
 
 const {
   DEFAULT_VOXEL_STATE,
@@ -221,6 +215,54 @@ describe('routeClientHostCall', () => {
       voxelType: 1,
       state: '{"u":"abc","shot":1}',
     });
+  });
+
+  it('writes no voxel outside the grid, whatever second chunk the call carries', async () => {
+    const r = reads();
+    const written: Array<{ chunk: { x: number; y: number; z: number } }> = [];
+    const writes = {
+      setVoxel: async (input: { chunk: { x: number; y: number; z: number } }) => {
+        written.push(input);
+        return true;
+      },
+    };
+    const voxel = { voxelX: 1, voxelY: 0, voxelZ: 2, voxelType: 7 };
+    // The broker checks chunkX/Y/Z against the grid; a call must not steer the write elsewhere.
+    for (const args of [
+      { chunkX: 0, chunkY: 0, chunkZ: 0, chunk: { x: 999, y: 0, z: 0 }, ...voxel },
+      { chunkX: 0, chunkY: 0, chunkZ: 0, chunk: [999, 0, 0], ...voxel },
+      { chunkX: 0, chunkY: 0, chunkZ: 0, chunk_x: 999, ...voxel },
+    ]) {
+      await routeClientHostCall({ fn: 'voxel_set', args } as never, r.reads, grid, writes);
+    }
+    expect(written.map((w) => w.chunk)).toEqual([
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 0, z: 0 },
+    ]);
+    // Named only the second way, the chunk is checked against the grid at the write.
+    for (const args of [
+      { chunk: { x: 999, y: 0, z: 0 }, ...voxel },
+      { chunk_x: 5, chunk_y: 0, chunk_z: 0, ...voxel },
+      { chunkX: 2, chunkY: 0, chunkZ: 0, ...voxel },
+    ]) {
+      expect(
+        await routeClientHostCall({ fn: 'voxel_set', args } as never, r.reads, grid, writes),
+      ).toEqual({ ok: false, error: 'out_of_grid' });
+    }
+    expect(written.length).toBe(3);
+  });
+
+  it('refuses voxel_set without the grid to confine it to', async () => {
+    const r = reads();
+    await expect(
+      routeClientHostCall(
+        { fn: 'voxel_set', args: { chunkX: 0, chunkY: 0, chunkZ: 0, voxelType: 1 } } as never,
+        r.reads,
+        undefined,
+        { setVoxel: async () => true },
+      ),
+    ).rejects.toBeInstanceOf(HostCallRefusedError);
   });
 
   it('parses flattened chunkX host-call args the broker clamps', () => {

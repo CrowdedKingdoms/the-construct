@@ -7,9 +7,8 @@ optional **CLIENT** half (browser WASM the grid serves to the players standing
 in it, who run it in a sandbox once they consent to it). This page is the
 walkthrough and the security story, in that order.
 
-ck-exec is a dev-tier preview; so are both Studio targets on it
-(`serverEngine: 'ck-exec'` in `StudioService`, CrowdyJS 17.14). See
-[Mods](https://docs.crowdedkingdoms.com/exec/mods) in the platform docs.
+Crowdy Studio runs mods on ck-exec only (CrowdyJS 18). See
+[Mods](https://docs.dev.crowdedkingdoms.com/exec/mods) in the platform docs.
 
 ## Prerequisites (Setup does all of this)
 
@@ -110,7 +109,7 @@ module):
 The *Presence beacon* counts the players in its grid as they come and go
 (`on_world`, then `world.actors`, and again every 10 s) and answers `present`
 with `{ "present": n }`. See the platform's
-[Mods](https://docs.crowdedkingdoms.com/exec/mods) page.
+[Mods](https://docs.dev.crowdedkingdoms.com/exec/mods) page.
 
 ## What a CLIENT half can do here
 
@@ -131,12 +130,16 @@ voxel writes and clicks reach this game's router,
 | `actors_list_radius(x,y,z,radius_xz,radius_y)` | The same across a box of chunks, as the platform clamps it: `radiusXz` ≤ 3, `radiusY` ≤ 1, inside the grid |
 | `chunk_get(x,y,z)` | The cached dense voxel grid, base64 |
 | `voxels_list(x,y,z)` | The non-zero cells as rows |
-| `voxel_set` | One voxel write, as the player running it, through World Stores `chunks.setVoxel` + `markDirty`. Replicates to other players and persists. Args as `crowdy::api::voxel_set` sends them: `chunkX/Y/Z`, in-chunk `voxelX/Y/Z` (0–15), `voxelType`, `stateBase64`. |
+| `voxel_set` | One voxel write, as the player running it, through World Stores `chunks.setVoxel` + `markDirty`. Replicates to other players and persists; a save the server refuses (the player may not edit that chunk) is undone and the player is told (0.3.4). Args as `crowdy::api::voxel_set` sends them: `chunkX/Y/Z`, in-chunk `voxelX/Y/Z` (0–15), `voxelType`, `stateBase64`. The chunk is the one the broker checked (`chunkX/Y/Z`), and the write is refused (`{ ok: false, error: 'out_of_grid' }`) unless it is inside the half's grid (0.3.3: a second spelling such as `chunk` used to win and could write outside the grid). |
 | `pointer_clicks` | Drain holodeck mouse clicks since the last call. `{ nowMs, buttons, holdingMs, clicks }`. `clicks` is `{ t:"down"\|"up", button, atMs, heldMs?, nx, ny }` (canvas NDC, +ny up). `holdingMs["0"]` is left-button charge time. Studio chrome is omitted. Call every tick. |
 
 The rest (`user_state_get` / `user_state_set`, `avatar_state_get`,
 `grid_permission_check`, `emit_spatial`, `emit_channel`) goes through
-CrowdyJS's `createGridHostCalls`, confined to the grid, as the player.
+CrowdyJS's `createGridHostCalls`, confined to the grid, as the player. Since
+CrowdyJS 18.0.2 it answers `grid_permission_check` only for the four
+code-permission keys (the only keys this game knows for a grid; any other key is
+refused, not answered false), and a half's spatial and channel sends go out
+under an actor uuid the page derives for the grid, never one the half names.
 
 `voxel_set` is occupancy: floors, walls, claim-aligned blocks. Voxels cannot
 rotate. `overlay_draw` is **local** presentation (aim assist, author preview)
@@ -201,11 +204,12 @@ What the port could not keep, and why:
   sessions). Replace its Cargo.toml and src/lib.rs with a starter's. New
   projects start on the platform's mod starter and a `crowdy-client-sdk`
   crate.
-- **Legacy grid-attached client mods no longer run here.** The Studio attaches
-  CLIENT halves to mods, and `StudioService` runs only those
-  (`marketplace.gridClientMods` is superseded in CrowdyJS 17.14 and removed in
-  18.0). The framework still exports `runConsentedGridMod` and
-  `ClientModLifecycle` for a game that runs legacy ones until then.
+- **There are no legacy grid-attached client mods.** The platform deleted them
+  (with player compute, CrowdyJS 18), and the framework's `runConsentedGridMod`
+  and `ClientModLifecycle` went with construct 0.3.0; a mod's CLIENT half is
+  the only browser code a grid serves.
+- **JS grid programs host no grid sessions.** Grid sessions were the legacy
+  game model's; a program's `grid_context` lists none.
 
 ## Security posture
 
@@ -230,7 +234,16 @@ What the port could not keep, and why:
   runs a half only with its SHA-256 digest, its fuel budget and the host calls
   both the consented summary and the served module list. Your own CLIENT
   halves run for you without a question, except one installed from someone's
-  marketplace listing.
+  marketplace listing. The question says in plain words what the calls that act
+  as you can do (replace your saved state, change blocks, message players near
+  you, see your clicks).
+- **A player can take it back.** The HUD lists the CLIENT halves running for
+  you on the grid: **Stop** stops one and takes back your consent to it (and
+  your trust in its author, when it ran through that trust, keeping their other
+  halves), **Forget author** stops all of that author's and takes the trust
+  back (`StudioService.stopClientHalf` / `forgetClientHalfAuthor`, over
+  CrowdyJS `ExecClientHalves.revoke` / `forgetAuthor`, construct 0.3.3). Neither
+  is asked about again on the grid until it changes; a new visit asks again.
 - **A build switch exists.** `VITE_CONSTRUCT_CLIENT_MODS=0` ships SERVER-only
   Studio for a fork that does not want browser execution.
 - **Custom shaders are not a scene option.** See the sign-off gate under
@@ -267,7 +280,7 @@ and the SERVER-only path are here so it can be a deliberate one.
 - **Marketplace listings** — `client.exec.modPublish` / `modInstall`. A listing
   carries the mod's CLIENT half, and an installer's grid serves it once the
   installer consents to it afresh. Read
-  [Mods](https://docs.crowdedkingdoms.com/exec/mods).
+  [Mods](https://docs.dev.crowdedkingdoms.com/exec/mods).
 
 ## JS grid programs
 
@@ -277,7 +290,7 @@ CrowdyJS SDK. The server never compiles or runs them; the Construct loads one
 into a hidden `sandbox="allow-scripts"` iframe (`grid-program.html`, served
 with `connect-src 'none'`), and `GridProgramRunner` relays its CrowdyJS
 traffic with a grid-scoped token. So a program can read and write inside the
-grid, post to the grid's channels, host grid sessions and send spatial
+grid, post to the grid's channels and send spatial
 messages that start in the grid (and reach past it), and nothing else.
 
 ```js

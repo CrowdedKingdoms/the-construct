@@ -21,6 +21,7 @@ vi.mock('@crowdedkingdoms/crowdyjs/crowdy-studio', async () => {
 const {
   GridClientHalves,
   clientHalfSource,
+  describeClientCapabilities,
   describeClientHalfPrompt,
   isOwnClientHalfPrompt,
   studioPreviewModName,
@@ -69,6 +70,7 @@ function harness(
     self?: string;
     confirm?: (prompt: unknown, signal: AbortSignal) => Promise<boolean>;
     filter?: (mod: { name: string }) => boolean;
+    log?: (line: string) => void;
   } = {},
 ) {
   const listings = options.listings ?? [[half({ callerConsented: true })]];
@@ -77,6 +79,8 @@ function harness(
     gridClientMods: vi.fn(async () => listings[Math.min(listed++, listings.length - 1)]!),
     consentClientMod: vi.fn(async () => true),
     trustAuthor: vi.fn(async () => true),
+    revokeClientModConsent: vi.fn(async () => true),
+    revokeAuthorTrust: vi.fn(async () => true),
     modClientArtifactBytes: vi.fn(async (_appId: string, modId: string) => {
       const mod = listings.flat().find((m) => m.modId === modId)!;
       return {
@@ -100,6 +104,7 @@ function harness(
     options: {
       onHostCall(call: unknown): Promise<unknown>;
       onPresentation?(presentation: unknown): void;
+      onLog?(line: unknown): void;
       consentedHostCalls?: readonly string[];
       engine?: string;
     };
@@ -122,11 +127,16 @@ function harness(
     overlay: overlay as never,
     ...(options.confirm ? { confirm: options.confirm as never } : {}),
     ...(options.filter ? { filter: options.filter as never } : {}),
+    ...(options.log ? { log: options.log } : {}),
     onChange: (running) => changes.push(running.length),
     brokerFactory: (brokerOptions) => {
       const broker = { options: brokerOptions as never, stop: vi.fn() };
       brokers.push(broker);
-      return { start: async () => {}, stop: broker.stop };
+      return {
+        start: async () => {},
+        stop: broker.stop,
+        invoke: async (payload: Uint8Array) => new Uint8Array([...payload].reverse()),
+      };
     },
   });
   return { halves, exec, brokers, hud, overlay, actorsInChunk, serverCall, serverCalls, changes };
@@ -162,6 +172,44 @@ describe('GridClientHalves', () => {
       broker!.options.onHostCall({ fn: 'user_state_get', args: { userId: '9' } }),
     ).resolves.toEqual({ state: 'from the server' });
     expect(h.serverCalls).toHaveBeenCalledWith(GRID);
+  });
+
+  it('stops a CLIENT half the player takes back, and forgets its author, through the game client', async () => {
+    const h = harness({
+      listings: [
+        [
+          half({ callerConsented: true }),
+          half({ modId: 'm2', name: 'shop', digest: 'd2', callerConsented: true }),
+        ],
+      ],
+    });
+    h.halves.enterGrid(GRID);
+    await h.halves.refresh();
+    expect(h.halves.running.map((m) => m.modId)).toEqual(['m1', 'm2']);
+
+    await expect(h.halves.revoke('m1')).resolves.toBe(true);
+    expect(h.exec.revokeClientModConsent).toHaveBeenCalledWith('1', 'm1');
+    expect(h.halves.running.map((m) => m.modId)).toEqual(['m2']);
+    expect(h.hud.remove).toHaveBeenCalledWith('grid:m1');
+
+    await expect(h.halves.forgetAuthor('7')).resolves.toBe(true);
+    expect(h.exec.revokeAuthorTrust).toHaveBeenCalledWith('1', '42', '7');
+    expect(h.halves.running).toEqual([]);
+    await h.halves.refresh();
+    expect(h.halves.running).toEqual([]);
+  });
+
+  it("forwards a CLIENT half's log lines and invokes its handle_invoke", async () => {
+    const lines: string[] = [];
+    const h = harness({ log: (line) => lines.push(line) });
+    h.halves.enterGrid(GRID);
+    await h.halves.refresh();
+    h.brokers[0]!.options.onLog?.({ level: 'info', message: 'ready', moduleName: 'greeter' });
+    expect(lines).toContain('CLIENT half of mod greeter info: ready');
+    await expect(h.halves.invoke('m1', new Uint8Array([1, 2, 3]))).resolves.toEqual(
+      new Uint8Array([3, 2, 1]),
+    );
+    await expect(h.halves.invoke('nope', new Uint8Array())).rejects.toThrow();
   });
 
   it('asks about another author, and a yes trusts them at the hash the grid listed', async () => {
@@ -283,6 +331,20 @@ describe('client half prompts', () => {
     expect(text).toContain('Installed from the marketplace: shop.');
     expect(text).toContain('• host calls: hud_set, actors_list, user_state_get');
     expect(text).toContain('• groups: present, world_read, state');
+    expect(text).toContain('• it can read your saved state in this game');
+    expect(text).not.toContain('replace your saved state');
+  });
+
+  it('says in plain words what the calls that act as the player can do', () => {
+    const summary = {
+      ...SUMMARY,
+      hostFunctions: ['user_state_set', 'voxel_set', 'emit_spatial', 'constructor'],
+    };
+    const text = describeClientCapabilities(summary as never, JSON.stringify(summary));
+    expect(text).toContain('• it can replace your saved state in this game');
+    expect(text).toContain('• it can change blocks on this grid as you');
+    expect(text).toContain('• it can send messages and effects to players near you');
+    expect(text.split('\n').filter((line) => line.startsWith('• it can'))).toHaveLength(3);
   });
 
   it('asks about one CLIENT half, and shows a summary that does not parse as it is', () => {
