@@ -587,131 +587,42 @@ async function passSdk(fn: string, args: Record<string, unknown>): Promise<unkno
       return client.teams.remove(String(args.id));
     case 'team_set_policy':
       return client.teams.setPolicy({ appId: port.appId, ...(args.policy as object) } as never);
-    case 'inventory_ensure':
-      return client.kit(port.appId).inventory.ensure(port.userId);
-    case 'inventory_stacks':
-      return client.kit(port.appId).inventory.stacks(port.userId);
-    case 'inventory_grant':
-      return client
-        .kit(port.appId)
-        .inventory.grant(String(args.stackId ?? args.itemId ?? ''), num(args.quantity) || 1);
-    case 'inventory_consume':
-      return client
-        .kit(port.appId)
-        .inventory.consume(String(args.stackId ?? args.itemId ?? ''), num(args.quantity) || 1);
-    case 'inventory_move':
-      return client
-        .kit(port.appId)
-        .inventory.move(String(args.stackId ?? args.itemId ?? ''), num(args.slot));
-    case 'inventory_transfer':
-      if (args.targetUuid != null && !actorInside(String(args.targetUuid))) {
-        return { ok: false, error: 'target is outside the grid' };
-      }
-      return client
-        .kit(port.appId)
-        .inventory.transfer(
-          String(args.fromStackId ?? args.stackId ?? ''),
-          String(args.toStackId ?? ''),
-          num(args.quantity) || 1,
-        );
-    case 'inventory_craft':
-      return client
-        .kit(port.appId)
-        .inventory.craft(
-          String(args.inventoryId ?? ''),
-          String(args.recipeId ?? ''),
-          Array.isArray(args.inputStackIds) ? args.inputStackIds.map(String) : [],
-          String(args.outputStackId ?? ''),
-        );
-    case 'inventory_barter':
-      if (args.targetUuid != null && !actorInside(String(args.targetUuid))) {
-        return { ok: false, error: 'target is outside the grid' };
-      }
-      return client
-        .kit(port.appId)
-        .inventory.barter(
-          String(args.inventoryId ?? ''),
-          String(args.barterId ?? args.recipeId ?? ''),
-          String(args.payStackId ?? ''),
-          String(args.receiveStackId ?? ''),
-        );
-    case 'session_create':
-      return client.gameModel.createSession({ appId: port.appId, ...args } as never);
-    case 'session_join':
-      return client.gameModel.joinSession({ appId: port.appId, ...args } as never);
-    case 'session_turn':
-      return client.gameModel.setSessionTurn({ appId: port.appId, ...args } as never);
-    case 'model_traverse':
-      return client.gameModel.traverse({ appId: port.appId, ...args } as never);
-    case 'model_flow':
-      return client.gameModel.flow({
-        appId: port.appId,
-        flowId: String(args.flowId ?? ''),
-      } as never);
-    case 'model_seed':
-      return client.gameModel.seed({ appId: port.appId, ...args } as never);
-    case 'timer_schedule':
-      return client.gameModel.scheduleInvoke({ appId: port.appId, ...args } as never);
-    case 'timer_cancel':
-      return client.gameModel.cancelTimer({
-        appId: port.appId,
-        timerId: String(args.timerId ?? ''),
-      } as never);
-    case 'sessions_list':
-      return client.gameModel.sessions({ appId: port.appId } as never);
-    case 'container_get_batch':
-      return client.gameModel.containers({ appId: port.appId } as never);
-    case 'edge_add':
-      return client.gameModel.addEdge({ appId: port.appId, ...args } as never);
-    case 'edge_delete':
-      return client.gameModel.deleteEdge({ appId: port.appId, ...args } as never);
     case 'avatar_state_get':
       return client.avatars.appState(port.appId, String(args.avatarId ?? ''));
+    // CrowdyJS 18 removed the game-model, player-model, kit inventory and
+    // player-compute clients. These names stay routed so a module that still
+    // asks gets a refusal instead of a missing property.
+    case 'inventory_ensure':
+    case 'inventory_stacks':
+    case 'inventory_grant':
+    case 'inventory_consume':
+    case 'inventory_move':
+    case 'inventory_transfer':
+    case 'inventory_craft':
+    case 'inventory_barter':
+    case 'session_create':
+    case 'session_join':
+    case 'session_turn':
+    case 'model_traverse':
+    case 'model_flow':
+    case 'model_seed':
+    case 'timer_schedule':
+    case 'timer_cancel':
+    case 'sessions_list':
+    case 'container_get_batch':
+    case 'edge_add':
+    case 'edge_delete':
     case 'player_containers_list':
-      return client.playerModel.containers({ appId: port.appId } as never);
     case 'player_container_create':
-      return client.playerModel.createContainer({ appId: port.appId, ...args } as never);
     case 'player_container_delete':
-      return client.playerModel.deleteContainer({
-        appId: port.appId,
-        containerId: String(args.containerId ?? args.id ?? ''),
-      } as never);
     case 'player_automations_list':
-      return client.playerModel.automations({ appId: port.appId } as never);
     case 'player_automation_create':
-      return client.playerModel.createAutomation({ appId: port.appId, ...args } as never);
     case 'player_automation_set_enabled':
-      return client.playerModel.setAutomationEnabled({
-        appId: port.appId,
-        automationId: String(args.automationId ?? args.id ?? ''),
-        enabled: Boolean(args.enabled),
-      } as never);
     case 'player_automation_delete':
-      return client.playerModel.deleteAutomation({
-        appId: port.appId,
-        automationId: String(args.automationId ?? args.id ?? ''),
-      } as never);
-    case 'server_module_invoke': {
-      const gridId = String(args.gridId ?? port.gridId);
-      if (gridId !== port.gridId) return { ok: false, error: 'outside the player grid' };
-      return client.playerCompute.invoke({
-        appId: port.appId,
-        gridId,
-        moduleName: String(args.moduleName ?? ''),
-        exportName: String(args.exportName ?? 'invoke'),
-        paramsJson:
-          typeof args.paramsJson === 'string' ? args.paramsJson : JSON.stringify(args.params ?? {}),
-      });
-    }
+    case 'server_module_invoke':
     case 'emit_channel':
     case 'emit_event':
-      return client.playerCompute.invoke({
-        appId: port.appId,
-        gridId: port.gridId,
-        moduleName: String(args.moduleName ?? ''),
-        exportName: fn,
-        paramsJson: JSON.stringify(args),
-      });
+      return { ok: false, error: `${fn} is not offered on this client` };
     default:
       return { ok: false, error: `unrouted host call ${fn}` };
   }
