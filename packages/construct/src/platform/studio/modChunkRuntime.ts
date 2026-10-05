@@ -592,14 +592,18 @@ async function passSdk(fn: string, args: Record<string, unknown>): Promise<unkno
     // CrowdyJS 18 removed the game-model, player-model, kit inventory and
     // player-compute clients. These names stay routed so a module that still
     // asks gets a refusal instead of a missing property.
+    case 'inventory_transfer':
+    case 'inventory_barter':
+      if (args.targetUuid != null && !actorInside(String(args.targetUuid))) {
+        return { ok: false, error: 'target is outside the grid' };
+      }
+      return { ok: false, error: `${fn} is not offered on this client` };
     case 'inventory_ensure':
     case 'inventory_stacks':
     case 'inventory_grant':
     case 'inventory_consume':
     case 'inventory_move':
-    case 'inventory_transfer':
     case 'inventory_craft':
-    case 'inventory_barter':
     case 'session_create':
     case 'session_join':
     case 'session_turn':
