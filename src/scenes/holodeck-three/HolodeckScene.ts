@@ -23,6 +23,11 @@ import { HOLODECK_SPAWN } from '@/game/programs';
 import { NEUTRAL_POSE, type Pose } from '@crowdedkingdoms/construct/platform/realtime/actorCodec';
 import { instanceStore } from '@crowdedkingdoms/construct/platform/realtime/WorldStores';
 import { toBrokerBounds } from '@crowdedkingdoms/construct/platform/studio/permissions';
+import {
+  currentModPose,
+  noteWalkerPose,
+  stepModPose,
+} from '@crowdedkingdoms/construct/platform/studio/modPose';
 import { AvatarPool } from '@/scenes/holodeck-three/avatars';
 import { ClaimedChunkLayer, claimedChunksToDraw } from '@/scenes/holodeck-three/claimedChunkBox';
 import { InstanceLayer } from '@/scenes/holodeck-three/instanceLayer';
@@ -107,16 +112,11 @@ export class HolodeckScene implements GameScene {
     this.scene.add(this.localBody);
 
     const onClick = () => {
-      // LMB is gameplay for CLIENT mods (click-to-charge). Look stays RMB.
-      // Skip pointer-lock while Studio is open or a grid mod is running so
-      // hold-to-charge on the holodeck canvas actually reaches the mod.
-      if (
-        context.session.studio.snapshot.open ||
-        context.session.studio.snapshot.clientModsRunning > 0
-      ) {
-        return;
-      }
-      if (!context.input.suppressed && document.pointerLockElement !== renderer.domElement) {
+      // A client mod cannot call requestPointerLock; the browser only accepts
+      // it from this click. Studio keeps the cursor. The click itself still
+      // reaches the mod as pointer_clicks, and the locked deltas as input_look.
+      if (context.session.studio.snapshot.open || context.input.suppressed) return;
+      if (document.pointerLockElement !== renderer.domElement) {
         renderer.domElement.requestPointerLock?.();
       }
     };
@@ -209,9 +209,13 @@ export class HolodeckScene implements GameScene {
     const renderer = this.renderer;
     if (!context || !renderer) return;
     const { input, session } = context;
+    const held = currentModPose();
 
     // Look: pointer lock or RMB drag. Wheel zooms the follow camera.
-    if (input.isLooking()) {
+    // A mod that holds the body reads the pointer itself.
+    if (held) {
+      // leave the delta for input_look
+    } else if (input.isLooking()) {
       const { dx, dy } = input.takePointerDelta();
       const next = applyLook(this.yaw, this.pitch, dx, dy, LOOK_SENSITIVITY);
       this.yaw = next.yaw;
@@ -229,24 +233,36 @@ export class HolodeckScene implements GameScene {
       );
     }
 
-    // Move relative to the camera yaw. Agent Play adds the same axes a human
-    // WASD would, plus LOOK deltas (degrees converted to radians upstream).
-    const agent = session.studio.locomotion.sample(nowMs);
-    this.yaw += agent.yaw;
-    this.pitch = Math.max(LOOK_PITCH_MIN, Math.min(LOOK_PITCH_MAX, this.pitch + agent.pitch));
-    const human = input.suppressed ? { x: 0, y: 0 } : input.axes();
-    const axes = { x: clampAxis(human.x + agent.x), y: clampAxis(human.y + agent.y) };
-    const speed = input.isRun() ? RUN_SPEED : WALK_SPEED;
-    const dir = wishOnGround(this.yaw, axes);
-    const wish = new THREE.Vector3(dir.x, 0, dir.z);
-    if (wish.lengthSq() > 0) wish.multiplyScalar(speed);
-    this.velocity.lerp(wish, Math.min(1, dt * 12));
-    this.position.addScaledVector(this.velocity, dt);
-    this.position.x = clamp(this.position.x);
-    this.position.z = clamp(this.position.z);
+    if (held) {
+      const stepped = stepModPose(dt);
+      if (stepped) {
+        this.position.set(stepped.x, stepped.y, stepped.z);
+        this.yaw = stepped.yaw;
+        this.pitch = stepped.pitch;
+        this.velocity.set(stepped.vx, stepped.vy, stepped.vz);
+      }
+    } else {
+      // Move relative to the camera yaw. Agent Play adds the same axes a human
+      // WASD would, plus LOOK deltas (degrees converted to radians upstream).
+      const agent = session.studio.locomotion.sample(nowMs);
+      this.yaw += agent.yaw;
+      this.pitch = Math.max(LOOK_PITCH_MIN, Math.min(LOOK_PITCH_MAX, this.pitch + agent.pitch));
+      const human = input.suppressed ? { x: 0, y: 0 } : input.axes();
+      const axes = { x: clampAxis(human.x + agent.x), y: clampAxis(human.y + agent.y) };
+      const speed = input.isRun() ? RUN_SPEED : WALK_SPEED;
+      const dir = wishOnGround(this.yaw, axes);
+      const wish = new THREE.Vector3(dir.x, 0, dir.z);
+      if (wish.lengthSq() > 0) wish.multiplyScalar(speed);
+      this.velocity.lerp(wish, Math.min(1, dt * 12));
+      this.position.addScaledVector(this.velocity, dt);
+      this.position.x = clamp(this.position.x);
+      this.position.z = clamp(this.position.z);
+      this.position.y = 0;
+    }
 
-    // Local avatar + camera
+    // Local avatar + camera. Hidden while a client mod is drawing the body.
     if (this.localBody) {
+      this.localBody.visible = !held;
       this.localBody.position.set(this.position.x, 0.8, this.position.z);
       this.localBody.rotation.y = this.yaw;
     }
@@ -258,17 +274,27 @@ export class HolodeckScene implements GameScene {
     );
     const camOffset = new THREE.Vector3(off.x, off.y, off.z);
     this.camera.position.copy(this.position).add(camOffset);
-    this.camera.lookAt(this.position.x, EYE_HEIGHT, this.position.z);
+    if (!held) {
+      noteWalkerPose({
+        x: this.position.x,
+        y: this.position.y,
+        z: this.position.z,
+        yaw: this.yaw,
+        pitch: this.pitch,
+      });
+    }
+    this.camera.lookAt(this.position.x, held ? this.position.y : EYE_HEIGHT, this.position.z);
 
     // Others (only those standing in the holodeck)
-    this.avatars?.sync(session.players(this.programId), nowMs);
+    this.avatars?.sync(session.players(this.programId), nowMs, session.studio.scene.boundActors());
     this.voxels?.sync(session.world.chunks, this.position);
     if (session.joined) {
       const overlay = session.studio.overlay.snapshot();
       const grid = session.studio.grid;
       this.overlay?.sync(
         instanceStore().snapshot({
-          overlay: overlay.objects,
+          overlay: [...session.studio.scene.expand(), ...overlay.objects],
+          meshes: session.studio.scene.meshes(),
           actors: [
             ...session.players().map((player) => ({
               uuid: player.uuid,
