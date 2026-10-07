@@ -10,9 +10,16 @@ export default defineConfig({
   envDir: path.resolve(rootDir, 'src'),
   resolve: {
     alias: { '@': path.resolve(rootDir, 'src') },
+    // The framework package ships TypeScript source; resolve it from the
+    // workspace so its tests and the starter's import the same files.
   },
   test: {
-    include: ['src/**/*.test.ts', 'model/**/*.test.ts', 'mods/**/*.test.ts'],
+    include: [
+      'src/**/*.test.ts',
+      'packages/construct/src/**/*.test.ts',
+      'model/**/*.test.ts',
+      'mods/**/*.test.ts',
+    ],
     environment: 'happy-dom',
     // The SDK root barrel pulls Monaco; unit tests never need it and it does
     // not load under happy-dom. Tests mock the SDK surface they touch.

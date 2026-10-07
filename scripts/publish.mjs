@@ -14,11 +14,13 @@
  * WHAT IT DOES, in order:
  *   1. signs in with your account (an IDENTITY session -- the hosting mutations refuse
  *      an app token, so a game can never publish a replacement for itself);
- *   2. reads VITE_APP_ID from .env.local (the id `npm run setup` printed);
+ *   2. reads the app id: APP_ID, else VITE_APP_ID from .env.local (the id `npm run setup`
+ *      printed);
  *   3. `claimGameHosting` -- claims the slug (default: the app's slug) once, idempotent;
  *      registers the shell page and the content origin as this app's redirect URIs;
- *   4. `npm run build` unless --no-build (the bundle is served at the root of its own
- *      origin, so the default Vite base is right);
+ *   4. `npm run build` unless --no-build, with VITE_APP_ID set to that id so the bundle
+ *      is pinned to the app it is published to (the bundle is served at the root of its
+ *      own origin, so the default Vite base is right);
  *   5. `publishDirectory`: hashes dist/, declares the manifest, uploads every file to
  *      its presigned URL with the signed headers, completes the publish (the API
  *      verifies every object, promotes it and invalidates the CDN).
@@ -82,6 +84,8 @@ try {
     const build = spawnSync('npm', ['run', 'build'], {
       stdio: 'inherit',
       shell: process.platform === 'win32',
+      // Vite bakes in VITE_* only: with APP_ID alone the bundle would ask players which app it is.
+      env: { ...process.env, VITE_APP_ID: appId },
     });
     if (build.status !== 0) process.exit(build.status ?? 1);
   }

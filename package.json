@@ -2,7 +2,7 @@
   "name": "the-construct",
   "version": "0.8.4",
   "private": true,
-  "description": "Starter repo for browser games on Crowded Kingdoms: engine-agnostic platform layer, three.js holodeck hub, pixi.js program scene, Crowdy Studio with client mods and the Ask/Build/Play agent, and in-app onboarding.",
+  "description": "Starter repo for browser games on Crowded Kingdoms: engine-agnostic platform layer, three.js holodeck hub, pixi.js program scene, a ck-exec world hub, Crowdy Studio with server and client mods and the Ask/Build/Play agent, and shell onboarding.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -19,23 +19,28 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "npm run test:unit && npm run test:headers",
+    "test": "npm run test:unit && npm run test:headers && npm run test:release",
     "test:unit": "vitest run",
     "test:headers": "node --test security-headers.test.mjs scripts/lib/dev-server-options.test.mjs",
+    "test:release": "bash scripts/ci/resolve-construct-release.test.sh && node --test scripts/ci/check-package-content.test.mjs && node scripts/ci/check-package-content.mjs packages/construct",
     "test:e2e": "playwright test",
     "check:pin": "node scripts/ci/check-sdk-pin.mjs",
+    "check:grid-program": "node scripts/ci/check-grid-program-bundle.mjs",
     "setup": "node scripts/setup.mjs",
     "seed": "node scripts/seed.mjs",
-    "smoke": "node scripts/smoke.mjs",
+    "deploy:exec": "node scripts/deploy-exec.mjs",
+    "build:exec-sources": "node scripts/build-exec-sources.mjs",
+    "smoke": "node --experimental-websocket scripts/smoke.mjs",
     "publish": "node scripts/publish.mjs"
   },
   "dependencies": {
-    "@crowdedkingdoms/crowdyjs": "17.6.0",
+    "@crowdedkingdoms/construct": "0.3.7",
+    "@crowdedkingdoms/crowdyjs": "18.2.0-test.1",
     "pixi.js": "^8.20.1",
     "three": "^0.185.1"
   },
   "devDependencies": {
-    "@crowdedkingdoms/crowdy-dsh": "0.3.4",
+    "@crowdedkingdoms/crowdy-dsh": "0.4.5-test.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^20.19.0",
@@ -47,5 +52,8 @@
     "typescript-eslint": "^8.46.0",
     "vite": "^6.4.3",
     "vitest": "^4.0.0"
-  }
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }

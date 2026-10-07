@@ -24,3 +24,13 @@ export interface CommonFileSeed {
 export const STARTER_TEMPLATES: readonly StarterTemplate[];
 export function commonFilesFor(template: StarterTemplate): CommonFileSeed[];
 export function commonFileFor(template: StarterTemplate): CommonFileSeed;
+
+export interface ProgramTemplate {
+  id: string;
+  title: string;
+  description: string;
+  path: string;
+  content: string;
+}
+export const PROGRAM_TEMPLATES: readonly ProgramTemplate[];
+export function programCommonFiles(): CommonFileSeed[];

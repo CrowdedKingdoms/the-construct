@@ -7,21 +7,26 @@
  * (`crowdyStudioCommonPublish`), where import is copy-by-value, so a later
  * seed never edits a player's project behind their back.
  *
- * Plain ES module: shared by the browser wizard and `scripts/seed.mjs`.
+ * SERVER starters are ck-exec mods: `ckx-sdk` crates under `exec/mods/`, built
+ * and tested with the rest of `exec/`, and carried here as strings by the
+ * generated `exec-mods.mjs` (`npm run build:exec-sources`). CLIENT starters are
+ * a mod's CLIENT half: one `crowdy-client-sdk` crate each, which the platform
+ * builds for the browser and the mod's grid serves to the players standing in
+ * it who consent. They live below as strings.
+ *
+ * Plain ES module: shared by `scripts/setup.mjs`, `seed.mjs` and `smoke.mjs`.
  */
+import { EXEC_MOD_SOURCES } from './exec-mods.mjs';
 
-const SDK_VERSION = '0.1.5';
+/** crowdy-client-sdk; the platform's build points this line at its own copy. */
+const CLIENT_SDK_VERSION = '0.1.0';
 
-function cargo(name, extraDeps = '', tickIntervalMs = null) {
-  const tick =
-    tickIntervalMs == null
-      ? ''
-      : `
-# How often the browser calls CLIENT on_tick (clamped 16–1000 ms).
-# 1000 = HUD/text. 50 = physics minigames (pool). 16 = shooters, if a tick stays cheap.
-[package.metadata.crowdy]
-tick_interval_ms = ${tickIntervalMs}
-`;
+/**
+ * A CLIENT half's Cargo.toml, within the platform build's rules: `[package]`,
+ * `[lib]` as a cdylib, `[package.metadata.crowdy] tick_interval_ms`, and
+ * dependencies on crowdy-client-sdk and serde_json only.
+ */
+function clientCargo(name, tickIntervalMs) {
   return `[package]
 name = "${name}"
 version = "0.1.0"
@@ -29,364 +34,128 @@ edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
-${tick}
-[dependencies]
-crowdy-compute-sdk = "${SDK_VERSION}"
-${extraDeps}`;
-}
 
-const SERDE_JSON_DEP = 'serde_json = "1"\n';
+# How often each visitor's browser calls tick (clamped 16–1000 ms).
+# 1000 = HUD/text. 50 = physics minigames (pool). 16 = shooters, if a tick stays cheap.
+[package.metadata.crowdy]
+tick_interval_ms = ${tickIntervalMs}
+
+[dependencies]
+crowdy-client-sdk = "${CLIENT_SDK_VERSION}"
+serde_json = "1"
+`;
+}
 
 /**
- * CLIENT: runs in the visitor's browser sandbox. Asks the host for its own
- * grid bounds (`grid_info`, answered locally by the broker), lists the actors
- * standing in the grid's first chunk (`actors_list`, routed to the game's
- * allowlisted host-call router) and renders a greeting through `hud_set`.
- * Presentation crosses as data; the game renders it as text, never HTML.
+ * CLIENT: asks the broker for the grid's bounds (`grid_info`, answered in the
+ * browser), lists the players standing in the grid's first chunk
+ * (`actors_list`, answered by the game's host-call router) and greets them
+ * through `hud_set`. Presentation crosses as data; the game renders it as
+ * text, never HTML.
  */
-const HUD_GREETER = `use crowdy_compute_sdk::{api, host_call};
-use serde_json::json;
+const HUD_GREETER = `//! HUD greeter: the CLIENT half of a mod. It runs in the browser of each player who stands in
+//! the mod's grid and consents to it (or trusts you), and greets whoever is in the grid's first
+//! chunk in the mod HUD.
 
+use crowdy_client_sdk as crowdy;
+use serde_json::{json, Value};
+
+/// The grid's low chunk. The broker answers grid_info with decimal strings.
 fn grid_origin() -> Option<(i64, i64, i64)> {
-    let info = host_call("grid_info", json!({})).ok()?;
+    let info = crowdy::api::grid_info().ok()?;
     let low = info.get("low")?;
-    let parse = |v: &serde_json::Value| v.as_str()?.parse::<i64>().ok();
-    Some((parse(low.get("x")?)?, parse(low.get("y")?)?, parse(low.get("z")?)?))
+    let coord = |axis: &str| low.get(axis)?.as_str()?.parse::<i64>().ok();
+    Some((coord("x")?, coord("y")?, coord("z")?))
 }
 
-fn on_init() {}
+fn init() {
+    crowdy::log(1, "hud greeter ready");
+}
 
-fn on_tick(_dt: u32) {
+fn tick(_dt_ms: u32) {
     let Some((x, y, z)) = grid_origin() else { return };
-    let actors = api::actors_list(x, y, z).unwrap_or_else(|_| json!({ "actors": [] }));
-    let rows = actors.get("actors").and_then(|a| a.as_array()).cloned().unwrap_or_default();
-    let names: Vec<String> = rows
+    let actors = crowdy::api::actors_list(x, y, z).unwrap_or_else(|_| json!({ "actors": [] }));
+    let rows = actors.get("actors").and_then(Value::as_array).cloned().unwrap_or_default();
+    let names: Vec<&str> = rows
         .iter()
-        .filter_map(|row| row.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
-        .filter(|n| !n.is_empty())
+        .filter_map(|row| row.get("name")?.as_str())
+        .filter(|name| !name.is_empty())
         .collect();
     let greeting = if names.is_empty() {
         "Nobody here yet.".to_string()
     } else {
         format!("Welcome, {}!", names.join(", "))
     };
-    // The host owns the HUD; this payload is rendered as text.
-    let _ = host_call(
-        "hud_set",
-        json!({ "payload": { "greeting": greeting, "here": rows.len(), "chunk": [x, y, z] } }),
-    );
-    // Mouse: crowdy::api::pointer_clicks() each tick. Drain {clicks, buttons,
-    // holdingMs}. Click-to-charge = left down, holdingMs["0"] while held, fire on up.
+    // The game owns the HUD; this payload is rendered as text.
+    let _ = crowdy::api::hud_set(json!({ "greeting": greeting, "here": rows.len(), "chunk": [x, y, z] }));
+    // Mouse: crowdy::api::pointer_clicks() each tick drains { clicks, buttons, holdingMs }.
+    // Click-to-charge = left down, holdingMs["0"] while held, fire on up.
 }
 
-fn on_invoke(_payload: &[u8]) -> Vec<u8> { Vec::new() }
+fn invoke(payload: &[u8]) -> Vec<u8> {
+    payload.to_vec()
+}
 
-crowdy_compute_sdk::register_module!(init: on_init, tick: on_tick, invoke: on_invoke);
+crowdy::register_module!(init: init, tick: tick, invoke: invoke);
 `;
 
 /**
- * CLIENT: plants one voxel in the middle of the owned grid so visitors see a
- * real block in the holodeck, not only HUD text. `voxel_set` replicates
- * through the chunk store (same path as Paint).
+ * CLIENT: places one voxel in the middle of the grid's first chunk, as the
+ * player running it, so everyone sees a real block in the holodeck and not only
+ * HUD text. `voxel_set` goes through the chunk store (the path Paint uses).
  */
-const VOXEL_MARKER = `use crowdy_compute_sdk::host_call;
-use serde_json::json;
-use std::sync::atomic::{AtomicBool, Ordering};
+const VOXEL_MARKER = `//! Voxel marker: the CLIENT half of a mod. In the browser of each player who stands in the mod's
+//! grid and consents to it, it places one block in the middle of the grid's first chunk, once per
+//! visit, as that player: it needs their update_voxel_data on the grid, and the HUD says whether
+//! it could.
 
-static PLACED: AtomicBool = AtomicBool::new(false);
+use crowdy_client_sdk as crowdy;
+use serde_json::{json, Value};
 
+/// The holodeck palette's stone.
+const MARKER: i32 = 1;
+/// The state blob lives as long as the page's worker: one attempt per visit.
+const TRIED: &[u8] = b"tried";
+
+/// The grid's low chunk. The broker answers grid_info with decimal strings.
 fn grid_origin() -> Option<(i64, i64, i64)> {
-    let info = host_call("grid_info", json!({})).ok()?;
+    let info = crowdy::api::grid_info().ok()?;
     let low = info.get("low")?;
-    let parse = |v: &serde_json::Value| v.as_str()?.parse::<i64>().ok();
-    Some((parse(low.get("x")?)?, parse(low.get("y")?)?, parse(low.get("z")?)?))
+    let coord = |axis: &str| low.get(axis)?.as_str()?.parse::<i64>().ok();
+    Some((coord("x")?, coord("y")?, coord("z")?))
 }
 
-fn on_init() {}
+fn init() {}
 
-fn on_tick(_dt: u32) {
-    if PLACED.load(Ordering::Relaxed) {
+fn tick(_dt_ms: u32) {
+    if crowdy::state_get() == TRIED {
         return;
     }
-    let Some((x, y, z)) = grid_origin() else { return };
-    let result = host_call(
-        "voxel_set",
-        json!({
-            "chunkX": x,
-            "chunkY": y,
-            "chunkZ": z,
-            "x": 8,
-            "y": 1,
-            "z": 8,
-            "voxelType": 1
-        }),
-    );
-    if result.is_ok() {
-        PLACED.store(true, Ordering::Relaxed);
-    }
-}
-
-fn on_invoke(_payload: &[u8]) -> Vec<u8> { Vec::new() }
-
-crowdy_compute_sdk::register_module!(init: on_init, tick: on_tick, invoke: on_invoke);
-`;
-
-/**
- * SERVER: runs in the platform scheduler as the grid owner, only while the
- * app has players. Counts the actors in the grid each tick and answers an
- * invoke with the latest count as JSON — the smallest possible "server
- * authority" a client (or a CLIENT mod) can ask for.
- */
-const BEACON = `use crowdy_compute_sdk::api;
-use serde_json::json;
-use std::sync::atomic::{AtomicU32, Ordering};
-
-static LAST_COUNT: AtomicU32 = AtomicU32::new(0);
-
-fn on_init() {}
-
-fn on_tick(_dt: u32) {
-    // The grid this module is bound to: chunk coordinates come from your claim.
-    // Replace with your grid's low corner, or read it from a model property.
-    let (x, y, z) = (0i64, 0i64, 0i64);
-    let actors = api::actors_list(x, y, z).unwrap_or_else(|_| json!({ "actors": [] }));
-    let count = actors.get("actors").and_then(|a| a.as_array()).map(|a| a.len()).unwrap_or(0);
-    LAST_COUNT.store(count as u32, Ordering::Relaxed);
-}
-
-fn on_invoke(_payload: &[u8]) -> Vec<u8> {
-    json!({ "present": LAST_COUNT.load(Ordering::Relaxed) }).to_string().into_bytes()
-}
-
-crowdy_compute_sdk::register_module!(init: on_init, tick: on_tick, invoke: on_invoke);
-`;
-
-/** Shared SERVER wire for construct.scene.v1 (catalog chunks + packed poses). */
-const SCENE_WIRE = `const EVENT_CATALOG: u16 = 0xC501;
-const EVENT_POSES: u16 = 0xC502;
-const SOURCE: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-
-fn b64(data: &[u8]) -> String {
-    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for chunk in data.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
-        let n = u32::from_be_bytes([0, b[0], b[1], b[2]]);
-        for i in 0..4 {
-            if i <= chunk.len() {
-                out.push(T[(n >> (18 - 6 * i) & 63) as usize] as char);
-            } else {
-                out.push('=');
-            }
+    let Some(chunk) = grid_origin() else { return };
+    crowdy::state_set(TRIED);
+    let text = match crowdy::api::voxel_set(chunk, (8, 1, 8), MARKER, None) {
+        Ok(reply) if reply.get("ok").and_then(Value::as_bool) != Some(false) => {
+            "Marker placed in the middle of the grid.".to_string()
         }
-    }
-    out
+        Ok(_) => "The marker was not placed here.".to_string(),
+        Err(error) => format!("The marker was not placed: {error}"),
+    };
+    let _ = crowdy::api::hud_set(json!({ "greeting": text }));
 }
 
-fn emit_state(event: u16, chunk: (i64, i64, i64), state: &[u8]) {
-    if 2 + state.len() > 1024 {
-        return;
-    }
-    let mut p = Vec::with_capacity(2 + state.len());
-    p.extend_from_slice(&event.to_le_bytes());
-    p.extend_from_slice(state);
-    let _ = api::emit_spatial("server_event", chunk, SOURCE, &b64(&p), 2, 0);
+fn invoke(payload: &[u8]) -> Vec<u8> {
+    payload.to_vec()
 }
 
-fn emit_catalog(rev: u32, json: &str, chunk: (i64, i64, i64)) {
-    let bytes = json.as_bytes();
-    let max = 1014usize;
-    let parts = ((bytes.len() + max - 1) / max).max(1).min(255) as u8;
-    for part in 0..parts {
-        let start = part as usize * max;
-        let end = (start + max).min(bytes.len());
-        let slice = &bytes[start..end];
-        let mut pkt = vec![0u8; 8 + slice.len()];
-        pkt[0..4].copy_from_slice(&rev.to_le_bytes());
-        pkt[4] = part;
-        pkt[5] = parts;
-        pkt[6..8].copy_from_slice(&(slice.len() as u16).to_le_bytes());
-        pkt[8..].copy_from_slice(slice);
-        emit_state(EVENT_CATALOG, chunk, &pkt);
-    }
-}
-
-struct Pose {
-    x: f32,
-    y: f32,
-    z: f32,
-    qx: f32,
-    qy: f32,
-    qz: f32,
-    qw: f32,
-    sx: f32,
-    sy: f32,
-    sz: f32,
-}
-
-fn quat_i16(v: f32) -> i16 {
-    (v.clamp(-1.0, 1.0) * 32767.0) as i16
-}
-
-fn scale_u8(v: f32) -> u8 {
-    let t = ((v.clamp(0.04, 8.0) - 0.04) / 7.96).clamp(0.0, 1.0);
-    (t * 255.0).round() as u8
-}
-
-fn emit_poses(rev: u32, chunk: (i64, i64, i64), poses: &[Pose]) {
-    let mut pkt = Vec::with_capacity(5 + poses.len() * 24);
-    pkt.extend_from_slice(&rev.to_le_bytes());
-    pkt.push(poses.len() as u8);
-    for (i, p) in poses.iter().enumerate() {
-        pkt.push(i as u8);
-        pkt.extend_from_slice(&p.x.to_le_bytes());
-        pkt.extend_from_slice(&p.y.to_le_bytes());
-        pkt.extend_from_slice(&p.z.to_le_bytes());
-        pkt.extend_from_slice(&quat_i16(p.qx).to_le_bytes());
-        pkt.extend_from_slice(&quat_i16(p.qy).to_le_bytes());
-        pkt.extend_from_slice(&quat_i16(p.qz).to_le_bytes());
-        pkt.extend_from_slice(&quat_i16(p.qw).to_le_bytes());
-        pkt.push(scale_u8(p.sx));
-        pkt.push(scale_u8(p.sy));
-        pkt.push(scale_u8(p.sz));
-    }
-    emit_state(EVENT_POSES, chunk, &pkt);
-}
+crowdy::register_module!(init: init, tick: tick, invoke: invoke);
 `;
 
-/**
- * SERVER: a parent box and a child that spins on a quaternion. Every visitor
- * on the grid sees it — they do not have to run a CLIENT companion.
- */
-const SPINNING_CHILD = `use crowdy_compute_sdk::api;
-use serde_json::json;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-${SCENE_WIRE}
-
-static LAST_CATALOG_MS: AtomicU64 = AtomicU64::new(0);
-const CHUNK: (i64, i64, i64) = (0, 0, 0);
-const REV: u32 = 1;
-
-fn catalog_json() -> String {
-    json!({
-        "v": 1,
-        "revision": REV,
-        "meshes": [],
-        "nodes": [
-            {"id":"root","kind":"box","x":8.0,"y":1.0,"z":8.0,"sx":0.8,"sy":0.8,"sz":0.8,"color":2132556},
-            {"id":"arm","parent":"root","kind":"box","x":0.7,"y":0.2,"z":0.0,"sx":0.2,"sy":0.2,"sz":0.8,"color":16755200}
-        ]
-    })
-    .to_string()
+/** A SERVER starter's files: the crate in `exec/mods/<id>`, as Common Files carry it. */
+function serverMod(id) {
+  const files = EXEC_MOD_SOURCES[id];
+  if (!files) throw new Error(`no exec/mods/${id}: run npm run build:exec-sources`);
+  return Object.entries(files).map(([path, content]) => ({ path, content }));
 }
-
-fn maybe_catalog() {
-    let now = crowdy_compute_sdk::now_ms();
-    let last = LAST_CATALOG_MS.load(Ordering::Relaxed);
-    if last != 0 && now.saturating_sub(last) < 3000 {
-        return;
-    }
-    LAST_CATALOG_MS.store(now, Ordering::Relaxed);
-    emit_catalog(REV, &catalog_json(), CHUNK);
-}
-
-fn on_init() {}
-
-fn on_tick(_dt: u32) {
-    maybe_catalog();
-    let t = (crowdy_compute_sdk::now_ms() as f32) / 1000.0;
-    let (s, c) = (t.sin(), t.cos());
-    emit_poses(REV, CHUNK, &[
-        Pose { x: 8.0, y: 1.0, z: 8.0, qx: 0.0, qy: s, qz: 0.0, qw: c, sx: 0.8, sy: 0.8, sz: 0.8 },
-        Pose { x: 0.7, y: 0.2, z: 0.0, qx: 0.0, qy: 0.0, qz: 0.0, qw: 1.0, sx: 0.2, sy: 0.2, sz: 0.8 },
-    ]);
-}
-
-fn on_invoke(_payload: &[u8]) -> Vec<u8> { Vec::new() }
-
-crowdy_compute_sdk::register_module!(init: on_init, tick: on_tick, invoke: on_invoke);
-`;
-
-/**
- * SERVER: a felt table, three balls, and a procedural-mesh cue whose handle
- * quaternion spins. Visitors who never accepted CLIENT still see it.
- */
-const POOL_CUE = `use crowdy_compute_sdk::api;
-use serde_json::json;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-${SCENE_WIRE}
-
-static LAST_CATALOG_MS: AtomicU64 = AtomicU64::new(0);
-const CHUNK: (i64, i64, i64) = (0, 0, 0);
-const REV: u32 = 1;
-
-fn cue_mesh() -> serde_json::Value {
-    let (hx, hy, hz) = (0.03_f64, 0.03_f64, 0.7_f64);
-    let positions = [
-        -hx, -hy, -hz,  hx, -hy, -hz,  hx,  hy, -hz, -hx,  hy, -hz,
-        -hx, -hy,  hz,  hx, -hy,  hz,  hx,  hy,  hz, -hx,  hy,  hz,
-    ];
-    let indices = [
-        0,1,2, 0,2,3, 4,6,5, 4,7,6,
-        0,4,5, 0,5,1, 3,2,6, 3,6,7,
-        0,3,7, 0,7,4, 1,5,6, 1,6,2,
-    ];
-    json!({
-        "id": "cue-mesh",
-        "kind": "mesh",
-        "color": 13932973,
-        "positions": positions,
-        "indices": indices
-    })
-}
-
-fn catalog_json() -> String {
-    json!({
-        "v": 1,
-        "revision": REV,
-        "meshes": [cue_mesh()],
-        "nodes": [
-            {"id":"felt","kind":"box","x":8.0,"y":0.78,"z":8.0,"sx":2.2,"sy":0.12,"sz":1.2,"color":1336939},
-            {"id":"ball-1","kind":"sphere","x":7.4,"y":0.92,"z":7.7,"sx":0.08,"sy":0.08,"sz":0.08,"color":16316664},
-            {"id":"ball-2","kind":"sphere","x":7.6,"y":0.92,"z":8.0,"sx":0.08,"sy":0.08,"sz":0.08,"color":13369344},
-            {"id":"ball-3","kind":"sphere","x":7.4,"y":0.92,"z":8.3,"sx":0.08,"sy":0.08,"sz":0.08,"color":220},
-            {"id":"cue","mesh":"cue-mesh","kind":"mesh","x":8.6,"y":1.05,"z":8.0,"sx":1.0,"sy":1.0,"sz":1.0,"color":13932973}
-        ]
-    })
-    .to_string()
-}
-
-fn maybe_catalog() {
-    let now = crowdy_compute_sdk::now_ms();
-    let last = LAST_CATALOG_MS.load(Ordering::Relaxed);
-    if last != 0 && now.saturating_sub(last) < 3000 {
-        return;
-    }
-    LAST_CATALOG_MS.store(now, Ordering::Relaxed);
-    emit_catalog(REV, &catalog_json(), CHUNK);
-}
-
-fn on_init() {}
-
-fn on_tick(_dt: u32) {
-    maybe_catalog();
-    let t = (crowdy_compute_sdk::now_ms() as f32) / 1400.0;
-    let (s, c) = ((t * 0.5).sin(), (t * 0.5).cos());
-    emit_poses(REV, CHUNK, &[
-        Pose { x: 8.0, y: 0.78, z: 8.0, qx: 0.0, qy: 0.0, qz: 0.0, qw: 1.0, sx: 2.2, sy: 0.12, sz: 1.2 },
-        Pose { x: 7.4, y: 0.92, z: 7.7, qx: 0.0, qy: 0.0, qz: 0.0, qw: 1.0, sx: 0.08, sy: 0.08, sz: 0.08 },
-        Pose { x: 7.6, y: 0.92, z: 8.0, qx: 0.0, qy: 0.0, qz: 0.0, qw: 1.0, sx: 0.08, sy: 0.08, sz: 0.08 },
-        Pose { x: 7.4, y: 0.92, z: 8.3, qx: 0.0, qy: 0.0, qz: 0.0, qw: 1.0, sx: 0.08, sy: 0.08, sz: 0.08 },
-        Pose { x: 8.6, y: 1.05, z: 8.0, qx: 0.0, qy: s, qz: 0.25 * t.sin(), qw: c, sx: 1.0, sy: 1.0, sz: 1.0 },
-    ]);
-}
-
-fn on_invoke(_payload: &[u8]) -> Vec<u8> { Vec::new() }
-
-crowdy_compute_sdk::register_module!(init: on_init, tick: on_tick, invoke: on_invoke);
-`;
 
 /** @type {import('./index.d.mts').StarterTemplate[]} */
 export const STARTER_TEMPLATES = [
@@ -395,10 +164,10 @@ export const STARTER_TEMPLATES = [
     title: 'HUD greeter',
     target: 'CLIENT',
     description:
-      'A browser mod that reads who is standing in your grid and greets them in the mod HUD. ' +
-      'Start here for CLIENT mods.',
+      "A mod's CLIENT half that reads who is standing in your grid and greets them in the mod HUD, " +
+      'in the browser of everyone there who consents to it. Start here for CLIENT mods.',
     files: [
-      { path: 'Cargo.toml', content: cargo('construct-hud-greeter', SERDE_JSON_DEP, 1000) },
+      { path: 'Cargo.toml', content: clientCargo('construct-hud-greeter', 1000) },
       { path: 'src/lib.rs', content: HUD_GREETER },
     ],
   },
@@ -407,22 +176,20 @@ export const STARTER_TEMPLATES = [
     title: 'Presence beacon',
     target: 'SERVER',
     description:
-      'A server module that counts actors in your grid each tick and answers an invoke with the count. ' +
-      'Start here for SERVER mods.',
-    files: [
-      { path: 'Cargo.toml', content: cargo('construct-beacon', SERDE_JSON_DEP) },
-      { path: 'src/lib.rs', content: BEACON },
-    ],
+      'A mod (ck-exec) that counts the players in your grid as they come and go and answers ' +
+      '`present` with the count. Start here for SERVER mods.',
+    files: serverMod('construct-beacon'),
   },
   {
     id: 'construct-voxel-marker',
     title: 'Voxel marker',
     target: 'CLIENT',
     description:
-      'Places one voxel in the centre of your grid. Other players see the block in the holodeck ' +
-      'because it writes the shared chunk store, not a private HUD.',
+      "A mod's CLIENT half that places one voxel in the centre of your grid, as the player running " +
+      'it. Other players see the block in the holodeck because it writes the shared chunk store, ' +
+      'not a private HUD.',
     files: [
-      { path: 'Cargo.toml', content: cargo('construct-voxel-marker', SERDE_JSON_DEP, 1000) },
+      { path: 'Cargo.toml', content: clientCargo('construct-voxel-marker', 1000) },
       { path: 'src/lib.rs', content: VOXEL_MARKER },
     ],
   },
@@ -431,36 +198,31 @@ export const STARTER_TEMPLATES = [
     title: 'Spinning child',
     target: 'SERVER',
     description:
-      'A parent box and a child that spin on a quaternion. Every visitor on the grid sees it — ' +
-      'they do not have to trust or run a CLIENT companion. Replace CHUNK with your claim.',
-    files: [
-      { path: 'Cargo.toml', content: cargo('construct-spinning-child', SERDE_JSON_DEP) },
-      { path: 'src/lib.rs', content: SPINNING_CHILD },
-    ],
+      'A mod (ck-exec) that builds a post with an arm swinging round it from voxels in the middle ' +
+      'of your grid, a quarter turn a second while someone is there. Every visitor sees it; ' +
+      'nobody has to trust or run a CLIENT half.',
+    files: serverMod('construct-spinning-child'),
   },
   {
     id: 'construct-pool-cue',
     title: 'Pool cue',
     target: 'SERVER',
     description:
-      'A felt table, three balls, and a procedural-mesh cue animated with quaternions. ' +
-      'Passersby who never accepted CLIENT still see the same scene.',
-    files: [
-      { path: 'Cargo.toml', content: cargo('construct-pool-cue', SERDE_JSON_DEP) },
-      { path: 'src/lib.rs', content: POOL_CUE },
-    ],
+      'A mod (ck-exec) that builds a pool table with three balls from voxels and strokes a cue ' +
+      'at the white ball while someone is there. Passers-by who never accepted CLIENT see it too.',
+    files: serverMod('construct-pool-cue'),
   },
 ];
 
 /**
  * The common-file form of a template, ready for `crowdyStudioCommonPublish`.
  *
- * Two entries per template: the entrypoint AND its Cargo.toml. The Studio's
- * blank project declares only `crowdy-compute-sdk`, and `host_call` takes a
- * `serde_json::Value`, so any template that builds JSON needs the `serde_json`
- * dependency declared — measured on 2026-09-07 as `E0432: unresolved import
- * serde_json` when only the entrypoint was imported. Players add both files;
- * each import defaults to the right destination path.
+ * Two entries per template: the entrypoint AND its Cargo.toml, because the
+ * crate's dependencies and tick travel in it. A CLIENT crate is a
+ * `crowdy-client-sdk` crate with `serde_json` (measured on 2026-09-07 as
+ * `E0432: unresolved import serde_json` when only the entrypoint was imported);
+ * a SERVER crate is a `ckx-sdk` mod. Players add both files over a new
+ * project's; each import defaults to the right destination path.
  */
 export function commonFilesFor(template) {
   const entrypoint = template.files.find((file) => file.path === 'src/lib.rs');
@@ -482,7 +244,10 @@ export function commonFilesFor(template) {
     {
       slug: `${template.id}-cargo`,
       title: `${template.title} Cargo.toml`,
-      description: `Cargo.toml for "${template.title}": declares serde_json beside the compute SDK.`,
+      description:
+        template.target === 'SERVER'
+          ? `Cargo.toml for "${template.title}": a ckx-sdk mod (the platform supplies ckx-sdk) with serde.`
+          : `Cargo.toml for "${template.title}": a mod's CLIENT half on crowdy-client-sdk (the platform supplies it) with serde_json.`,
       path: 'Cargo.toml',
       target: template.target,
       tags: [...tags, 'cargo'],
@@ -494,4 +259,60 @@ export function commonFilesFor(template) {
 /** Back-compat alias: the entrypoint entry only. */
 export function commonFileFor(template) {
   return commonFilesFor(template)[0];
+}
+
+/**
+ * JS grid programs (DN-10): plain JavaScript a player runs INSIDE their grid
+ * with the full CrowdyJS SDK. The Studio agent runs one with
+ * `grid_program_run`; the Construct loads it into a network-less sandbox whose
+ * only way out is a grid-scoped relay. A program is a module whose default
+ * export receives `{ client, grid, appId, gridId, box, log }`.
+ */
+export const PROGRAM_TEMPLATES = [
+  {
+    id: 'construct-fountain-program',
+    title: 'Fountain (JS grid program)',
+    description:
+      'Speaks from the middle of your grid every few seconds (heard up to two chunks past its edge) ' +
+      'and notices wishes said nearby.',
+    path: 'programs/fountain.js',
+    content: `// A JS grid program: it runs in YOUR grid, with the full CrowdyJS SDK.
+// Everything it sends starts inside the grid; the server refuses the rest.
+export default async function ({ client, grid, appId, box, log }) {
+  log(\`fountain running in grid \${grid.gridId}\`);
+  const uuid = 'f'.repeat(32);
+  const centre = { x: String(box.low.x), y: String(box.low.y), z: String(box.low.z) };
+
+  // Heard by anyone within two chunks, even outside the grid.
+  setInterval(() => {
+    grid.send
+      .text({ chunk: centre, uuid, text: 'the fountain gurgles', distance: 2 })
+      .catch((error) => log('send failed:', error.message));
+  }, 5_000);
+
+  // Chat said near the grid reaches the program too.
+  client.udp.subscribe(
+    {
+      text: (note) => {
+        if (/wish/i.test(note.text ?? '')) log('someone made a wish:', note.text);
+      },
+    },
+    appId,
+  );
+}
+`,
+  },
+];
+
+/** Common Files for the JS grid program templates (target CLIENT, under programs/). */
+export function programCommonFiles() {
+  return PROGRAM_TEMPLATES.map((program) => ({
+    slug: program.id,
+    title: program.title,
+    description: `${program.description} Add it to a project as ${program.path}, then ask the agent to run it.`,
+    path: program.path,
+    target: 'CLIENT',
+    tags: ['crowdy-studio', 'the-construct', 'grid-program', 'starter'],
+    content: program.content,
+  }));
 }

@@ -1,0 +1,82 @@
+# @crowdedkingdoms/construct
+
+The Construct framework: the Crowded Kingdoms platform layer and engine loop
+that [the-construct](https://github.com/CrowdedKingdoms/the-construct) starter
+and the games built on it share.
+
+| Layer | What it does |
+|---|---|
+| `engine/` | `GameLoop`, `SceneRouter`, `Input`, `Controls`, the `GameScene` contract |
+| `platform/` | Hosted sign-in and app entry (`AuthService`, `NetworkManager`), `GameSession`, World Stores presence and the pose codec, chat, voice, webcam, envScope storage |
+| `platform/exec/`, `platform/model/` | The game's world hub on ck-exec (`WorldHub`, one connection per page as `NetworkManager.worldHub`) and `ModelService`, which reads the pulse, programs and progression from it |
+| `platform/studio/` | The Crowdy Studio dock (a project runs as a ck-exec mod and its CLIENT half), grid claims and the world hub's claim registry (`GridService`), the CLIENT halves of the grid the player stands in (`GridClientHalves`, over CrowdyJS's `ExecClientHalves`) and the host calls they reach, the agent's player host |
+| `grid/` | JS grid programs (`GridProgramRunner`): player JavaScript with the full CrowdyJS SDK, sandboxed, relayed with a grid-scoped token |
+| `node/` | `security-headers` (site, `/dsh/`, `/grid-program.html`), `vite-plugins`, `construct-copy-dsh` |
+| `sandbox/boot` | The grid program sandbox bootstrap |
+
+It ships **TypeScript source** for Vite (it uses `?worker&url` and
+`import.meta.env`). Peer dependencies: `@crowdedkingdoms/crowdyjs` 18 (0.3.0
+and later, 18.0.1 from 0.3.1; the 0.2 line peers on 17) and, for the Studio agent pane,
+`@crowdedkingdoms/crowdy-dsh` 0.4+. On a
+prerelease tier the ranges name each `X.Y.Z` line they admit, because npm
+matches a prerelease only against a comparator on the same `X.Y.Z`. A game can
+take a new CrowdyJS line only once a construct release names it (until then
+`npm install` refuses the pin with `ERESOLVE`); npm lets an unnamed crowdy-dsh
+line through with a warning, but keep that pin on a named line too.
+
+## Installing it
+
+Releases are on npm under one dist-tag per tier, and a game pins the exact
+version of its own tier, as it pins CrowdyJS:
+
+```bash
+npm install --save-exact @crowdedkingdoms/construct@dev   # an X.Y.Z-dev.N build
+```
+
+`dev` is `X.Y.Z-dev.N`, `test` is `X.Y.Z-test.N`, and `prod` is `X.Y.Z` on
+`latest`. Each is published by the-construct's `publish-construct.yml` from a
+`construct/<tier>/vX.Y.Z` tag on a commit already in that tier's branch.
+
+## Using it in a game
+
+`ModelService` and `GridService` call a world hub on ck-exec with the endpoints
+the starter's `exec/construct` serves (`world`, `programs`, `progress`,
+`claims`, `record_claim`, `release_claim`). The defaults name the starter's hub,
+type `world` key `main`; a game whose hub has another name says so at boot:
+
+```ts
+import { configureWorldHub, GameSession, GameLoop } from '@crowdedkingdoms/construct';
+
+configureWorldHub({ nodeType: 'realm', key: 'main' });
+```
+
+- Set `VITE_GAME_NAME` for the Studio dock and boot card.
+- Serve `grid-program.html` (a one-line page whose module imports
+  `@crowdedkingdoms/construct/sandbox/boot`) and add it to
+  `build.rollupOptions.input`.
+- In `vite.config.ts`:
+
+```ts
+import { constructHeaderPlugins } from '@crowdedkingdoms/construct/node/vite-plugins';
+import {
+  dshSecurityHeaders,
+  gridProgramSecurityHeaders,
+  securityHeaders,
+} from '@crowdedkingdoms/construct/node/security-headers';
+
+plugins: constructHeaderPlugins({
+  dshHeaders: dshSecurityHeaders({ apiOrigins: [apiOrigin] }),
+  gridProgramHeaders: gridProgramSecurityHeaders(),
+}),
+```
+
+- `construct-copy-dsh` (in `predev` / `prebuild`) copies the agent harness
+  into `public/dsh/`.
+
+## Setup scripts
+
+`@crowdedkingdoms/construct/platform/onboarding/steps` provisions an app
+(org, app, access tier, redirect URIs, grid claim policy, your ck-exec code
+(`deployExec`: `execBuild` + `execDeploy`), Studio Common Files, agent policy).
+Pass your own `exec` (manifest, crates, and a client holding your session on
+the app's datacenter) and `commonFiles`.

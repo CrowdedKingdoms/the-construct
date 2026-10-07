@@ -4,7 +4,7 @@
  * stops the boot. One element, swapped content, so a player never sees two
  * dialogs at once.
  */
-import { API_HTTP_URL, API_TIER, GAME_NAME } from '@/platform/config';
+import { API_HTTP_URL, API_TIER, GAME_NAME } from '@crowdedkingdoms/construct/platform/config';
 import { clear, el } from '@/ui/dom';
 
 export class BootCard {

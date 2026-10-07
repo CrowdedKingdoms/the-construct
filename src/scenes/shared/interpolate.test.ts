@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { NEUTRAL_POSE, type Pose } from '@/platform/realtime/actorCodec';
-import type { RemotePlayer } from '@/platform/realtime/WorldStores';
+import { NEUTRAL_POSE, type Pose } from '@crowdedkingdoms/construct/platform/realtime/actorCodec';
+import type { RemotePlayer } from '@crowdedkingdoms/construct/platform/realtime/WorldStores';
 import { RENDER_DELAY_MS, displayPose, tintColor } from '@/scenes/shared/interpolate';
 
 function player(samples: Array<{ x: number; vx?: number; receivedAt: number }>): RemotePlayer {
