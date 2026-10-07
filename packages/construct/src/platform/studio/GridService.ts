@@ -122,7 +122,7 @@ export class GridService {
 
   /** The grid at `chunk` as this player may know it, or null for open world. */
   async lookup(chunk: ChunkCoord): Promise<GridSnapshot | null> {
-    const mine = this.ownedAt(chunk);
+    const mine = this.ownedAt(chunk) ?? (await this.discoverOwned(chunk));
     if (mine) {
       const refreshed = await this.refreshOwnedKeys(chunk, mine);
       // A grid claimed before the registry existed (or from a browser whose registry write
@@ -176,6 +176,49 @@ export class GridService {
 
   // ---------------------------------------------------------------------------
 
+  /**
+   * A fresh browser (another device, another origin) has no remembered claim.
+   * App admins can read the grid under their feet, including a claim wider
+   * than the single chunk stored in the Claim registry.
+   */
+  private async discoverOwned(chunk: ChunkCoord): Promise<OwnedRecord | null> {
+    const userId = this.network.user?.userId;
+    if (!userId) return null;
+    try {
+      const rows = (await this.network.game.gameApps.nearbyPermissions({
+        appId: this.requireAppId(),
+        userId,
+        lowChunk: chunkInput(chunk),
+        highChunk: chunkInput(chunk),
+      })) as Array<{
+        gridId?: unknown;
+        permissionKeys?: unknown;
+        lowChunk?: unknown;
+        highChunk?: unknown;
+      }>;
+      let best: OwnedRecord | null = null;
+      let bestVolume = 0n;
+      for (const row of rows) {
+        const gridId = String(row.gridId ?? '');
+        const bounds = gridBoundsFrom(row.lowChunk, row.highChunk);
+        if (!gridId || !bounds || !gridBoundsContain(bounds, chunk)) continue;
+        const keys = row.permissionKeys;
+        const effectiveKeys = studioPermissions(Array.isArray(keys) ? keys : null).effectiveKeys;
+        if (effectiveKeys.length === 0) continue;
+        const volume = boundsVolume(bounds);
+        if (best && volume >= bestVolume) continue;
+        best = { gridId, bounds, effectiveKeys };
+        bestVolume = volume;
+      }
+      if (!best) return null;
+      this.owned.set(chunkKey(chunk), best);
+      this.saveOwned();
+      return best;
+    } catch {
+      return null;
+    }
+  }
+
   private ownedAt(chunk: ChunkCoord): OwnedRecord | null {
     const direct = this.owned.get(chunkKey(chunk));
     if (direct) return direct;
@@ -200,6 +243,22 @@ export class GridService {
       })) as Array<{ gridId?: unknown; permissionKeys?: unknown }>;
       const row = rows.find((r) => String(r.gridId) === record.gridId);
       if (!row || !Array.isArray(row.permissionKeys)) return null;
+      const bounds = gridBoundsFrom(
+        (row as { lowChunk?: unknown }).lowChunk,
+        (row as { highChunk?: unknown }).highChunk,
+      );
+      if (
+        bounds &&
+        (bounds.low.x !== record.bounds.low.x ||
+          bounds.low.y !== record.bounds.low.y ||
+          bounds.low.z !== record.bounds.low.z ||
+          bounds.high.x !== record.bounds.high.x ||
+          bounds.high.y !== record.bounds.high.y ||
+          bounds.high.z !== record.bounds.high.z)
+      ) {
+        record.bounds = bounds;
+        this.saveOwned();
+      }
       const keys = studioPermissions(row.permissionKeys).effectiveKeys;
       if (keys.join() !== record.effectiveKeys.join()) {
         record.effectiveKeys = keys;
@@ -292,4 +351,13 @@ export class GridService {
   private saveOwned(): void {
     writeScoped(OWNED_KEY, JSON.stringify(Object.fromEntries(this.owned)));
   }
+}
+
+function boundsVolume(bounds: GridBounds): bigint {
+  const span = (low: string, high: string) => BigInt(high) - BigInt(low) + 1n;
+  return (
+    span(bounds.low.x, bounds.high.x) *
+    span(bounds.low.y, bounds.high.y) *
+    span(bounds.low.z, bounds.high.z)
+  );
 }

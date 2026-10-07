@@ -44,6 +44,33 @@ export function claimedChunkAabb(bounds: GridBounds): WorldAabb {
   return gridWorldBounds(toBrokerBounds(bounds));
 }
 
+/** Metres outside the claim on the ground plane. Zero when the point is inside. */
+export function distanceOutsideClaim(
+  bounds: GridBounds,
+  point: { x: number; y: number; z: number },
+): number {
+  const box = claimedChunkAabb(bounds);
+  const dx = Math.max(box.minX - point.x, 0, point.x - box.maxX);
+  const dz = Math.max(box.minZ - point.z, 0, point.z - box.maxZ);
+  return Math.hypot(dx, dz);
+}
+
+/** Half-open world box, matching `gridWorldBounds` and `worldToChunk`. */
+export function pointInClaimedChunk(
+  bounds: GridBounds,
+  point: { x: number; y: number; z: number },
+): boolean {
+  const box = claimedChunkAabb(bounds);
+  return (
+    point.x >= box.minX &&
+    point.x < box.maxX &&
+    point.y >= box.minY &&
+    point.y < box.maxY &&
+    point.z >= box.minZ &&
+    point.z < box.maxZ
+  );
+}
+
 export function claimedChunkBoxTransform(aabb: WorldAabb): {
   x: number;
   y: number;
@@ -91,13 +118,43 @@ export class ClaimedChunkLayer {
     side: THREE.DoubleSide,
     fog: false,
   });
-  /** Outward faces only: solid from outside, open once the camera is inside. */
+  /**
+   * Outward faces only, so a camera already inside sees through. The shell is
+   * hidden once the avatar is inside, so the follow camera can sit outside
+   * the claim and still see the mod. It returns when the avatar leaves.
+   */
   private readonly shellGeometry = new THREE.BoxGeometry(1, 1, 1);
   private readonly shellMaterial = new THREE.MeshBasicMaterial({
     color: 0x141820,
     side: THREE.FrontSide,
     depthWrite: true,
     fog: false,
+  });
+  private readonly loadingMaterial = new THREE.ShaderMaterial({
+    transparent: true,
+    side: THREE.FrontSide,
+    depthWrite: true,
+    fog: false,
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: `
+      varying vec3 vPos;
+      void main() {
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      varying vec3 vPos;
+      void main() {
+        float scan = fract(vPos.y * 6.0 - uTime * 0.35);
+        float band = smoothstep(0.0, 0.08, scan) * smoothstep(0.28, 0.08, scan);
+        float pulse = 0.55 + 0.45 * sin(uTime * 2.2);
+        vec3 base = vec3(0.05, 0.09, 0.14);
+        vec3 glow = vec3(0.15, 0.82, 0.92);
+        gl_FragColor = vec4(mix(base, glow, band * pulse), 0.94);
+      }
+    `,
   });
 
   constructor(scene: THREE.Scene) {
@@ -107,7 +164,23 @@ export class ClaimedChunkLayer {
     scene.add(this.group);
   }
 
-  sync(grids: readonly ClaimedChunkSpec[]): void {
+  /** Advance the wall scan. `nowMs` is the frame clock. */
+  tick(nowMs: number): void {
+    const time = this.loadingMaterial.uniforms.uTime;
+    if (time) time.value = nowMs / 1000;
+  }
+
+  /**
+   * `avatar` is the local body. A claim it is standing in drops its shell
+   * only once `openGridIds` says the mod is ready. Until then the wall stays
+   * up and, while `loadingGridIds` contains it, plays the loading scan.
+   */
+  sync(
+    grids: readonly ClaimedChunkSpec[],
+    avatar: { x: number; y: number; z: number } | null = null,
+    openGridIds: ReadonlySet<string> = new Set(),
+    loadingGridIds: ReadonlySet<string> = new Set(),
+  ): void {
     const want = new Set(grids.map((grid) => grid.gridId));
     for (const [id, entry] of this.entries) {
       if (want.has(id)) continue;
@@ -139,6 +212,11 @@ export class ClaimedChunkLayer {
       entry.floor.scale.set(t.sx, t.sz, 1);
       entry.group.position.set(t.x, t.y, t.z);
       entry.group.visible = true;
+      const inside = avatar !== null && pointInClaimedChunk(grid.bounds, avatar);
+      const open = inside && openGridIds.has(grid.gridId);
+      const loading = loadingGridIds.has(grid.gridId);
+      entry.shell.visible = !open;
+      entry.shell.material = loading && !open ? this.loadingMaterial : this.shellMaterial;
     }
   }
 
@@ -150,6 +228,7 @@ export class ClaimedChunkLayer {
     this.floorGeometry.dispose();
     this.lineMaterial.dispose();
     this.shellMaterial.dispose();
+    this.loadingMaterial.dispose();
     this.floorMaterial.dispose();
   }
 }
