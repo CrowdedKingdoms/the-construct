@@ -1,0 +1,281 @@
+/**
+ * The host side of CLIENT mods: what a sandboxed player module (the Studio's
+ * preview, or a grid's CLIENT half, `clientHalves.ts`) may ask the game for.
+ *
+ * The SDK's `PlayerCodeBroker` has already validated every call against the
+ * platform allowlist, clamped chunk coordinates to the mod's grid AABB, rate-
+ * limited it, and answered `grid_info` / `hud_set` / `overlay_draw` itself.
+ * What reaches `routeClientHostCall` is world_read, `voxel_set`, and
+ * `pointer_clicks`, in the argument shapes `crowdy-client-sdk` sends. Reads
+ * return only what the running player can already lawfully see. Writes go
+ * through ChunkStore.setVoxel (optimistic + UDP) and markDirty (durable
+ * write-back), the same route Paint uses. Never hand a mod the raw client.
+ */
+import type { PlayerCodeGridBounds, PlayerCodeHostCall } from '@crowdedkingdoms/crowdyjs';
+
+export interface ClientModHostReads {
+  actorsInChunk(x: bigint, y: bigint, z: bigint): Array<Record<string, unknown>>;
+  chunkVoxels(x: bigint, y: bigint, z: bigint): { voxelsBase64: string | null } | null;
+}
+
+export interface ClientModHostWrites {
+  setVoxel(input: {
+    chunk: { x: number; y: number; z: number };
+    x: number;
+    y: number;
+    z: number;
+    voxelType: number;
+    state?: string;
+  }): Promise<boolean>;
+}
+
+export interface ClientModHostInput {
+  drainPointerClicks(): unknown;
+}
+
+/** The host calls this game answers. Exported so the docs and tests agree. */
+export const OFFERED_HOST_CALLS = [
+  'actors_list',
+  'actors_list_radius',
+  'chunk_get',
+  'voxels_list',
+  'voxel_set',
+  'pointer_clicks',
+] as const;
+
+/** One zero byte, base64: the smallest non-empty voxel state the API accepts. */
+export const DEFAULT_VOXEL_STATE = 'AA==';
+
+/** `actors_list_radius` reaches this far, as the platform clamps it. */
+const MAX_RADIUS_XZ = 3;
+const MAX_RADIUS_Y = 1;
+
+function toBigInt(value: unknown): bigint {
+  return BigInt(value as string | number | bigint);
+}
+
+function radius(value: unknown, max: number): bigint {
+  const requested = Number(value ?? 0);
+  return BigInt(Number.isFinite(requested) ? Math.max(0, Math.min(max, Math.floor(requested))) : 0);
+}
+
+export class HostCallRefusedError extends Error {
+  constructor(readonly fn: string) {
+    super(`host call '${fn}' is not offered by this game`);
+    this.name = 'HostCallRefusedError';
+  }
+}
+
+export async function routeClientHostCall(
+  call: PlayerCodeHostCall,
+  reads: ClientModHostReads,
+  grid?: PlayerCodeGridBounds,
+  writes?: ClientModHostWrites,
+  input?: ClientModHostInput,
+): Promise<unknown> {
+  const { fn, args } = call;
+  switch (fn) {
+    case 'actors_list':
+      return { actors: reads.actorsInChunk(toBigInt(args.x), toBigInt(args.y), toBigInt(args.z)) };
+    case 'actors_list_radius': {
+      const origin = { x: toBigInt(args.x), y: toBigInt(args.y), z: toBigInt(args.z) };
+      const rXz = radius(args.radiusXz ?? args.radius ?? args.r, MAX_RADIUS_XZ);
+      const rY = radius(args.radiusY, MAX_RADIUS_Y);
+      const low = grid
+        ? {
+            x: maxBig(grid.low.x, origin.x - rXz),
+            y: maxBig(grid.low.y, origin.y - rY),
+            z: maxBig(grid.low.z, origin.z - rXz),
+          }
+        : origin;
+      const high = grid
+        ? {
+            x: minBig(grid.high.x, origin.x + rXz),
+            y: minBig(grid.high.y, origin.y + rY),
+            z: minBig(grid.high.z, origin.z + rXz),
+          }
+        : origin;
+      const actors: Array<Record<string, unknown>> = [];
+      for (let x = low.x; x <= high.x; x++)
+        for (let y = low.y; y <= high.y; y++)
+          for (let z = low.z; z <= high.z; z++) actors.push(...reads.actorsInChunk(x, y, z));
+      return { actors };
+    }
+    case 'chunk_get':
+    case 'voxels_list': {
+      const chunk = reads.chunkVoxels(toBigInt(args.x), toBigInt(args.y), toBigInt(args.z));
+      if (!chunk) return fn === 'chunk_get' ? { voxelsBase64: null } : { voxels: [] };
+      return fn === 'chunk_get'
+        ? { voxelsBase64: chunk.voxelsBase64 }
+        : { voxels: voxelsFromBase64(chunk.voxelsBase64) };
+    }
+    case 'voxel_set': {
+      if (!writes || !grid) throw new HostCallRefusedError(fn);
+      const parsed = parseVoxelSetArgs(args);
+      if (!parsed) return { ok: false, error: 'invalid voxel_set arguments' };
+      if (!chunkInGrid(parsed.chunk, grid)) return { ok: false, error: 'out_of_grid' };
+      const ok = await writes.setVoxel({
+        chunk: parsed.chunk,
+        x: parsed.x,
+        y: parsed.y,
+        z: parsed.z,
+        voxelType: parsed.voxelType,
+        state: parsed.state,
+      });
+      return { ok };
+    }
+    case 'pointer_clicks': {
+      if (!input) throw new HostCallRefusedError(fn);
+      return input.drainPointerClicks();
+    }
+    default:
+      throw new HostCallRefusedError(fn);
+  }
+}
+
+function intInRange(value: unknown, min: number, max: number): number | null {
+  const n =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^-?\d+$/.test(value)
+        ? Number(value)
+        : typeof value === 'bigint'
+          ? Number(value)
+          : NaN;
+  if (!Number.isInteger(n) || n < min || n > max) return null;
+  return n;
+}
+
+function coordField(record: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (record[key] !== undefined) return record[key];
+  }
+  return undefined;
+}
+
+function asCoord3(value: unknown): { x: unknown; y: unknown; z: unknown } | null {
+  if (Array.isArray(value) && value.length >= 3) {
+    return { x: value[0], y: value[1], z: value[2] };
+  }
+  if (value && typeof value === 'object') {
+    const rec = value as Record<string, unknown>;
+    return { x: rec.x, y: rec.y, z: rec.z };
+  }
+  return null;
+}
+
+/**
+ * Accept the SDKs' flattened host-call JSON and the tuple shape. The chunk is `chunkX/Y/Z`, the
+ * fields the broker checks against the grid, whenever any of them is present; `args.chunk` only
+ * when none is. The caller still checks the chunk against the grid.
+ */
+export function parseVoxelSetArgs(args: Record<string, unknown>): {
+  chunk: { x: number; y: number; z: number };
+  x: number;
+  y: number;
+  z: number;
+  voxelType: number;
+  state: string;
+} | null {
+  const flat = ['chunkX', 'chunkY', 'chunkZ'].some((key) => args[key] !== undefined);
+  const chunkRaw = flat
+    ? { x: args.chunkX, y: args.chunkY, z: args.chunkZ }
+    : (asCoord3(args.chunk) ??
+      ({
+        x: coordField(args, 'chunk_x'),
+        y: coordField(args, 'chunk_y'),
+        z: coordField(args, 'chunk_z'),
+      } as { x: unknown; y: unknown; z: unknown }));
+  const voxelRaw =
+    asCoord3(args.voxel) ??
+    ({
+      x: coordField(args, 'voxelX', 'x', 'vx'),
+      y: coordField(args, 'voxelY', 'y', 'vy'),
+      z: coordField(args, 'voxelZ', 'z', 'vz'),
+    } as { x: unknown; y: unknown; z: unknown });
+  const cx = intInRange(chunkRaw.x, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
+  const cy = intInRange(chunkRaw.y, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
+  const cz = intInRange(chunkRaw.z, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
+  const x = intInRange(voxelRaw.x, 0, 15);
+  const y = intInRange(voxelRaw.y, 0, 15);
+  const z = intInRange(voxelRaw.z, 0, 15);
+  const voxelType = intInRange(coordField(args, 'voxelType', 'voxel_type', 'type'), 0, 255);
+  if (
+    cx === null ||
+    cy === null ||
+    cz === null ||
+    x === null ||
+    y === null ||
+    z === null ||
+    voxelType === null
+  ) {
+    return null;
+  }
+  const stateRaw = coordField(args, 'state', 'state_base64', 'stateBase64');
+  const state =
+    typeof stateRaw === 'string' && stateRaw.length > 0 ? stateRaw : DEFAULT_VOXEL_STATE;
+  return { chunk: { x: cx, y: cy, z: cz }, x, y, z, voxelType, state };
+}
+
+/** Sparse `{x,y,z,voxelType}` rows for the non-zero cells of a dense grid. */
+export function voxelsFromBase64(
+  voxelsBase64: string | null,
+): Array<{ x: number; y: number; z: number; voxelType: number }> {
+  if (!voxelsBase64) return [];
+  const binary = atob(voxelsBase64);
+  const out: Array<{ x: number; y: number; z: number; voxelType: number }> = [];
+  for (let i = 0; i < binary.length && i < 4096; i++) {
+    const type = binary.charCodeAt(i);
+    if (type === 0) continue;
+    out.push({ x: i & 15, y: (i >> 4) & 15, z: (i >> 8) & 15, voxelType: type });
+  }
+  return out;
+}
+
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+  return btoa(binary);
+}
+
+/**
+ * The game's own router first (local reads, optimistic writes); anything it
+ * does not offer goes to `serverCalls` when the game supplied it.
+ */
+export async function routeWithFallback(
+  call: PlayerCodeHostCall,
+  local: () => Promise<unknown>,
+  serverCalls?: (call: PlayerCodeHostCall) => Promise<unknown>,
+): Promise<unknown> {
+  try {
+    return await local();
+  } catch (error) {
+    if (error instanceof HostCallRefusedError && serverCalls) return serverCalls(call);
+    throw error;
+  }
+}
+
+function chunkInGrid(
+  chunk: { x: number; y: number; z: number },
+  grid: PlayerCodeGridBounds,
+): boolean {
+  const x = BigInt(chunk.x);
+  const y = BigInt(chunk.y);
+  const z = BigInt(chunk.z);
+  return (
+    x >= grid.low.x &&
+    x <= grid.high.x &&
+    y >= grid.low.y &&
+    y <= grid.high.y &&
+    z >= grid.low.z &&
+    z <= grid.high.z
+  );
+}
+
+function minBig(a: bigint, b: bigint): bigint {
+  return a < b ? a : b;
+}
+
+function maxBig(a: bigint, b: bigint): bigint {
+  return a > b ? a : b;
+}

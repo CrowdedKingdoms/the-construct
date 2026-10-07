@@ -11,22 +11,30 @@
  */
 import '@/style.css';
 
-import { Controls } from '@/engine/controls';
-import { GameLoop } from '@/engine/GameLoop';
-import { Input } from '@/engine/Input';
-import { SceneRouter } from '@/engine/SceneRouter';
-import { AuthService } from '@/platform/auth/AuthService';
+import { Controls } from '@crowdedkingdoms/construct/engine/controls';
+import { GameLoop } from '@crowdedkingdoms/construct/engine/GameLoop';
+import { Input } from '@crowdedkingdoms/construct/engine/Input';
+import { SceneRouter } from '@crowdedkingdoms/construct/engine/SceneRouter';
+import { AuthService } from '@crowdedkingdoms/construct/platform/auth/AuthService';
 import {
   APP_ID_STORAGE_KEY,
   BUILD_APP_ID,
   GAME_NAME,
   STUDIO_WALLET_URL,
   resolveAppId,
-} from '@/platform/config';
-import { ensureEnvScope, readScoped, writeScoped } from '@/platform/envScope';
-import { GameSession } from '@/platform/GameSession';
-import { NetworkManager, messageOf, type AppRoute } from '@/platform/network/NetworkManager';
-import { HOLODECK_SCENE_ID, HOLODECK_SPAWN, programById } from '@/platform/programs';
+} from '@crowdedkingdoms/construct/platform/config';
+import {
+  ensureEnvScope,
+  readScoped,
+  writeScoped,
+} from '@crowdedkingdoms/construct/platform/envScope';
+import { GameSession } from '@crowdedkingdoms/construct/platform/GameSession';
+import {
+  NetworkManager,
+  messageOf,
+  type AppRoute,
+} from '@crowdedkingdoms/construct/platform/network/NetworkManager';
+import { HOLODECK_SCENE_ID, HOLODECK_SPAWN, programById } from '@/game/programs';
 import { HolodeckScene } from '@/scenes/holodeck-three/HolodeckScene';
 import { PaintScene } from '@/scenes/program-pixi/PaintScene';
 import { BootCard } from '@/ui/BootCard';
@@ -139,6 +147,11 @@ async function enterAndPlay(route: AppRoute): Promise<void> {
 async function startGame(): Promise<void> {
   await stopGame();
   const session = new GameSession(network);
+  // Dev builds only: a handle for the IDE browser and the multiplayer e2e to
+  // drive the session (grid programs, grid channels) without UI clicks.
+  if (import.meta.env.DEV) {
+    (window as unknown as { __construct?: unknown }).__construct = { session, network };
+  }
   card.setStatus('Loading your save…');
   const saved = await session.loadSave();
 
@@ -153,6 +166,8 @@ async function startGame(): Promise<void> {
     signOut: () => void signOut(),
     toggleCamera: () => void session.webcam.toggle(),
     toggleVoice: () => void session.voice.toggle(),
+    stopClientHalf: (modId) => void session.studio.stopClientHalf(modId),
+    forgetClientHalfAuthor: (authorId) => void session.studio.forgetClientHalfAuthor(authorId),
     ...(studioWalletUrl
       ? {
           openWallet: () => {
@@ -169,6 +184,8 @@ async function startGame(): Promise<void> {
     suppressGameplayInput: () => input.suppress(),
     onLayoutChange: (rightInset) => loop.setRightInset(rightInset),
     notify: (text, tone) => hud.toast(text, tone),
+    confirmTrust: (summary, { signal }) =>
+      hud.ask(summary, { yes: 'Run it', no: 'Not now', signal }),
     captureFrame: async () => {
       const canvas = gameRoot!.querySelector('canvas.scene-canvas') as HTMLCanvasElement | null;
       return canvas ?? null;
@@ -181,6 +198,7 @@ async function startGame(): Promise<void> {
 
   const game: RunningGame = { session, loop, router, hud, chat, timers: [], disposers: [] };
   running = game;
+  game.disposers.push(session.guardWriteBacks((text, tone) => hud.toast(text, tone)));
 
   game.disposers.push(session.studio.events.on('state', (state) => hud.renderStudio(state)));
   hud.renderStudio(session.studio.snapshot);

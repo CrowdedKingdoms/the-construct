@@ -5,8 +5,8 @@ A checklist, in the order that keeps everything working at every step.
 ## 1. Make it yours
 
 - [ ] Rename: `package.json` `name`/`description`, `GAME_NAME` in
-      `src/platform/config.ts`, `index.html` title, `public/favicon.svg`.
-- [ ] Storage prefixes in `src/platform/envScope.ts` and `WorldStores.ts`
+      `packages/construct/src/platform/config.ts`, `index.html` title, `public/favicon.svg`.
+- [ ] Storage prefixes in `packages/construct/src/platform/envScope.ts` and `WorldStores.ts`
       (`construct:*`) — change them if two of your games could share an origin.
 - [ ] `LICENSE` and `README.md`.
 
@@ -17,7 +17,7 @@ A checklist, in the order that keeps everything working at every step.
       chat make sense across them.
 - [ ] Replication radius (`REPLICATION_DISTANCE`) and send cadence
       (`ACTOR_SYNC_INTERVAL_MS`).
-- [ ] The pose struct (`src/platform/realtime/actorCodec.ts`). Add what your
+- [ ] The pose struct (`packages/construct/src/platform/realtime/actorCodec.ts`). Add what your
       renderer needs (animation state, held item); keep it under ~1 KB. Change
       it in one place and every client must update together.
 
@@ -25,20 +25,25 @@ A checklist, in the order that keeps everything working at every step.
 
 - [ ] Implement `GameScene` for your first scene ([RENDERER-ADAPTER.md](RENDERER-ADAPTER.md)).
 - [ ] Register it in `src/main.ts`; decide whether the holodeck stays as a hub.
-- [ ] Update `src/platform/programs.ts` and `PROGRAM_CATALOG` in
-      `model/blueprints.mjs` together.
+- [ ] Put your programs in `PROGRAM_CATALOG` (`model/catalog.mjs`) and their
+      pads in `src/game/programs.ts`, then `npm run build:exec-sources`.
 - [ ] Remove the demo scene folders and unused renderer dependencies.
 
-## 4. Model your rules
+## 4. Write your rules
 
-- [ ] Pick Game Kit blueprints (inventory, economy, quests, combat, matches…)
-      and add them to `constructBlueprints()` with your `typePrefix`es; mirror
-      the prefixes in `kitOptions()`.
-- [ ] Hand-author what the kit does not cover: container types, properties,
-      functions with invoke policies, automations.
-- [ ] Keep `deployModel`'s existing-container check in mind: seed containers
-      are matched by display name per type.
-- [ ] `npm run seed` after every change; `npm run smoke` to verify.
+- [ ] Your server code is `exec/`: the world hub (`exec/construct`, Rust on
+      `ckx-sdk`) and the manifest (`exec/ckx.json`). Add endpoints there, or
+      hubs of your own under the root (starter crates: `client.exec.starters`,
+      [builds](https://docs.crowdedkingdoms.com/exec/builds)). Keep per-player
+      polling off the root hub (50 calls a second); refuse keys a hub should
+      not have.
+- [ ] Authorize in handlers with `call.player()` / `call.developer()`: the
+      platform names the caller, the client never does.
+- [ ] `cargo test && cargo clippy --all-targets` in `exec/` (with a ck-exec
+      checkout beside this repo), then `npm run deploy:exec -- --restart` and
+      `npm run smoke`.
+- [ ] If your hub has another name, tell the framework once at boot:
+      `configureWorldHub({ nodeType, key })`.
 
 ## 5. Decide who may do what
 
@@ -47,11 +52,13 @@ A checklist, in the order that keeps everything working at every step.
 - [ ] Constructor tier keys: who gets to write code.
 - [ ] Grid claim policy: `SELF_CLAIM` (anyone claims free chunks), `APPROVAL`,
       `INVITE`, or `MARKETPLACE_ONLY`.
-- [ ] Which host calls your CLIENT mods may make (`clientModHost.ts`).
+- [ ] Which host calls CLIENT halves may make in your game (`clientModHost.ts`).
 
 ## 6. Studio and mods
 
-- [ ] Replace `mods/templates/` with starters that make sense in your world.
+- [ ] Replace `mods/templates/` (CLIENT starters) and `exec/mods/` (SERVER
+      starters, ck-exec mods) with starters that make sense in your world;
+      `npm run build:exec-sources`, then `npm run seed`.
 - [ ] Decide on `VITE_CONSTRUCT_CLIENT_MODS` (browser execution on or off).
 - [ ] Read [MODDING.md](MODDING.md)'s security posture and keep the CSP tight.
 
@@ -65,7 +72,7 @@ A checklist, in the order that keeps everything working at every step.
       A pin bump that brings a new realtime feature (15.5 brought webcam
       video and the actor-left notice) lands here as platform code plus a
       `NetworkManager.on(kind)` slot — mirror it in your scenes or hide it.
-- [ ] Watch the presence rule in your automations: nothing ticks while nobody
+- [ ] Watch the presence rule in your hubs' timers: nothing ticks while nobody
       plays.
 
 ## 8. Things this starter leaves to you

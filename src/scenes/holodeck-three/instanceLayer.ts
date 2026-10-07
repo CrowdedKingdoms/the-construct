@@ -5,8 +5,12 @@
  */
 import * as THREE from 'three';
 
-import type { ComposedInstance, MeshKind, SceneMesh } from '@/platform/studio/instanceSchema';
-import type { InstanceSnapshot } from '@/platform/studio/instanceStore';
+import type {
+  ComposedInstance,
+  MeshKind,
+  SceneMesh,
+} from '@crowdedkingdoms/construct/platform/studio/instanceSchema';
+import type { InstanceSnapshot } from '@crowdedkingdoms/construct/platform/studio/instanceStore';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const SPHERE = new THREE.SphereGeometry(0.5, 12, 10);

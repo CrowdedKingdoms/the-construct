@@ -2,8 +2,8 @@
 
 Two renderers ship in this repo — three.js (the holodeck) and pixi.js (Paint) —
 and neither knows the other exists. What they share is `GameScene`
-(`src/engine/GameScene.ts`), a deliberately small contract, and `GameSession`
-(`src/platform/GameSession.ts`), the platform facade.
+(`packages/construct/src/engine/GameScene.ts`), a deliberately small contract, and `GameSession`
+(`packages/construct/src/platform/GameSession.ts`), the platform facade.
 
 ## The contract
 
@@ -44,9 +44,10 @@ with sample history for interpolation (`src/scenes/shared/interpolate.ts`).
 
 1. Create `src/scenes/<your-scene>/YourScene.ts` implementing `GameScene`.
 2. Register it in `src/main.ts`: `router.register('your-id', () => new YourScene())`.
-3. Add a pad in `src/platform/programs.ts` (and the matching row in
-   `model/blueprints.mjs`'s `PROGRAM_CATALOG`) if players should load it from the
-   holodeck. Or make it the first scene: change the `router.load(...)` call.
+3. Add it to `PROGRAM_CATALOG` in `model/catalog.mjs` and its pad to
+   `src/game/programs.ts` if players should load it from the holodeck, then
+   `npm run build:exec-sources` (the world hub serves the same catalog). Or make
+   it the first scene: change the `router.load(...)` call.
 
 World units are shared across scenes: 16 units per chunk on each axis, floor
 at `y = 0` (chunk layer 0). Paint maps world `x`/`z` to screen and keeps `y`
@@ -70,7 +71,7 @@ Then delete the two demo scene folders and their dependencies from
 
 ## Input and overlays
 
-`Input` (`src/engine/Input.ts`) tracks keys and pointer state and has one
+`Input` (`packages/construct/src/engine/Input.ts`) tracks keys and pointer state and has one
 switch overlays flip: `suppress()`. While the chat box has focus or Crowdy
 Studio's modal is open, gameplay keys are ignored but `onKey` shortcuts still
 fire (except while typing). Scenes read `input.axes()` / `input.isDown()` and

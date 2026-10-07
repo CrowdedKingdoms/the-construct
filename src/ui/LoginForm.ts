@@ -2,7 +2,7 @@
  * The sign-in card: one button that leaves for Crowded Kingdoms' hosted
  * sign-in. There is no form here on purpose -- see `AuthService`.
  */
-import type { AuthService } from '@/platform/auth/AuthService';
+import type { AuthService } from '@crowdedkingdoms/construct/platform/auth/AuthService';
 import type { BootCard } from '@/ui/BootCard';
 import { el, messageOf } from '@/ui/dom';
 
