@@ -30,7 +30,7 @@ Releases are on npm under one dist-tag per tier, and a game pins the exact
 version of its own tier, as it pins CrowdyJS:
 
 ```bash
-npm install --save-exact @crowdedkingdoms/construct@dev   # an X.Y.Z-dev.N build
+npm install --save-exact @crowdedkingdoms/construct   # X.Y.Z on latest
 ```
 
 `dev` is `X.Y.Z-dev.N`, `test` is `X.Y.Z-test.N`, and `prod` is `X.Y.Z` on

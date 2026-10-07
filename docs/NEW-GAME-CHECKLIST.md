@@ -34,7 +34,7 @@ A checklist, in the order that keeps everything working at every step.
 - [ ] Your server code is `exec/`: the world hub (`exec/construct`, Rust on
       `ckx-sdk`) and the manifest (`exec/ckx.json`). Add endpoints there, or
       hubs of your own under the root (starter crates: `client.exec.starters`,
-      [builds](https://docs.dev.crowdedkingdoms.com/exec/builds)). Keep per-player
+      [builds](https://docs.crowdedkingdoms.com/exec/builds)). Keep per-player
       polling off the root hub (50 calls a second); refuse keys a hub should
       not have.
 - [ ] Authorize in handlers with `call.player()` / `call.developer()`: the

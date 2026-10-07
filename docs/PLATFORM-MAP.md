@@ -1,8 +1,8 @@
 # Game concept → platform surface
 
 Where each thing a game needs lives on Crowded Kingdoms, how this repo uses it,
-and where to read more. The canonical reference is the
-docs site of the tier this branch targets ([docs.dev.crowdedkingdoms.com](https://docs.dev.crowdedkingdoms.com) on `dev`, where ck-exec's pages exist); the CrowdyJS README
+and where to read more. The canonical reference is
+[docs.crowdedkingdoms.com](https://docs.crowdedkingdoms.com); the CrowdyJS README
 and its `AGENTS.md` carry the concept→API table this one extends.
 
 | Game concept | Platform surface | In this repo |
@@ -85,16 +85,16 @@ which is why Setup adds the two `run_*` keys to the default tier.
 
 ## Reading more
 
-- Client workflow: <https://docs.dev.crowdedkingdoms.com/overview/client-workflow>
-- Before you ship: <https://docs.dev.crowdedkingdoms.com/overview/before-you-ship>
-- World Stores: <https://docs.dev.crowdedkingdoms.com/crowdyjs/stores>
-- ck-exec: <https://docs.dev.crowdedkingdoms.com/exec/intro>,
-  [timers and presence](https://docs.dev.crowdedkingdoms.com/exec/timers-and-presence),
-  [connect from a game](https://docs.dev.crowdedkingdoms.com/exec/connect-from-a-game),
-  [builds](https://docs.dev.crowdedkingdoms.com/exec/builds),
-  [mods](https://docs.dev.crowdedkingdoms.com/exec/mods),
-  [operations](https://docs.dev.crowdedkingdoms.com/exec/operations)
-- Grids and permissions: <https://docs.dev.crowdedkingdoms.com/game-api/grids-and-permissions>
-- From the legacy engines (player code included): <https://docs.dev.crowdedkingdoms.com/exec/from-the-legacy-engines>
-- Embed Crowdy Studio: <https://docs.dev.crowdedkingdoms.com/crowdyjs/crowdy-studio-embed>
-- Datacenter routing: <https://docs.dev.crowdedkingdoms.com/game-api/datacenter-routing>
+- Client workflow: <https://docs.crowdedkingdoms.com/overview/client-workflow>
+- Before you ship: <https://docs.crowdedkingdoms.com/overview/before-you-ship>
+- World Stores: <https://docs.crowdedkingdoms.com/crowdyjs/stores>
+- ck-exec: <https://docs.crowdedkingdoms.com/exec/intro>,
+  [timers and presence](https://docs.crowdedkingdoms.com/exec/timers-and-presence),
+  [connect from a game](https://docs.crowdedkingdoms.com/exec/connect-from-a-game),
+  [builds](https://docs.crowdedkingdoms.com/exec/builds),
+  [mods](https://docs.crowdedkingdoms.com/exec/mods),
+  [operations](https://docs.crowdedkingdoms.com/exec/operations)
+- Grids and permissions: <https://docs.crowdedkingdoms.com/game-api/grids-and-permissions>
+- From the legacy engines (player code included): <https://docs.crowdedkingdoms.com/exec/from-the-legacy-engines>
+- Embed Crowdy Studio: <https://docs.crowdedkingdoms.com/crowdyjs/crowdy-studio-embed>
+- Datacenter routing: <https://docs.crowdedkingdoms.com/game-api/datacenter-routing>
