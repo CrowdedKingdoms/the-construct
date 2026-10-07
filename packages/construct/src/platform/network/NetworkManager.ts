@@ -40,7 +40,7 @@ import {
   APP_TOKEN_REFRESH_RETRY_MS,
   AUTHORIZE_URL,
 } from '../config';
-import { envScopedKey, readScoped, writeScoped } from '../envScope';
+import { appTokenStorageKey, envScopedKey, perGameBase, readScoped, writeScoped } from '../envScope';
 import { WorldHub } from '../exec/worldHub';
 import { Emitter } from '../util/Emitter';
 
@@ -58,11 +58,13 @@ export interface AppRoute {
   expiresAt: string;
 }
 
-/** Where the entered app's route is remembered across a reload (env-scoped). */
+/** Where the entered app's route is remembered across a reload (per game path, per API host). */
 export const APP_ROUTE_STORAGE_KEY = 'construct:app-route';
 
-/** The token store key for the app token (env-scoped). One app at a time. */
-const APP_TOKEN_STORE_KEY = 'construct:app-token';
+/** Route key for this game's Vite base, before the API-host suffix `readScoped` adds. */
+function savedRouteBase(): string {
+  return perGameBase(APP_ROUTE_STORAGE_KEY, import.meta.env.BASE_URL);
+}
 
 export interface BootstrapInfo {
   minimumClientVersion?: string;
@@ -125,7 +127,7 @@ export class NetworkManager {
     this.platform = createCrowdyClient({
       httpUrl: API_HTTP_URL,
       wsUrl: API_WS_URL,
-      tokenStore: new BrowserLocalStorageTokenStore(envScopedKey(APP_TOKEN_STORE_KEY)),
+      tokenStore: new BrowserLocalStorageTokenStore(appTokenStorageKey(import.meta.env.BASE_URL)),
     });
   }
 
@@ -183,7 +185,7 @@ export class NetworkManager {
       const minted = await this.platform.portal.handleSignInCallback();
       if (!minted) return null;
       const route = this.routeFrom(minted, minted.appId);
-      writeScoped(APP_ROUTE_STORAGE_KEY, JSON.stringify(route));
+      writeScoped(savedRouteBase(), JSON.stringify(route));
       await this.hydrateUser();
       this.log(`Hosted sign-in complete for app ${route.appId}`);
       return route;
@@ -200,7 +202,7 @@ export class NetworkManager {
   async restore(): Promise<AppRoute | null> {
     await this.platform.session.restore();
     if (!this.platform.session.getToken()) return null;
-    const raw = readScoped(APP_ROUTE_STORAGE_KEY);
+    const raw = readScoped(savedRouteBase());
     let route: AppRoute | null;
     try {
       route = raw ? (JSON.parse(raw) as AppRoute) : null;
@@ -231,7 +233,7 @@ export class NetworkManager {
 
   private forgetCredentials(): void {
     this.platform.session.setToken(null);
-    writeScoped(APP_ROUTE_STORAGE_KEY, null);
+    writeScoped(savedRouteBase(), null);
   }
 
   private async hydrateUser(): Promise<SessionUser | null> {
@@ -346,7 +348,7 @@ export class NetworkManager {
     }
     this.gameClient.setToken(token);
     this.route = route;
-    writeScoped(APP_ROUTE_STORAGE_KEY, JSON.stringify(route));
+    writeScoped(savedRouteBase(), JSON.stringify(route));
     this.refreshFailures = 0;
     this.scheduleRefresh(APP_TOKEN_REFRESH_MS);
     this.log(`Entered app ${route.appId} via ${httpUrl}`);
@@ -417,7 +419,7 @@ export class NetworkManager {
       const refreshed = await this.gameClient.refreshGameplayToken();
       this.platform.session.setToken(refreshed.token);
       this.route = { ...this.route, expiresAt: refreshed.expiresAt };
-      writeScoped(APP_ROUTE_STORAGE_KEY, JSON.stringify(this.route));
+      writeScoped(savedRouteBase(), JSON.stringify(this.route));
       this.refreshFailures = 0;
       this.log('App token rotated');
       this.scheduleRefresh(APP_TOKEN_REFRESH_MS);
