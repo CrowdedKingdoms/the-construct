@@ -26,6 +26,7 @@ describe('poseCodec', () => {
       z: -7.75,
       yaw: 1.5,
       pitch: -0.125,
+      roll: 0.5,
       vx: 3,
       vy: 0,
       vz: -1.5,

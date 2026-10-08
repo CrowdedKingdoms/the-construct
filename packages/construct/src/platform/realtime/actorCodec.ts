@@ -17,7 +17,7 @@
  *   34    tint          u8   (avatar colour index)
  *   35    reserved      u8
  *   36-59 name          24 bytes UTF-8, NUL padded
- *   60-63 reserved
+ *   60-63 roll          f32
  */
 import {
   bytes,
@@ -40,6 +40,8 @@ export interface Pose {
   z: number;
   yaw: number;
   pitch: number;
+  /** Bank. Zero for the ground walker. A chunk mod in flight writes it. */
+  roll?: number;
   vx: number;
   vy: number;
   vz: number;
@@ -55,6 +57,7 @@ export const NEUTRAL_POSE: Pose = {
   z: 0,
   yaw: 0,
   pitch: 0,
+  roll: 0,
   vx: 0,
   vy: 0,
   vz: 0,
@@ -78,7 +81,7 @@ const wire = structCodec({
   tint: u8(),
   pad0: reserved(1),
   name: bytes(NAME_BYTES),
-  pad1: reserved(4),
+  roll: f32(),
 });
 
 const encoder = new TextEncoder();
@@ -112,6 +115,7 @@ export const poseCodec: StateCodec<Pose> = {
       z: pose.z,
       yaw: pose.yaw,
       pitch: pose.pitch,
+      roll: pose.roll ?? 0,
       vx: pose.vx,
       vy: pose.vy,
       vz: pose.vz,
@@ -128,6 +132,7 @@ export const poseCodec: StateCodec<Pose> = {
       z: raw.z,
       yaw: raw.yaw,
       pitch: raw.pitch,
+      roll: raw.roll,
       vx: raw.vx,
       vy: raw.vy,
       vz: raw.vz,
