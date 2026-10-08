@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-`@crowdedkingdoms/construct` 0.3.8 and CrowdyJS `18.4.0-dev.1`. A client mod
+`@crowdedkingdoms/construct` 0.3.8 and CrowdyJS `18.4.0-test.1`. A client mod
 on a claimed grid now draws its own scene and gameplay (#89, #90). It uploads
 a scene catalog and places instances of it, holds the player's pose, reads
 walk, look and key input, tints avatars inside its grid and emits one-shot
