@@ -79,6 +79,49 @@ describe('parseSceneCatalog', () => {
     expect(catalog?.nodes[0]?.mesh).toBe('tri');
   });
 
+  it('keeps flat lambert shading and treats unlit as basic', () => {
+    const catalog = parseSceneCatalog({
+      v: 1,
+      revision: 1,
+      meshes: [],
+      nodes: [
+        { id: 'body', x: 0, y: 0, z: 0, shading: 'lambert', flat: true },
+        { id: 'bolt', x: 0, y: 0, z: 0, unlit: true },
+      ],
+    });
+    expect(catalog?.nodes[0]).toMatchObject({ shading: 'lambert', flat: true, unlit: false });
+    expect(catalog?.nodes[1]).toMatchObject({ shading: 'basic', unlit: true, fog: false });
+  });
+
+  it('keeps additive, emissive, double-sided, and fog opt-out', () => {
+    const catalog = parseSceneCatalog({
+      v: 1,
+      revision: 1,
+      meshes: [],
+      nodes: [
+        {
+          id: 'shield',
+          x: 0,
+          y: 0,
+          z: 0,
+          shading: 'lambert',
+          blend: 'additive',
+          depthWrite: false,
+          emissive: 0x88ccff,
+          side: 'double',
+          fog: false,
+        },
+      ],
+    });
+    expect(catalog?.nodes[0]).toMatchObject({
+      blend: 'additive',
+      depthWrite: false,
+      emissive: 0x88ccff,
+      side: 'double',
+      fog: false,
+    });
+  });
+
   it('drops over-cap vertex lists and parent-less garbage', () => {
     const positions = Array.from({ length: (MAX_VERTS + 1) * 3 }, () => 1);
     expect(

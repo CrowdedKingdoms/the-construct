@@ -35,11 +35,21 @@ const FACE_EYE_HEIGHT = 1.6;
 
 export class AvatarPool {
   private readonly entries = new Map<string, AvatarEntry>();
+  /** Chunk-mod color applied to every body inside the grid. Null restores tint. */
+  private modColor: number | null = null;
+
+  setModColor(color: number | null): void {
+    this.modColor = color;
+    for (const entry of this.entries.values()) {
+      const material = entry.body.material as THREE.MeshStandardMaterial;
+      material.color.setHex(color ?? tintColor(entry.tint));
+    }
+  }
 
   constructor(private readonly scene: THREE.Scene) {}
 
   /** Bring the pool in line with the players list and animate each one. */
-  sync(players: RemotePlayer[], nowMs: number): void {
+  sync(players: RemotePlayer[], nowMs: number, hideBody?: ReadonlySet<string>): void {
     const seen = new Set<string>();
     for (const player of players) {
       seen.add(player.uuid);
@@ -51,8 +61,12 @@ export class AvatarPool {
       } else if (entry.name !== pose.name || entry.tint !== pose.tint) {
         this.restyle(entry, pose);
       }
+      if (this.modColor != null) {
+        (entry.body.material as THREE.MeshStandardMaterial).color.setHex(this.modColor);
+      }
       entry.group.position.set(pose.x, pose.y, pose.z);
-      entry.body.rotation.y = pose.yaw;
+      entry.body.rotation.order = 'YXZ';
+      entry.body.rotation.set(pose.pitch, pose.yaw, pose.roll ?? 0);
       // The face turns with the body so it faces where the player looks.
       entry.face.rotation.y = pose.yaw;
       entry.face.position.set(
@@ -60,6 +74,10 @@ export class AvatarPool {
         FACE_EYE_HEIGHT,
         Math.cos(pose.yaw) * 0.37,
       );
+      const skinned = hideBody?.has(player.uuid) ?? false;
+      entry.body.visible = !skinned;
+      if (skinned) entry.face.visible = false;
+      else if (entry.faceTexture) entry.face.visible = true;
       entry.marker.visible = (pose.flags & FLAG_STUDIO_OPEN) !== 0;
       entry.marker.rotation.y = nowMs / 400;
       entry.marker.position.y = 2.15 + Math.sin(nowMs / 300) * 0.05;
