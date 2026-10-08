@@ -7,7 +7,9 @@ const {
   bytesToBase64,
   parseVoxelSetArgs,
   routeClientHostCall,
+  voxelStateToWire,
   voxelsFromBase64,
+  voxelsListRows,
 } = await import('./clientModHost');
 
 const grid = { low: { x: -1n, y: 0n, z: -1n }, high: { x: 1n, y: 0n, z: 1n } };
@@ -33,7 +35,7 @@ function sampleGrid(): Uint8Array {
 }
 
 describe('routeClientHostCall', () => {
-  it('offers world_read plus voxel_set and pointer_clicks', () => {
+  it('offers world_read, scene catalog, and chunk gameplay', () => {
     expect([...OFFERED_HOST_CALLS]).toEqual([
       'actors_list',
       'actors_list_radius',
@@ -41,6 +43,28 @@ describe('routeClientHostCall', () => {
       'voxels_list',
       'voxel_set',
       'pointer_clicks',
+      'input_axes',
+      'input_look',
+      'input_key',
+      'events_poll',
+      'voice_set',
+      'video_set',
+      'send_client_event',
+      'send_text',
+      'send_actor_message',
+      'send_channel_message',
+      'pose_get',
+      'pose_set',
+      'pose_release',
+      'actor_spawn',
+      'actor_pose',
+      'actor_despawn',
+      'avatar_appearance',
+      'avatar_state_set',
+      'teleport_request',
+      'scene_catalog',
+      'scene_instances',
+      'clock',
     ]);
   });
 
@@ -66,7 +90,7 @@ describe('routeClientHostCall', () => {
     expect(r.calls.every((c) => c.split(',').every((v) => Math.abs(Number(v)) <= 1))).toBe(true);
   });
 
-  it('reads crowdy-client-sdk radii and clamps them as the platform does (3 across, 1 up)', async () => {
+  it('reads crowdy-client-sdk radii and keeps a claim-wide scan inside the grid', async () => {
     const r = reads();
     const wide = { low: { x: -9n, y: -9n, z: -9n }, high: { x: 9n, y: 9n, z: 9n } };
     await routeClientHostCall(
@@ -77,10 +101,11 @@ describe('routeClientHostCall', () => {
       r.reads,
       wide,
     );
-    expect(r.calls.length).toBe(7 * 3 * 7);
+    // radiusXz 9 covers the grid (±9). Vertical radius stays 1.
+    expect(r.calls.length).toBe(19 * 3 * 19);
     const ys = new Set(r.calls.map((c) => Number(c.split(',')[1])));
     expect([...ys].sort()).toEqual([-1, 0, 1]);
-    expect(r.calls.every((c) => Math.abs(Number(c.split(',')[0])) <= 3)).toBe(true);
+    expect(r.calls.every((c) => Math.abs(Number(c.split(',')[0])) <= 9)).toBe(true);
   });
 
   it('serves chunk_get as base64 and voxels_list as sparse rows', async () => {
@@ -185,6 +210,28 @@ describe('routeClientHostCall', () => {
     ]);
   });
 
+  it('parses the SDK voxel_set shape (voxelX/stateBase64)', () => {
+    expect(
+      parseVoxelSetArgs({
+        chunkX: -1,
+        chunkY: 0,
+        chunkZ: -1,
+        voxelX: 4,
+        voxelY: 15,
+        voxelZ: 15,
+        voxelType: 1,
+        stateBase64: '{"u":"abc","shot":1}',
+      }),
+    ).toEqual({
+      chunk: { x: -1, y: 0, z: -1 },
+      x: 4,
+      y: 15,
+      z: 15,
+      voxelType: 1,
+      state: '{"u":"abc","shot":1}',
+    });
+  });
+
   it('writes no voxel outside the grid, whatever second chunk the call carries', async () => {
     const r = reads();
     const written: Array<{ chunk: { x: number; y: number; z: number } }> = [];
@@ -255,6 +302,112 @@ describe('routeClientHostCall', () => {
     });
   });
 
+  it('refuses a pose outside the grid and returns input axes', async () => {
+    const { bindModGrid, bindModInput, releaseModChunk } = await import('./modChunkRuntime');
+    bindModGrid(grid);
+    bindModInput({ axes: () => ({ x: 1, y: 0 }) } as never);
+    const { bindModSession } = await import('./modChunkRuntime');
+    bindModSession({
+      client: {
+        udp: { sendClientEvent: async () => true },
+        kit: () => ({ inventory: {} }),
+      } as never,
+      appId: '1',
+      gridId: '1',
+      selfUuid: 'self',
+      userId: '1',
+      moveTo: async () => undefined,
+      players: () => [{ uuid: 'self', pose: { x: 0, y: 0, z: 0 } }],
+      voiceStart: async () => undefined,
+      voiceStop: () => undefined,
+      videoStart: async () => undefined,
+      videoStop: () => undefined,
+    });
+    const outside = await routeClientHostCall(
+      { fn: 'pose_set', args: { x: 1000, y: 0, z: 0 } } as never,
+      reads().reads,
+      grid,
+    );
+    expect(outside).toEqual({ ok: false, error: 'outside the player grid' });
+    const axes = await routeClientHostCall(
+      { fn: 'input_axes', args: {} } as never,
+      reads().reads,
+      grid,
+    );
+    expect(axes).toEqual({ x: 1, y: 0 });
+    const other = await routeClientHostCall(
+      { fn: 'actor_spawn', args: { uuid: 'self', x: 0, y: 0, z: 0 } } as never,
+      reads().reads,
+      grid,
+    );
+    expect(other).toEqual({ ok: false, error: 'refusing a live player uuid' });
+    const kit = await routeClientHostCall(
+      {
+        fn: 'inventory_transfer',
+        args: { targetUuid: 'bob', fromStackId: 'a', toStackId: 'b' },
+      } as never,
+      reads().reads,
+      grid,
+    );
+    expect(kit).toEqual({ ok: false, error: 'target is outside the grid' });
+    const far = await routeClientHostCall(
+      {
+        fn: 'teleport_request',
+        args: { destChunkX: 9, destChunkY: 0, destChunkZ: 0, uuid: 'self' },
+      } as never,
+      reads().reads,
+      grid,
+    );
+    expect(far).toEqual({ ok: false, error: 'outside the player grid' });
+    const { modProjectiles } = await import('./modChunkRuntime');
+    await routeClientHostCall(
+      {
+        fn: 'send_client_event',
+        args: {
+          x: 0,
+          y: 0,
+          z: 0,
+          payloadBase64: btoa(
+            JSON.stringify({
+              kind: 'projectile',
+              origin: { x: 1, y: 1.7, z: 2 },
+              direction: { x: 0, y: 0, z: -1 },
+              speed: 40,
+              startMs: 0,
+              lifeMs: 1000,
+            }),
+          ),
+        },
+      } as never,
+      reads().reads,
+      grid,
+    );
+    expect(modProjectiles(0)).toHaveLength(1);
+    releaseModChunk();
+    await routeClientHostCall(
+      {
+        fn: 'send_client_event',
+        args: {
+          chunkX: -2,
+          chunkY: 0,
+          chunkZ: -1,
+          payload: {
+            kind: 'projectile',
+            origin: { x: 4, y: 1.7, z: 5 },
+            direction: { x: 1, y: 0, z: 0 },
+            speed: 1320,
+            lifeMs: 1800,
+          },
+        },
+      } as never,
+      reads().reads,
+      grid,
+    );
+    expect(modProjectiles(0)).toHaveLength(1);
+    releaseModChunk();
+    bindModInput(null);
+  });
+
   it('parses the voxel_set arguments crowdy-client-sdk sends', () => {
     expect(
       parseVoxelSetArgs({
@@ -280,5 +433,52 @@ describe('routeClientHostCall', () => {
   it('decodes an empty grid to no rows', () => {
     expect(voxelsFromBase64(null)).toEqual([]);
     expect(voxelsFromBase64(bytesToBase64(new Uint8Array(4096)))).toEqual([]);
+  });
+
+  it('attaches sparse voxel state onto voxels_list rows', () => {
+    const packed = new Uint8Array(4096);
+    packed[2 + 15 * 16 + 0 * 256] = 1;
+    const json = '{"players":[{"uuid":"fake1","name":"Alice"}]}';
+    expect(voxelStateToWire(json)).toBe(bytesToBase64(new TextEncoder().encode(json)));
+    expect(voxelStateToWire('AA==')).toBe('AA==');
+    expect(voxelsListRows(bytesToBase64(packed), [{ x: 2, y: 15, z: 0, state: json }])).toEqual([
+      { x: 2, y: 15, z: 0, voxelType: 1, state: json },
+    ]);
+  });
+
+  it('stores a scene catalog for the running module', async () => {
+    const { ModSceneStore } = await import('./modScene');
+    const store = new ModSceneStore();
+    const target = { source: 'mod', store };
+    const catalog = await routeClientHostCall(
+      { fn: 'scene_catalog', args: { v: 1, revision: 3, nodes: [] } } as never,
+      reads().reads,
+      grid,
+      undefined,
+      undefined,
+      target,
+    );
+    expect(catalog).toEqual({ ok: true, revision: 3 });
+    const again = await routeClientHostCall(
+      { fn: 'scene_catalog', args: { v: 1, revision: 3, nodes: [] } } as never,
+      reads().reads,
+      grid,
+      undefined,
+      undefined,
+      target,
+    );
+    expect(again).toEqual({ ok: true, revision: 3, ignored: true });
+    const instances = await routeClientHostCall(
+      {
+        fn: 'scene_instances',
+        args: { instances: [{ id: 'me', template: 'body' }] },
+      } as never,
+      reads().reads,
+      grid,
+      undefined,
+      undefined,
+      target,
+    );
+    expect(instances).toEqual({ ok: true, count: 1 });
   });
 });
