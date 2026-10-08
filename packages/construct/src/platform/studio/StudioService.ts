@@ -52,13 +52,23 @@ import {
   DEFAULT_VOXEL_STATE,
   routeClientHostCall,
   routeWithFallback,
+  voxelStateToWire,
   type ClientModHostReads,
   type ClientModHostWrites,
 } from './clientModHost';
 import { PointerClickBuffer } from './pointerClicks';
+import { clearModPose, setModPoseGrid } from './modPose';
+import type { Input } from '../../engine/Input';
 import { ModOverlayStore } from './modOverlay';
+import { bindModGrid, bindModSession, releaseModChunk } from './modChunkRuntime';
+import { ModSceneStore } from './modScene';
 import { GridService, type GridSnapshot } from './GridService';
-import { hasAnyStudioPermission, toBrokerBounds, type GridBounds } from './permissions';
+import {
+  hasAnyStudioPermission,
+  studioPermissions,
+  toBrokerBounds,
+  type GridBounds,
+} from './permissions';
 import { Emitter } from '../util/Emitter';
 
 export interface StudioState {
@@ -68,6 +78,8 @@ export interface StudioState {
   clientModsAvailable: boolean;
   /** The grid's CLIENT halves running for this player. */
   clientModsRunning: number;
+  /** The grid's client mods have finished their first fetch. Scene parts may still be arriving. */
+  clientModsReady: boolean;
   /** Those CLIENT halves, for the controls that take them back. */
   clientHalves: readonly RunningClientHalf[];
   /** Why CLIENT mods are unavailable, when they are. */
@@ -120,8 +132,19 @@ function createConstructTextHud(): CrowdyStudioTextHud {
     describe(payload: unknown) {
       if (typeof payload === 'string') return payload;
       if (payload && typeof payload === 'object') {
-        const greeting = (payload as { greeting?: unknown }).greeting;
-        if (typeof greeting === 'string' && greeting.length > 0) return greeting;
+        const rec = payload as {
+          greeting?: unknown;
+          turn?: unknown;
+          scores?: unknown;
+          state?: unknown;
+          who?: unknown;
+        };
+        const lines: string[] = [];
+        for (const key of ['greeting', 'turn', 'scores', 'state', 'who'] as const) {
+          const value = rec[key];
+          if (typeof value === 'string' && value.length > 0) lines.push(value);
+        }
+        if (lines.length > 0) return lines.join('\n');
       }
       try {
         return JSON.stringify(payload);
@@ -150,12 +173,15 @@ export class StudioService {
   readonly locomotion = new AgentLocomotion();
   /** CLIENT overlay_draw gizmos; the holodeck merges these onto instances. */
   readonly overlay = new ModOverlayStore();
+  /** CLIENT scene_catalog / scene_instances. Templates are cloned in the page. */
+  readonly scene = new ModSceneStore();
   private readonly hud = createConstructTextHud();
   private readonly agentHost: ConstructPlayerHostAdapter;
   private readonly humanInput = new HumanInputMonitor();
   private readonly pointerClicks = new PointerClickBuffer();
   /** JS grid programs the agent (or the player) runs on the current grid. */
   readonly programs: GridProgramRunner;
+  private gameplay: Input | null = null;
   private halves: GridClientHalves | null = null;
   private gridEnteredAt = 0;
   private embed: CrowdyStudioEmbed | null = null;
@@ -166,6 +192,12 @@ export class StudioService {
   private lastGridReadAt = 0;
   private lastModsReadAt = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Last GraphQL-persisted mailbox payload per cell, so roster ticks do not hammer updateVoxel. */
+  private lastDurableVoxel = new Map<string, string>();
+  private voxelUpdateCache = new Map<
+    string,
+    { at: number; states: Array<{ x: number; y: number; z: number; state: string }> }
+  >();
   /** The grid the open Studio edits, and the mod its project runs as. */
   private studioGridId: string | null = null;
   private studioMod: string | null = null;
@@ -192,6 +224,7 @@ export class StudioService {
       grid: null,
       clientModsAvailable: CLIENT_MODS_ENABLED && isolated,
       clientModsRunning: 0,
+      clientModsReady: false,
       clientHalves: [],
       clientModsReason: !CLIENT_MODS_ENABLED
         ? 'CLIENT mods are disabled in this build (VITE_CONSTRUCT_CLIENT_MODS=0).'
@@ -208,6 +241,52 @@ export class StudioService {
   /** Grid the local player is standing on, if known. */
   get grid(): GridSnapshot | null {
     return this.currentGrid;
+  }
+
+  /**
+   * True while the avatar is at a claim wall waiting for its mod. Poll must
+   * not drop that grid just because the body is still standing outside it.
+   */
+  private approachHold = false;
+
+  /** Begin loading an owned claim while the avatar is still outside it. */
+  approachOwned(gridId: string): void {
+    const record = this.grids.ownedGrids().find((grid) => grid.gridId === gridId);
+    if (!record) return;
+    this.approach({
+      gridId: record.gridId,
+      bounds: record.bounds,
+      permissions: studioPermissions(record.effectiveKeys),
+      owned: true,
+    });
+  }
+
+  /** Begin loading `grid` while the avatar is still outside it. */
+  approach(grid: GridSnapshot): void {
+    this.approachHold = true;
+    if (this.currentGrid?.gridId === grid.gridId) return;
+    const low = grid.bounds.low;
+    this.adoptGrid(grid, { x: Number(low.x), y: Number(low.y), z: Number(low.z) });
+  }
+
+  /** The avatar left the approach margin; the next poll may drop the grid. */
+  releaseApproach(): void {
+    this.approachHold = false;
+  }
+
+  /** Gameplay keys and stick for generic client-mod input calls. */
+  bindGameplayInput(input: Input): void {
+    this.gameplay = input;
+  }
+
+  private hostInput() {
+    return {
+      drainPointerClicks: () => this.pointerClicks.drainPointerClicks(),
+      axes: () =>
+        this.gameplay && !this.gameplay.suppressed ? this.gameplay.axes() : { x: 0, y: 0 },
+      look: () => this.gameplay?.takePointerDelta() ?? { dx: 0, dy: 0 },
+      keyDown: (code: string) => this.gameplay?.isDown(code) ?? false,
+    };
   }
 
   /** Wire the engine-side hooks; call once after the loop exists. */
@@ -277,6 +356,7 @@ export class StudioService {
         if (this.currentGrid) {
           const source = `studio:${this.currentGrid.gridId}`;
           this.overlay.remove(source);
+          this.scene.remove(source);
           this.hud.remove(source);
         }
         this.studioGridId = null;
@@ -376,6 +456,7 @@ export class StudioService {
     if (this.currentGrid) {
       const source = `studio:${this.currentGrid.gridId}`;
       this.overlay.remove(source);
+      this.scene.remove(source);
       this.hud.remove(source);
     }
   }
@@ -394,6 +475,8 @@ export class StudioService {
     this.pointerClicks.dispose();
     this.hud.destroy();
     this.overlay.clear();
+    releaseModChunk();
+    this.scene.clear();
   }
 
   // ---------------------------------------------------------------------------
@@ -428,12 +511,18 @@ export class StudioService {
       ...(clientOk
         ? {
             workerUrl: glueWorkerAssetUrl,
-            onHostCall: (call: PlayerCodeHostCall) =>
-              routeWithFallback(
+            onHostCall: (call: PlayerCodeHostCall) => {
+              setModPoseGrid(bounds);
+              return routeWithFallback(
                 call,
-                () => routeClientHostCall(call, reads, bounds, writes, this.pointerClicks),
+                () =>
+                  routeClientHostCall(call, reads, bounds, writes, this.hostInput(), {
+                    source: overlaySource,
+                    store: this.scene,
+                  }),
                 serverCalls,
-              ),
+              );
+            },
             onPresentation: (presentation) => {
               if (presentation.channel === 'hud') {
                 this.hud.set({
@@ -490,7 +579,8 @@ export class StudioService {
       selfUserId: () => this.session.network.user?.userId ?? null,
       reads: this.reads(),
       writes: this.writes(),
-      input: this.pointerClicks,
+      input: this.hostInput(),
+      scene: this.scene,
       serverCalls: (grid) =>
         this.serverCallsFor(grid.gridId, {
           low: stringCorner(grid.bounds.low),
@@ -604,6 +694,8 @@ export class StudioService {
             x: s.x,
             y: s.y,
             z: s.z,
+            yaw: s.yaw,
+            pitch: s.pitch,
             program: s.program,
           });
         }
@@ -615,16 +707,39 @@ export class StudioService {
               x: p.pose.x,
               y: p.pose.y,
               z: p.pose.z,
+              yaw: p.pose.yaw,
+              pitch: p.pose.pitch,
               program: p.pose.program,
             });
           }
         }
         return rows;
       },
-      chunkVoxels: (x, y, z) => {
+      chunkVoxels: async (x, y, z) => {
         const cached = this.session.world.chunks.get({ x: Number(x), y: Number(y), z: Number(z) });
-        if (!cached?.voxels) return { voxelsBase64: null };
-        return { voxelsBase64: bytesToBase64(cached.voxels) };
+        const states: Array<{ x: number; y: number; z: number; state: string }> = [];
+        if (cached) {
+          for (const [index, state] of cached.voxelStates) {
+            if (typeof state !== 'string' || state.length === 0) continue;
+            states.push({
+              x: index & 15,
+              y: (index >> 4) & 15,
+              z: (index >> 8) & 15,
+              state,
+            });
+          }
+        }
+        const durable = await this.listDurableVoxelStates(Number(x), Number(y), Number(z));
+        for (const extra of durable) {
+          const row = states.find((s) => s.x === extra.x && s.y === extra.y && s.z === extra.z);
+          if (row) row.state = extra.state;
+          else states.push(extra);
+        }
+        if (!cached?.voxels && states.length === 0) return { voxelsBase64: null };
+        return {
+          voxelsBase64: bytesToBase64(cached?.voxels ?? new Uint8Array(4096)),
+          states,
+        };
       },
     };
   }
@@ -641,10 +756,88 @@ export class StudioService {
           voxelType: input.voxelType,
           state: input.state ?? DEFAULT_VOXEL_STATE,
         });
-        if (ok) chunks.markDirty(input.chunk);
+        if (ok) {
+          chunks.markDirty(input.chunk);
+          void this.persistVoxelUpdate(input);
+        }
         return ok;
       },
     };
+  }
+
+  /**
+   * Draft SERVER voxel_set writes Postgres but suppresses Buddy fan-out, so the
+   * live chunk cache never sees BOARD/SHOT mailboxes. Pull those states from
+   * listVoxels (cached ~250ms) so the author's CLIENT can read them.
+   */
+  private async listDurableVoxelStates(
+    x: number,
+    y: number,
+    z: number,
+  ): Promise<Array<{ x: number; y: number; z: number; state: string }>> {
+    const game = this.session.network.game;
+    if (!game?.voxels?.list) return [];
+    const key = `${x},${y},${z}`;
+    const hit = this.voxelUpdateCache.get(key);
+    const now = Date.now();
+    if (hit && now - hit.at < 250) return hit.states;
+    try {
+      const rows = await game.voxels.list({
+        appId: this.session.appId,
+        coordinates: { x: String(x), y: String(y), z: String(z) },
+      });
+      const states: Array<{ x: number; y: number; z: number; state: string }> = [];
+      for (const row of rows ?? []) {
+        const loc = row.location;
+        if (!loc) continue;
+        const raw = row.state;
+        if (typeof raw !== 'string' || raw.length === 0) continue;
+        let decoded = raw;
+        try {
+          decoded = new TextDecoder().decode(Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)));
+        } catch {
+          decoded = raw;
+        }
+        states.push({ x: loc.x, y: loc.y, z: loc.z, state: decoded });
+      }
+      this.voxelUpdateCache.set(key, { at: now, states });
+      return states;
+    } catch (error) {
+      this.session.network.log(`voxel list failed: ${messageOf(error)}`);
+      return hit?.states ?? [];
+    }
+  }
+  private async persistVoxelUpdate(input: {
+    chunk: { x: number; y: number; z: number };
+    x: number;
+    y: number;
+    z: number;
+    voxelType: number;
+    state?: string;
+  }): Promise<void> {
+    const game = this.session.network.game;
+    if (!game?.voxels?.update) return;
+    const wire = voxelStateToWire(input.state ?? DEFAULT_VOXEL_STATE);
+    const cell = `${input.chunk.x},${input.chunk.y},${input.chunk.z}:${input.x},${input.y},${input.z}`;
+    const payload = `${input.voxelType}:${wire}`;
+    if (this.lastDurableVoxel.get(cell) === payload) return;
+    this.lastDurableVoxel.set(cell, payload);
+    try {
+      await game.voxels.update({
+        appId: this.session.appId,
+        coordinates: {
+          x: String(input.chunk.x),
+          y: String(input.chunk.y),
+          z: String(input.chunk.z),
+        },
+        location: { x: input.x, y: input.y, z: input.z },
+        voxelType: input.voxelType,
+        state: wire,
+      });
+    } catch (error) {
+      this.lastDurableVoxel.delete(cell);
+      this.session.network.log(`voxel persist failed: ${messageOf(error)}`);
+    }
   }
 
   private adoptGrid(grid: GridSnapshot | null, chunk: ChunkCoord): void {
@@ -656,13 +849,21 @@ export class StudioService {
       this.lastModsReadAt = 0;
       this.gridEnteredAt = Date.now();
       this.overlay.clear();
+      this.scene.clear();
+      clearModPose();
+      if (grid) this.bindLiveMod(grid);
+      else releaseModChunk();
       if (this.state.clientModsAvailable) {
         this.clientHalves().enterGrid(
           grid ? { gridId: grid.gridId, bounds: toBrokerBounds(grid.bounds) } : null,
         );
       }
     }
-    this.state = { ...this.state, grid };
+    this.state = {
+      ...this.state,
+      grid,
+      clientModsReady: entered ? false : this.state.clientModsReady,
+    };
     this.emit();
   }
 
@@ -690,7 +891,12 @@ export class StudioService {
     if (key !== this.lastGridChunkKey || now - this.lastGridReadAt > GRID_REFRESH_MS) {
       try {
         const grid = await this.grids.lookup(chunk);
-        this.adoptGrid(grid, chunk);
+        if (!grid && this.approachHold && this.currentGrid) {
+          this.lastGridChunkKey = key;
+          this.lastGridReadAt = now;
+        } else {
+          this.adoptGrid(grid, chunk);
+        }
       } catch (error) {
         this.session.network.log(`grid lookup failed: ${messageOf(error)}`);
       }
@@ -703,6 +909,29 @@ export class StudioService {
    * the rest, stop what changed or went. Waits out the presence race after
    * entering a grid.
    */
+  /** The live session gameplay calls (pose, events, voice) read from. */
+  private bindLiveMod(grid: GridSnapshot): void {
+    const bounds = toBrokerBounds(grid.bounds, grid.gridId);
+    bindModGrid(bounds);
+    bindModSession({
+      client: this.session.network.game,
+      appId: this.session.appId,
+      gridId: grid.gridId,
+      selfUuid: this.session.selfUuid,
+      userId: this.session.userId,
+      moveTo: (chunk) => this.session.moveTo(chunk),
+      players: () =>
+        this.session.players().map((player) => ({
+          uuid: player.uuid,
+          pose: { x: player.pose.x, y: player.pose.y, z: player.pose.z },
+        })),
+      voiceStart: () => this.session.voice.start(),
+      voiceStop: () => this.session.voice.stop(),
+      videoStart: () => this.session.webcam.start(),
+      videoStop: () => this.session.webcam.stop(),
+    });
+  }
+
   private async refreshClientHalves(): Promise<void> {
     const halves = this.halves;
     if (!halves || !this.currentGrid || !this.state.clientModsAvailable) return;
@@ -713,6 +942,8 @@ export class StudioService {
     } catch (error) {
       this.session.network.log(`grid CLIENT halves unavailable: ${messageOf(error)}`);
     }
+    this.state = { ...this.state, clientModsReady: true };
+    this.emit();
   }
 
   private async confirmTrust(
