@@ -75,6 +75,7 @@ export class GridService {
   private registryInFlight = new Map<string, Promise<ClaimRecord | null>>();
   /** Grids this session already tried to put in the registry from `lookup`. */
   private backfilled = new Set<string>();
+  private adminReadRefused = false;
 
   constructor(private readonly network: NetworkManager) {
     this.loadOwned();
@@ -183,7 +184,7 @@ export class GridService {
    */
   private async discoverOwned(chunk: ChunkCoord): Promise<OwnedRecord | null> {
     const userId = this.network.user?.userId;
-    if (!userId) return null;
+    if (!userId || this.adminReadRefused) return null;
     try {
       const rows = (await this.network.game.gameApps.nearbyPermissions({
         appId: this.requireAppId(),
@@ -214,8 +215,22 @@ export class GridService {
       this.owned.set(chunkKey(chunk), best);
       this.saveOwned();
       return best;
-    } catch {
+    } catch (error) {
+      this.noteAdminReadRefusal(error);
       return null;
+    }
+  }
+
+  /**
+   * `nearbyGridPermissions` is app-admin only, so every ordinary player is refused it.
+   * After the first refusal this session asks no more, rather than logging a refusal on
+   * every lookup (OI-2026-10-07-008); an admin is never refused and keeps asking.
+   */
+  private noteAdminReadRefusal(error: unknown): void {
+    const e = error as { code?: unknown; message?: unknown } | null;
+    const message = typeof e?.message === 'string' ? e.message : '';
+    if (e?.code === 'FORBIDDEN' || /manage_apps|Missing app permission/i.test(message)) {
+      this.adminReadRefused = true;
     }
   }
 
@@ -233,7 +248,7 @@ export class GridService {
     record: OwnedRecord,
   ): Promise<PlayerCodePermissionKey[] | null> {
     const userId = this.network.user?.userId;
-    if (!userId) return null;
+    if (!userId || this.adminReadRefused) return null;
     try {
       const rows = (await this.network.game.gameApps.nearbyPermissions({
         appId: this.requireAppId(),
@@ -265,7 +280,8 @@ export class GridService {
         this.saveOwned();
       }
       return keys;
-    } catch {
+    } catch (error) {
+      this.noteAdminReadRefusal(error);
       return null; // not an admin: the claim-time keys stand
     }
   }
