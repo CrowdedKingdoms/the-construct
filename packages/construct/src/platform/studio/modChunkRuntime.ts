@@ -429,6 +429,9 @@ async function restoreAvatar(): Promise<void> {
     .catch(() => undefined);
 }
 
+/** The answer to an SDK call while no session is bound; the host's router hands such a call on. */
+export const NO_SESSION = 'no session';
+
 const PASS_SDK = new Set([
   'actors_create',
   'actors_update',
@@ -494,7 +497,7 @@ const PASS_SDK = new Set([
 
 async function passSdk(fn: string, args: Record<string, unknown>): Promise<unknown> {
   if (!PASS_SDK.has(fn)) return { ok: false, error: `unrouted host call ${fn}` };
-  if (!port) return { ok: false, error: 'no session' };
+  if (!port) return { ok: false, error: NO_SESSION };
   const client = port.client;
   switch (fn) {
     case 'actors_create':
