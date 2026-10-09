@@ -34,7 +34,7 @@
     "publish": "node scripts/publish.mjs"
   },
   "dependencies": {
-    "@crowdedkingdoms/construct": "0.3.8",
+    "@crowdedkingdoms/construct": "0.3.10",
     "@crowdedkingdoms/crowdyjs": "18.4.0-test.1",
     "pixi.js": "^8.22.0",
     "three": "^0.186.1"

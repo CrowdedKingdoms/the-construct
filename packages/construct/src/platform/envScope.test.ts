@@ -5,8 +5,16 @@ vi.mock('@crowdedkingdoms/crowdyjs', () => ({
   CROWDY_DEFAULT_TIER: 'test',
 }));
 
-const { ENV_HANDLE, envHandleFor, envScopedKey, ensureEnvScope, readScoped, writeScoped } =
-  await import('./envScope');
+const {
+  ENV_HANDLE,
+  appTokenStorageKey,
+  envHandleFor,
+  envScopedKey,
+  ensureEnvScope,
+  perGameBase,
+  readScoped,
+  writeScoped,
+} = await import('./envScope');
 
 describe('envScope', () => {
   beforeEach(() => localStorage.clear());
@@ -21,6 +29,19 @@ describe('envScope', () => {
   it('suffixes keys with the handle', () => {
     expect(envScopedKey('construct:app-id')).toBe('construct:app-id:ck.test.example');
     expect(envScopedKey('x', 'other')).toBe('x:other');
+  });
+
+  it('keys a saved app token by game path and API host', () => {
+    expect(appTokenStorageKey('/matchstick/')).toBe('crowdyjs:app:/matchstick/:ck.test.example');
+    expect(appTokenStorageKey('/blocks-with-friends/', 'ck.dev.example')).toBe(
+      'crowdyjs:app:/blocks-with-friends/:ck.dev.example',
+    );
+    expect(appTokenStorageKey('/matchstick/', 'ck.dev.example')).not.toBe(
+      appTokenStorageKey('/other-game/', 'ck.dev.example'),
+    );
+    expect(perGameBase('construct:app-route', '/matchstick/')).toBe(
+      'construct:app-route:/matchstick/',
+    );
   });
 
   it('drops per-environment values when the environment changes', () => {
