@@ -10,7 +10,7 @@ Friends) it answered `{ ok: false, error: 'no session' }` instead of refusing. S
 `emit_channel` in Blocks with Friends stopped reaching the grid's channel. The router
 now refuses those calls as it refuses an unrouted one, and the host answers them. A game
 that binds a session (the Construct, Matchstick) is unchanged. Still CrowdyJS
-`18.4.0-dev.1`.
+`18.4.0-test.1`.
 
 `@crowdedkingdoms/construct` 0.3.9: a saved sign-in belongs to one game (#118). The app
 token was stored under a key made from the API host alone, so a second Construct game
