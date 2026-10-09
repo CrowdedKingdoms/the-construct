@@ -82,7 +82,10 @@ reserved for that org) through the same command a third party runs.
 - `npm test`, `npm run lint`, `npm run typecheck`, `npm run format:check`,
   `npm run build` must pass; `npm run test:e2e` proves the served bundle is
   cross-origin isolated (Playwright, Chromium).
-- Live verification needs an account you own on the tier the pin targets:
+- Live verification needs an account you own on the tier the pin targets
+  (dev and test are staff-only since 2026-10-09: there it must be an authorized
+  Crowded Kingdoms account, a confirmed company address or one the operator
+  listed; `register` refuses any other new address with `TIER_ACCESS_REQUIRED`):
   `CONSTRUCT_EMAIL`/`CONSTRUCT_PASSWORD` → `npm run setup` → `npm run smoke`,
   then `CONSTRUCT_E2E=1 APP_ID=<id> CONSTRUCT_E2E_URL=http://localhost:5175
   npm run test:e2e` against `npm run dev` (the live test uses the dev-only
