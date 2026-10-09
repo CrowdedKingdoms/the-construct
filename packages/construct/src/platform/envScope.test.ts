@@ -39,7 +39,9 @@ describe('envScope', () => {
     expect(appTokenStorageKey('/matchstick/', 'ck.dev.example')).not.toBe(
       appTokenStorageKey('/other-game/', 'ck.dev.example'),
     );
-    expect(perGameBase('construct:app-route', '/matchstick/')).toBe('construct:app-route:/matchstick/');
+    expect(perGameBase('construct:app-route', '/matchstick/')).toBe(
+      'construct:app-route:/matchstick/',
+    );
   });
 
   it('drops per-environment values when the environment changes', () => {

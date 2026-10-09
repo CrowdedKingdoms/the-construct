@@ -40,7 +40,13 @@ import {
   APP_TOKEN_REFRESH_RETRY_MS,
   AUTHORIZE_URL,
 } from '../config';
-import { appTokenStorageKey, envScopedKey, perGameBase, readScoped, writeScoped } from '../envScope';
+import {
+  appTokenStorageKey,
+  envScopedKey,
+  perGameBase,
+  readScoped,
+  writeScoped,
+} from '../envScope';
 import { WorldHub } from '../exec/worldHub';
 import { Emitter } from '../util/Emitter';
 
