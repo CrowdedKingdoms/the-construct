@@ -45,7 +45,7 @@
     "./grid/*": "./src/grid/*.ts"
   },
   "peerDependencies": {
-    "@crowdedkingdoms/crowdyjs": ">=18.0.4-dev.0 <19 || >=18.1.0-dev.0 <19 || >=18.2.0-dev.0 <19 || >=18.3.0-dev.0 <19",
+    "@crowdedkingdoms/crowdyjs": ">=18.0.4-dev.0 <19 || >=18.1.0-dev.0 <19 || >=18.2.0-dev.0 <19 || >=18.3.0-dev.0 <19 || >=18.4.0-dev.0 <19",
     "@crowdedkingdoms/crowdy-dsh": ">=0.4.0-dev.0 <1 || >=0.4.1-dev.0 <1 || >=0.4.2-dev.0 <1 || >=0.4.3-dev.0 <1 || >=0.4.4-dev.0 <1 || >=0.4.5-dev.0 <1"
   },
   "peerDependenciesMeta": {

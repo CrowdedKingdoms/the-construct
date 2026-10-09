@@ -105,6 +105,23 @@ describe('GridService on the world hub registry', () => {
     expect(await new GridService(visitor.net).lookup({ x: 9, y: 0, z: 9 })).toBeNull();
   });
 
+  it("asks a player's session for the admin-only grid read once, then stops", async () => {
+    const owner = network('42');
+    const grids = new GridService(owner.net);
+    await grids.claimHere(AT, 'neo');
+    const probe = (
+      owner.net as unknown as {
+        game: { gameApps: { nearbyPermissions: ReturnType<typeof vi.fn> } };
+      }
+    ).game.gameApps.nearbyPermissions;
+    const before = probe.mock.calls.length;
+    await grids.lookup(AT);
+    await grids.lookup({ x: 9, y: 0, z: 9 });
+    await grids.lookup(AT);
+    expect(probe.mock.calls.length - before).toBeLessThanOrEqual(1);
+    expect((await grids.lookup(AT))?.owned).toBe(true);
+  });
+
   it('caches a chunk briefly and releases through the platform, then the registry', async () => {
     const { net, hub, claims, marketplace } = network();
     const grids = new GridService(net);

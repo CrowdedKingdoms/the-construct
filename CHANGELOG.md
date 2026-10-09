@@ -2,15 +2,17 @@
 
 ## Unreleased
 
-`@crowdedkingdoms/construct` 0.3.8 and CrowdyJS `18.3.0-dev.1`. A client mod
+`@crowdedkingdoms/construct` 0.3.8 and CrowdyJS `18.4.0-dev.1`. A client mod
 on a claimed grid now draws its own scene and gameplay (#89, #90). It uploads
 a scene catalog and places instances of it, holds the player's pose, reads
 walk, look and key input, tints avatars inside its grid and emits one-shot
 events the holodeck draws. The page-owned Afterburn hull, flight and
 click-to-shoot path is gone, because that look now comes from the mod.
 CrowdyJS 18.3.0 hands those page-held host calls to the game
-(`createGridHostCalls`' `local.page`). The peer ranges gain the 18.3.0
-prerelease line.
+(`createGridHostCalls`' `local.page`), and 18.4.0 adds the terms and age
+gate's consent calls. `GridService` asks the admin-only grid permissions read
+once per session that is refused it, instead of on every lookup (#119). The
+peer ranges gain the 18.3.0 and 18.4.0 prerelease lines.
 
 `@crowdedkingdoms/construct` 0.3.7, CrowdyJS `18.2.0-dev.1` and crowdy-dsh
 `0.4.5-dev.1`. 0.3.6's hydration was not enough on its own: CrowdyJS's chunk

@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "@crowdedkingdoms/construct": "0.3.8",
-    "@crowdedkingdoms/crowdyjs": "18.3.0-dev.1",
+    "@crowdedkingdoms/crowdyjs": "18.4.0-dev.1",
     "pixi.js": "^8.22.0",
     "three": "^0.186.1"
   },
