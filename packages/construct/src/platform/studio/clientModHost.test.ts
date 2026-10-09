@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const {
   DEFAULT_VOXEL_STATE,
@@ -7,6 +7,7 @@ const {
   bytesToBase64,
   parseVoxelSetArgs,
   routeClientHostCall,
+  routeWithFallback,
   voxelStateToWire,
   voxelsFromBase64,
   voxelsListRows,
@@ -141,6 +142,23 @@ describe('routeClientHostCall', () => {
       await expect(
         routeClientHostCall({ fn, args: {} } as never, r.reads, grid),
       ).rejects.toBeInstanceOf(HostCallRefusedError);
+    }
+  });
+
+  it("hands an SDK call to the host's server calls while no session is bound", async () => {
+    const { bindModSession } = await import('./modChunkRuntime');
+    bindModSession(null);
+    const r = reads();
+    for (const fn of ['emit_channel', 'channel_join', 'sessions_list']) {
+      const call = { fn, args: { channelId: '5' } } as never;
+      await expect(routeClientHostCall(call, r.reads, grid)).rejects.toBeInstanceOf(
+        HostCallRefusedError,
+      );
+      const serverCalls = vi.fn(async () => ({ answered: fn }));
+      await expect(
+        routeWithFallback(call, () => routeClientHostCall(call, r.reads, grid), serverCalls),
+      ).resolves.toEqual({ answered: fn });
+      expect(serverCalls).toHaveBeenCalledWith(call);
     }
   });
 

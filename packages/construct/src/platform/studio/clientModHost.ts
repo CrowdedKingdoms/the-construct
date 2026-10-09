@@ -13,7 +13,7 @@
  * the same route Paint uses. Never hand a mod the raw client.
  */
 import type { PlayerCodeGridBounds, PlayerCodeHostCall } from '@crowdedkingdoms/crowdyjs';
-import { routeModGameplay } from './modChunkRuntime';
+import { NO_SESSION, routeModGameplay } from './modChunkRuntime';
 import type { ModSceneStore } from './modScene';
 
 export interface ClientVoxelState {
@@ -188,13 +188,14 @@ export async function routeClientHostCall(
       return scene.store.setInstances(scene.source, args);
     default: {
       const answered = await routeModGameplay(call);
-      if (
-        answered &&
-        typeof answered === 'object' &&
-        'error' in answered &&
-        String((answered as { error: unknown }).error).startsWith('unrouted')
-      ) {
-        throw new HostCallRefusedError(fn);
+      if (answered && typeof answered === 'object' && 'error' in answered) {
+        // A call the mod runtime does not route, or an SDK call in a game that never binds a
+        // session (one without StudioService), is the host's to answer: `routeWithFallback`
+        // hands a refusal to its server calls.
+        const error = String((answered as { error: unknown }).error);
+        if (error.startsWith('unrouted') || error === NO_SESSION) {
+          throw new HostCallRefusedError(fn);
+        }
       }
       return answered;
     }

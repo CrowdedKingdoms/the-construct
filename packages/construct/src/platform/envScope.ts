@@ -30,6 +30,29 @@ export function envScopedKey(base: string, handle: string = ENV_HANDLE): string 
   return `${base}:${handle}`;
 }
 
+/**
+ * `<base>:<game-path>`, for `readScoped` / `writeScoped`, which append the host.
+ *
+ * The host alone is one key for every Construct game on a games host. Blocks
+ * with Friends keys its app token by `import.meta.env.BASE_URL` so two games
+ * do not share a session. Pass that base here.
+ */
+export function perGameBase(base: string, gamePath: string): string {
+  return `${base}:${gamePath}`;
+}
+
+/**
+ * localStorage key for the saved app token.
+ *
+ * Shape is `BrowserLocalStorageTokenStore.appKey(gamePath)` plus the API-host
+ * handle: `crowdyjs:app:/matchstick/:ck.dev.crowdedkingdoms.com`. The path
+ * keeps a second Construct game from restoring Matchstick's token. The handle
+ * keeps a localhost build pointed at another tier from restoring the first.
+ */
+export function appTokenStorageKey(gamePath: string, handle: string = ENV_HANDLE): string {
+  return envScopedKey(`crowdyjs:app:${gamePath}`, handle);
+}
+
 /** Keys that describe the previous environment and must not survive a switch. */
 const SCOPED_LOCAL_PREFIXES = ['construct:app-id', 'construct:last-program'];
 
