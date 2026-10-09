@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+`@crowdedkingdoms/construct` 0.3.9: a saved sign-in belongs to one game (#118). The app
+token was stored under a key made from the API host alone, so a second Construct game
+on the same host (Matchstick beside Blocks with Friends) restored the first one's token
+and entered the wrong app. The key is now the game's Vite base with the API host on the
+end (`crowdyjs:app:/matchstick/:ck.dev.crowdedkingdoms.com`), and the remembered route
+follows it, so signing out of one game leaves the other's alone. A player signs in once
+more per game after the update. Still CrowdyJS `18.4.0-dev.1`.
+
 `@crowdedkingdoms/construct` 0.3.8 and CrowdyJS `18.4.0-dev.1`. A client mod
 on a claimed grid now draws its own scene and gameplay (#89, #90). It uploads
 a scene catalog and places instances of it, holds the player's pose, reads
