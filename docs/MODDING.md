@@ -161,6 +161,24 @@ To let CLIENT halves reach more of the game, add a case that goes through the
 same player-authorised SDK path the human UI uses. Never hand a mod the client
 object.
 
+## On your own machine
+
+Outside Studio, the platform's open dev kit creates, tests and builds a mod the
+way the platform builds it:
+
+```bash
+npx @crowdedkingdoms/ckx-kit@dev new mod my-mod   # the platform's mod starter
+cd my-mod
+cargo test                                         # against a fake of its grid
+npx @crowdedkingdoms/ckx-kit@dev build --mod       # the platform's build and checks
+```
+
+`cargo test` runs the mod against `ckx_sdk::testing`, whose fake grid answers
+it as the node API does and applies the platform's rules for mods. When it
+passes, bring the same sources to Studio (or bind their repository) to build and
+deploy them on the platform. See [Develop on your
+machine](https://docs.dev.crowdedkingdoms.com/exec/develop-locally).
+
 ## Templates
 
 SERVER starters are `ckx-sdk` crates under `exec/mods/` (`construct-beacon`,
