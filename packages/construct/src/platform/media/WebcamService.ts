@@ -208,6 +208,20 @@ export class WebcamService {
   }
 
   /** Ask for the camera and start sending frames. Resolves once capturing. */
+  /** Video-pixel rectangle copied into the 128×96 JPEG. Null keeps the whole frame. */
+  private frameCrop: { x: number; y: number; width: number; height: number } | null = null;
+  /** Camera size for the next start(). The encoded frame stays 128×96. */
+  private captureRequest = { width: CAPTURE_WIDTH, height: CAPTURE_HEIGHT };
+
+  setFrameCrop(crop: { x: number; y: number; width: number; height: number } | null): void {
+    this.frameCrop = crop;
+  }
+
+  /** Ask the camera for a larger picture before the next start(), so a face crop still has pixels. */
+  setCaptureSize(width: number, height: number): void {
+    if (width > 0 && height > 0) this.captureRequest = { width, height };
+  }
+
   async start(): Promise<void> {
     if (this.captureTimer) return;
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
@@ -216,7 +230,11 @@ export class WebcamService {
     }
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: CAPTURE_WIDTH, height: CAPTURE_HEIGHT, frameRate: CAPTURE_FPS },
+        video: {
+          width: this.captureRequest.width,
+          height: this.captureRequest.height,
+          frameRate: CAPTURE_FPS,
+        },
         audio: false,
       });
     } catch (error) {
@@ -246,6 +264,7 @@ export class WebcamService {
   stop(): void {
     if (this.captureTimer) clearInterval(this.captureTimer);
     this.captureTimer = null;
+    this.frameCrop = null;
     this.video?.pause();
     this.video = null;
     this.canvas = null;
@@ -302,7 +321,22 @@ export class WebcamService {
     const ctx = canvas.getContext('2d') as
       OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
     if (!ctx) return null;
-    ctx.drawImage(video, 0, 0, CAPTURE_WIDTH, CAPTURE_HEIGHT);
+    const crop = this.frameCrop;
+    if (crop && crop.width > 0 && crop.height > 0) {
+      ctx.drawImage(
+        video,
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
+        0,
+        0,
+        CAPTURE_WIDTH,
+        CAPTURE_HEIGHT,
+      );
+    } else {
+      ctx.drawImage(video, 0, 0, CAPTURE_WIDTH, CAPTURE_HEIGHT);
+    }
     for (let attempt = 0; attempt < 3; attempt++) {
       const blob = await toBlob(canvas, this.quality);
       if (!blob) return null;
