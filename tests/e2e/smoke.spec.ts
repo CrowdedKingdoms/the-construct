@@ -33,6 +33,9 @@ async function mintAppSession(
     !configured || configured === 'same-origin' || configured === '/' ? pageOrigin : configured;
   const identity = createCrowdyClient({ httpUrl });
   await identity.auth.login({ email: creds.email, password: creds.password });
+  // A gameplay token is refused (LEGAL_ACCEPTANCE_REQUIRED) until the account holds the
+  // current terms; a version bump asks every account again, this one included.
+  await identity.auth.recordPlayerConsents({ acceptLegal: true, attestAgeOfMajority: true });
   const minted = await identity.portal.mintAppToken(creds.appId);
   return {
     token: minted.token,
