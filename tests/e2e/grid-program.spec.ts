@@ -35,6 +35,9 @@ function pageApiOrigin(page: Page): string {
 async function seedSession(page: Page): Promise<void> {
   const identity = createCrowdyClient({ httpUrl: httpUrl!, embeddedHost: false });
   await identity.auth.login({ email: email!, password: password! });
+  // A gameplay token is refused (LEGAL_ACCEPTANCE_REQUIRED) until the account holds the
+  // current terms; a version bump asks every account again, this one included.
+  await identity.auth.recordPlayerConsents({ acceptLegal: true, attestAgeOfMajority: true });
   const minted = await identity.portal.mintAppToken(appId!);
   await page.evaluate(
     ({ token, handle, id, expiresAt }) => {
