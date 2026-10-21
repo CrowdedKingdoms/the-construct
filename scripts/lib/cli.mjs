@@ -66,6 +66,10 @@ export async function signIn(log = console.log) {
     log(`Login failed (${messageOf(error)}); registering ${email}…`);
     await identity.auth.register({ email, password });
   }
+  // A gameplay token is refused (LEGAL_ACCEPTANCE_REQUIRED) until the account holds the
+  // current terms and the age-of-majority attestation; a version bump asks every account
+  // again. Idempotent: a version already stored is not written twice.
+  await identity.auth.recordPlayerConsents({ acceptLegal: true, attestAgeOfMajority: true });
   const me = await identity.users.me();
   log(`Signed in as ${me.email ?? me.userId} (user ${me.userId})`);
   return { identity, user: me };
