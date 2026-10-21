@@ -42,6 +42,9 @@ async function mintAppSession(pageOrigin: string) {
   if (!httpUrl) throw new Error('CONSTRUCT_E2E_SEED_TOKEN=1 requires CROWDY_HTTP_URL');
   const identity = createCrowdyClient({ httpUrl });
   await identity.auth.login({ email: email!, password: password! });
+  // A gameplay token is refused (LEGAL_ACCEPTANCE_REQUIRED) until the account holds the
+  // current terms; a version bump asks every account again, this one included.
+  await identity.auth.recordPlayerConsents({ acceptLegal: true, attestAgeOfMajority: true });
   const minted = await identity.portal.mintAppToken(appId!);
   return {
     token: minted.token,
