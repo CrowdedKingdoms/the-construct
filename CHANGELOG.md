@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+Docs: [docs/MANAGED-PLAYERS.md](docs/MANAGED-PLAYERS.md) shows how a studio that signs its
+own players in (org-managed players) replaces hosted sign-in: adopt the app token its backend
+minted, or trade its signed assertion, where the starter finishes a hosted sign-in. No code
+change in the starter.
+
 `@crowdedkingdoms/construct` 0.3.10: a game that binds no mod session gets its own
 server calls back. Since 0.3.8 the client-mod router answers the SDK pass-through calls
 itself, and with no session bound (a game without StudioService, such as Blocks with
