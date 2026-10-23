@@ -165,6 +165,7 @@ flowchart LR
 - [docs/MODDING.md](docs/MODDING.md) — Crowdy Studio: permissions, mods on ck-exec and their CLIENT halves, the browser sandbox, templates, visitors' consent, security posture
 - [docs/NEW-GAME-CHECKLIST.md](docs/NEW-GAME-CHECKLIST.md) — turning this into your game
 - [docs/HOSTING.md](docs/HOSTING.md) — static hosting with the headers CLIENT halves require
+- [docs/MANAGED-PLAYERS.md](docs/MANAGED-PLAYERS.md) — signing in your own players (org-managed players) instead of hosted sign-in
 - [CHANGELOG.md](CHANGELOG.md)
 
 ## Free tier, plainly
