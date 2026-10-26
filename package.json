@@ -9,9 +9,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "predev": "node scripts/copy-dsh-web.mjs",
+    "predev": "node scripts/copy-dsh-web.mjs && node scripts/copy-mmo-playbook.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/copy-dsh-web.mjs",
+    "prebuild": "node scripts/copy-dsh-web.mjs && node scripts/copy-mmo-playbook.mjs",
     "build": "tsc -p tsconfig.json && vite build",
     "dsh:copy": "node scripts/copy-dsh-web.mjs",
     "preview": "vite preview",

@@ -44,6 +44,7 @@ import { messageOf } from '../network/NetworkManager';
 import { isTextEntry } from '../../engine/Input';
 import { chunkKey, worldToChunk, type ChunkCoord, type Vec3 } from '../realtime/space';
 import { AgentLocomotion } from './agentLocomotion';
+import { wantsStudioOpen } from './studioQuery';
 import { describeClientHalfPrompt, GridClientHalves, studioPreviewModName } from './clientHalves';
 import { ConstructPlayerHostAdapter } from './ConstructPlayerHostAdapter';
 import { HumanInputMonitor } from './HumanInputMonitor';
@@ -334,7 +335,7 @@ export class StudioService {
         getToken: () => network().game.getToken(),
         persistScope: `${this.session.appId}/${this.session.selfUuid}`,
         studioOrigin: STUDIO_ORIGIN ?? undefined,
-        openOnMount: true,
+        openOnMount: wantsStudioOpen(globalThis.location?.search ?? ''),
       },
       onAgentMounted: (handle) => {
         this.watchStudio(handle.controller);
@@ -539,11 +540,26 @@ export class StudioService {
           }
         : {}),
       playerHost: this.agentHost,
-      dshHost: {
-        captureFrame: async () => (await this.hooks?.captureFrame?.()) ?? null,
-        describeView: () => this.hooks?.describeView?.(),
-        grid: this.programs,
-      },
+      dshHost: Object.assign(
+        {
+          captureFrame: async () => (await this.hooks?.captureFrame?.()) ?? null,
+          describeView: () => this.hooks?.describeView?.(),
+          grid: this.programs,
+        },
+        // The published SDK type does not list this yet. The page bridge reads
+        // it once CrowdyJS carries read_playbook; until then it is ignored.
+        {
+          playbookBase: `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}mmo/`,
+          authorizeLiveModding: async (action: 'draft_test' | 'deploy_live') => {
+            await this.session.network.game.graphql.query(
+              `query CrowdyStudioLiveModding($appId: BigInt!, $action: String!) {
+                crowdyStudioLiveModding(appId: $appId, action: $action)
+              }`,
+              { appId: this.session.appId, action },
+            );
+          },
+        },
+      ),
     };
   }
 
