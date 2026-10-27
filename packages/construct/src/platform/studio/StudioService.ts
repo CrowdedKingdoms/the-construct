@@ -45,6 +45,8 @@ import { isTextEntry } from '../../engine/Input';
 import { chunkKey, worldToChunk, type ChunkCoord, type Vec3 } from '../realtime/space';
 import { AgentLocomotion } from './agentLocomotion';
 import { wantsStudioOpen } from './studioQuery';
+import { localLiveCode } from '../localLiveCode';
+import { readGameDraft, writeGameDraft } from './gameDraft';
 import { describeClientHalfPrompt, GridClientHalves, studioPreviewModName } from './clientHalves';
 import { ConstructPlayerHostAdapter } from './ConstructPlayerHostAdapter';
 import { HumanInputMonitor } from './HumanInputMonitor';
@@ -66,6 +68,7 @@ import { ModSceneStore } from './modScene';
 import { GridService, type GridSnapshot } from './GridService';
 import {
   hasAnyStudioPermission,
+  singleChunkBounds,
   studioPermissions,
   toBrokerBounds,
   type GridBounds,
@@ -337,6 +340,16 @@ export class StudioService {
         studioOrigin: STUDIO_ORIGIN ?? undefined,
         openOnMount: wantsStudioOpen(globalThis.location?.search ?? ''),
       },
+      ...(localLiveCode()
+        ? {
+            runtimeOverrides: {
+              gameFiles: {
+                writeDraft: writeGameDraft,
+                readDraft: readGameDraft,
+              },
+            },
+          }
+        : {}),
       onAgentMounted: (handle) => {
         this.watchStudio(handle.controller);
         this.state = { ...this.state, agentReady: true, agentReason: null };
@@ -376,6 +389,35 @@ export class StudioService {
 
   get isOpen(): boolean {
     return this.embed?.open ?? false;
+  }
+
+  /** The Studio controller, once the dock has mounted. Dev sessions call the game-file bridge through it. */
+  private agentController: CrowdyStudioController | null = null;
+
+  get controller(): CrowdyStudioController | null {
+    return this.agentController;
+  }
+
+  /**
+   * Open the dock without a claimed grid. Local live-code only: the grid id
+   * is a stand-in so the editor can mount. Game-file drafts do not use it.
+   */
+  openLocalLiveCode(): void {
+    if (!this.embed) return;
+    this.session.network.log('local live-code mock: opening Studio without a grid claim');
+    const grid: GridSnapshot = {
+      gridId: 'local-live-code',
+      bounds: singleChunkBounds({ x: 0, y: 0, z: 0 }),
+      permissions: studioPermissions([
+        'write_server_code',
+        'run_server_code',
+        'write_client_code',
+        'run_client_code',
+      ]),
+      owned: false,
+      ownerName: 'local live-code mock',
+    };
+    this.openOn(grid);
   }
 
   /** Claim the chunk under `position`, then open the studio on it. */
@@ -642,6 +684,7 @@ export class StudioService {
   }
 
   private watchStudio(controller: CrowdyStudioController | null): void {
+    this.agentController = controller;
     this.unwatchStudio?.();
     this.unwatchStudio = null;
     const follow = (mod: string | null) => {

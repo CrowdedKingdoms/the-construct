@@ -6,6 +6,7 @@ import { defineConfig, loadEnv } from 'vite';
 import { constructDevServerOptions, envFlag } from './scripts/lib/dev-server-options.mjs';
 import { sdkDefaultHttpOrigin } from './scripts/lib/sdk-default-origin.mjs';
 import { constructHeaderPlugins } from '@crowdedkingdoms/construct/node/vite-plugins';
+import { liveDraftPlugin } from './scripts/lib/live-draft.mjs';
 
 import {
   dshSecurityHeaders,
@@ -30,17 +31,29 @@ export default defineConfig(({ mode }) => {
     .filter(Boolean);
   const headers = securityHeaders({ apiOrigins: [apiOrigin], frameAncestors });
   const dshHeaders = dshSecurityHeaders({ apiOrigins: [apiOrigin], frameAncestors });
+  // Checkout of the bound game. Draft writes land there and Vite serves its
+  // scenes and catalog, so a draft updates this page before a GitHub commit.
+  const draftRoot = env.LIVE_DRAFT_ROOT?.trim();
 
   return {
-    plugins: constructHeaderPlugins({
-      dshHeaders,
-      gridProgramHeaders: gridProgramSecurityHeaders(),
-    }),
+    plugins: [
+      ...constructHeaderPlugins({
+        dshHeaders,
+        gridProgramHeaders: gridProgramSecurityHeaders(),
+      }),
+      ...(draftRoot ? [liveDraftPlugin(draftRoot)] : []),
+    ],
     resolve: {
-      alias: { '@': path.resolve(rootDir, 'src') },
+      alias: [
+        ...(draftRoot
+          ? [{ find: '@/scenes', replacement: path.resolve(draftRoot, 'src/scenes') }]
+          : []),
+        { find: '@', replacement: path.resolve(rootDir, 'src') },
+      ],
     },
     server: {
       port: 5175,
+      strictPort: true,
       host: true,
       // Default: production isolation, no proxy. Local stacks opt in via
       // VITE_DEV_PROXY / VITE_DEV_ALLOWED_HOSTS / VITE_DEV_RELAX_ISOLATION.
@@ -51,6 +64,12 @@ export default defineConfig(({ mode }) => {
         relaxIsolation: envFlag(env, 'VITE_DEV_RELAX_ISOLATION'),
         proxyTarget: env.VITE_DEV_PROXY_TARGET?.trim(),
       }),
+      fs: {
+        allow: [rootDir, ...(draftRoot ? [path.resolve(draftRoot)] : [])],
+      },
+      // A machine that is already out of inotify watches can still serve the
+      // draft. Polling is opt-in so a normal checkout keeps native watches.
+      ...(env.VITE_DEV_POLL === '1' ? { watch: { usePolling: true, interval: 300 } } : {}),
     },
     preview: {
       headers,

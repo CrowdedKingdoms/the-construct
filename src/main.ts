@@ -34,6 +34,8 @@ import {
   messageOf,
   type AppRoute,
 } from '@crowdedkingdoms/construct/platform/network/NetworkManager';
+import { localLiveCode } from '@crowdedkingdoms/construct/platform/localLiveCode';
+import { wantsStudioOpen } from '@crowdedkingdoms/construct/platform/studio/studioQuery';
 import { HOLODECK_SCENE_ID, HOLODECK_SPAWN, programById } from '@/game/programs';
 import { HolodeckScene } from '@/scenes/holodeck-three/HolodeckScene';
 import { PaintScene } from '@/scenes/program-pixi/PaintScene';
@@ -249,11 +251,19 @@ async function startGame(): Promise<void> {
 
   // Join where we left off (holodeck only; programs re-spawn at their entry).
   const spawn = saved.position && !saved.lastProgram ? saved.position : HOLODECK_SPAWN;
-  card.setStatus('Joining the world…');
-  await session.join({ x: spawn.x, y: spawn.y, z: spawn.z });
+  if (localLiveCode()) {
+    network.log('local live-code mock: skipping Buddy join and grid claim');
+    card.setStatus('Opening the local live-code session…');
+  } else {
+    card.setStatus('Joining the world…');
+    await session.join({ x: spawn.x, y: spawn.y, z: spawn.z });
+  }
   await router.load(HOLODECK_SCENE_ID, spawn);
   loop.start();
   card.hide();
+  if (localLiveCode() && wantsStudioOpen(window.location.search)) {
+    session.studio.openLocalLiveCode();
+  }
   hud.toast(`Welcome to ${GAME_NAME}`);
   session.chat.system(
     'Proximity chat — nearby players hear you. T or Enter to type, B camera, V voice, F1 controls.',
