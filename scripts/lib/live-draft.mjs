@@ -12,13 +12,19 @@ const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 const MAX_BYTES = 1_000_000;
 
 function deniedSegment(segment) {
-  return segment === '.git' || segment === 'node_modules' || segment === '.env' || segment.startsWith('.env.');
+  return (
+    segment === '.git' ||
+    segment === 'node_modules' ||
+    segment === '.env' ||
+    segment.startsWith('.env.')
+  );
 }
 
 /** A relative path in the bound game repository. */
 export function isRepoPath(filePath) {
   if (typeof filePath !== 'string') return false;
-  if (!SAFE_SEGMENT.test(filePath) || filePath.includes('..') || filePath.endsWith('/')) return false;
+  if (!SAFE_SEGMENT.test(filePath) || filePath.includes('..') || filePath.endsWith('/'))
+    return false;
   return !filePath.split('/').some(deniedSegment);
 }
 
@@ -102,7 +108,8 @@ export function liveDraftPlugin(root) {
             if (url.searchParams.has('dir')) {
               const dirPath = url.searchParams.get('dir') ?? '';
               const abs = draftDir(base, dirPath);
-              if (!abs) return send(res, 400, 'That path is not a directory in the bound repository.');
+              if (!abs)
+                return send(res, 400, 'That path is not a directory in the bound repository.');
               const entries = readdirSync(abs, { withFileTypes: true })
                 .filter((entry) => !deniedSegment(entry.name) && SAFE_SEGMENT.test(entry.name))
                 .map((entry) => ({

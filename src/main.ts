@@ -365,20 +365,22 @@ async function signOut(): Promise<void> {
 /** Swap the running scene for the modules Vite just hot-updated. Studio stays. */
 let remounting: Promise<void> = Promise.resolve();
 function remountDraftScene(): Promise<void> {
-  remounting = remounting.then(async () => {
-    const game = running;
-    if (!game) return;
-    const current = game.router.current;
-    const id = current?.id ?? HOLODECK_SCENE_ID;
-    const pose = current?.localPose();
-    game.router.dispose();
-    await game.router.load(
-      id,
-      pose ? { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw } : undefined,
-    );
-  }).catch((error: unknown) => {
-    running?.hud.toast(messageOf(error), 'error');
-  });
+  remounting = remounting
+    .then(async () => {
+      const game = running;
+      if (!game) return;
+      const current = game.router.current;
+      const id = current?.id ?? HOLODECK_SCENE_ID;
+      const pose = current?.localPose();
+      game.router.dispose();
+      await game.router.load(
+        id,
+        pose ? { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw } : undefined,
+      );
+    })
+    .catch((error: unknown) => {
+      running?.hud.toast(messageOf(error), 'error');
+    });
   return remounting;
 }
 

@@ -8,7 +8,15 @@
  *   MMO_ANYTHING_DIR=/path/to/mmo-anything
  *   CONSTRUCT_SKIP_MMO=1
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,8 +32,7 @@ if (process.env.CONSTRUCT_SKIP_MMO === '1') {
 }
 
 const source =
-  process.env.MMO_ANYTHING_DIR?.trim() ||
-  path.resolve(constructRoot, '..', 'mmo-anything');
+  process.env.MMO_ANYTHING_DIR?.trim() || path.resolve(constructRoot, '..', 'mmo-anything');
 
 if (!existsSync(path.join(source, 'playbook'))) {
   console.log(
