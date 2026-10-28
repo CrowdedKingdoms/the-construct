@@ -45,6 +45,26 @@ import { Hud } from '@/ui/Hud';
 import { showSignIn } from '@/ui/LoginForm';
 import { showNoApp } from '@/ui/NoAppCard';
 
+// Scene edits must stop at this module. Without an accept boundary, Vite
+// reloads the document, and that reload throws away the Studio agent mid-turn.
+let holodeckFactory = () => new HolodeckScene();
+let paintFactory = () => new PaintScene();
+
+if (import.meta.hot) {
+  import.meta.hot.accept(
+    ['@/scenes/holodeck-three/HolodeckScene', '@/scenes/program-pixi/PaintScene'],
+    (modules) => {
+      const [holodeck, paint] = modules as [
+        typeof import('@/scenes/holodeck-three/HolodeckScene') | undefined,
+        typeof import('@/scenes/program-pixi/PaintScene') | undefined,
+      ];
+      if (holodeck) holodeckFactory = () => new holodeck.HolodeckScene();
+      if (paint) paintFactory = () => new paint.PaintScene();
+      if (holodeck || paint) void remountDraftScene();
+    },
+  );
+}
+
 const gameRoot = document.getElementById('game-root');
 const uiRoot = document.getElementById('ui-root');
 if (!gameRoot || !uiRoot) throw new Error('index.html is missing #game-root / #ui-root');
@@ -158,8 +178,8 @@ async function startGame(): Promise<void> {
   const saved = await session.loadSave();
 
   const router = new SceneRouter();
-  router.register(HOLODECK_SCENE_ID, () => new HolodeckScene());
-  router.register('paint', () => new PaintScene());
+  router.register(HOLODECK_SCENE_ID, () => holodeckFactory());
+  router.register('paint', () => paintFactory());
 
   const studioWalletUrl = STUDIO_WALLET_URL;
   const hud = new Hud(uiRoot!, {
@@ -340,6 +360,26 @@ async function signOut(): Promise<void> {
   await stopGame();
   await auth.signOut();
   void boot();
+}
+
+/** Swap the running scene for the modules Vite just hot-updated. Studio stays. */
+let remounting: Promise<void> = Promise.resolve();
+function remountDraftScene(): Promise<void> {
+  remounting = remounting.then(async () => {
+    const game = running;
+    if (!game) return;
+    const current = game.router.current;
+    const id = current?.id ?? HOLODECK_SCENE_ID;
+    const pose = current?.localPose();
+    game.router.dispose();
+    await game.router.load(
+      id,
+      pose ? { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw } : undefined,
+    );
+  }).catch((error: unknown) => {
+    running?.hud.toast(messageOf(error), 'error');
+  });
+  return remounting;
 }
 
 async function stopGame(): Promise<void> {

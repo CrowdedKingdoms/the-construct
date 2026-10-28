@@ -46,7 +46,7 @@ import { chunkKey, worldToChunk, type ChunkCoord, type Vec3 } from '../realtime/
 import { AgentLocomotion } from './agentLocomotion';
 import { wantsStudioOpen } from './studioQuery';
 import { localLiveCode } from '../localLiveCode';
-import { readGameDraft, writeGameDraft } from './gameDraft';
+import { dirtyGameDraft, listGameDraft, readGameDraft, writeGameDraft } from './gameDraft';
 import { describeClientHalfPrompt, GridClientHalves, studioPreviewModName } from './clientHalves';
 import { ConstructPlayerHostAdapter } from './ConstructPlayerHostAdapter';
 import { HumanInputMonitor } from './HumanInputMonitor';
@@ -169,6 +169,15 @@ const MODS_REFRESH_MS = 10_000;
  * 2026-09-07), so wait a moment before the first sync.
  */
 const GRID_SETTLE_MS = 4_000;
+
+function gameDraftFiles() {
+  return {
+    writeDraft: writeGameDraft,
+    readDraft: readGameDraft,
+    listDraft: listGameDraft,
+    dirtyDraft: dirtyGameDraft,
+  };
+}
 
 export class StudioService {
   readonly events = new Emitter<{ state: StudioState }>();
@@ -297,6 +306,20 @@ export class StudioService {
   attach(hooks: StudioHooks): void {
     this.hooks = hooks;
     const network = () => this.session.network;
+    const dsh = {
+      graphql: network().game.graphql,
+      // Under Vite's base, so a build served from a sub-path (`vite build
+      // --base /the-construct/`) finds its own harness instead of the
+      // origin's root. The default base is '/', which keeps '/dsh/'.
+      webBase: `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}dsh/`,
+      graphqlUrl: `${API_HTTP_URL}/graphql`,
+      apiOrigin: API_HTTP_URL,
+      getToken: () => network().game.getToken(),
+      persistScope: `${this.session.appId}/${this.session.selfUuid}`,
+      studioOrigin: STUDIO_ORIGIN ?? undefined,
+      openOnMount: wantsStudioOpen(globalThis.location?.search ?? ''),
+      ...(localLiveCode() ? { studioMode: 'game' as const } : {}),
+    };
     this.embed = new CrowdyStudioEmbed({
       // Resolved lazily: the game client exists only after enterApp, and is
       // rebuilt if the player switches apps.
@@ -327,26 +350,11 @@ export class StudioService {
       appId: () => this.session.appId,
       gameName: GAME_NAME,
       closeKeyCode: 'KeyM',
-      dsh: {
-        graphql: network().game.graphql,
-        // Under Vite's base, so a build served from a sub-path (`vite build
-        // --base /the-construct/`) finds its own harness instead of the
-        // origin's root. The default base is '/', which keeps '/dsh/'.
-        webBase: `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}dsh/`,
-        graphqlUrl: `${API_HTTP_URL}/graphql`,
-        apiOrigin: API_HTTP_URL,
-        getToken: () => network().game.getToken(),
-        persistScope: `${this.session.appId}/${this.session.selfUuid}`,
-        studioOrigin: STUDIO_ORIGIN ?? undefined,
-        openOnMount: wantsStudioOpen(globalThis.location?.search ?? ''),
-      },
+      dsh,
       ...(localLiveCode()
         ? {
             runtimeOverrides: {
-              gameFiles: {
-                writeDraft: writeGameDraft,
-                readDraft: readGameDraft,
-              },
+              gameFiles: gameDraftFiles(),
             },
           }
         : {}),
