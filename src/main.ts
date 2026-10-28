@@ -55,8 +55,8 @@ if (import.meta.hot) {
     ['@/scenes/holodeck-three/HolodeckScene', '@/scenes/program-pixi/PaintScene'],
     (modules) => {
       const [holodeck, paint] = modules as [
-        typeof import('@/scenes/holodeck-three/HolodeckScene') | undefined,
-        typeof import('@/scenes/program-pixi/PaintScene') | undefined,
+        { HolodeckScene: typeof HolodeckScene } | undefined,
+        { PaintScene: typeof PaintScene } | undefined,
       ];
       if (holodeck) holodeckFactory = () => new holodeck.HolodeckScene();
       if (paint) paintFactory = () => new paint.PaintScene();

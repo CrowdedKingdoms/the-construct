@@ -64,7 +64,7 @@ copyTree(path.join(source, '.agents', 'skills'), path.join(target, 'skills'));
 const readme = path.join(source, 'README.md');
 if (existsSync(readme)) cpSync(readme, path.join(target, 'README.md'));
 
-let rev = 'unknown';
+let rev;
 try {
   rev = execFileSync('git', ['-C', source, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 } catch {
