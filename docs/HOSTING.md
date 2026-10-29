@@ -124,6 +124,30 @@ voice (`VoiceService`) ask for the camera and microphone, and denies both to
 anything embedded. Some hosts ship a default policy that denies devices
 outright, so set it explicitly.
 
+### The game editor's preview: `construct-draft-sw.js`
+
+Crowdy Studio's game editor previews a player's uncommitted edits in the
+running world. On a hosted game that is a service worker the build writes
+next to `index.html` (`constructDraftPlugin` in `vite.config.ts`):
+
+- It is registered only when the game's owner opens the game editor, with the
+  game's base as its scope (a service worker sees only the requests of pages
+  it controls). It answers nothing but `<base>__draft/` URLs: draft modules
+  built from the edits in that browser, and shims onto the page's own
+  modules. Navigations, `/dsh/`, the API and the game's assets go to the
+  network untouched, so the headers above still apply and
+  `crossOriginIsolated` stays `true`.
+- It needs no header change: draft modules are same-origin scripts
+  (`script-src 'self'`), nothing is evaluated from a string or a blob, and the
+  worker itself is same-origin (`worker-src 'self'`).
+- Serve it as `text/javascript` and do not cache it for long (`Cache-Control:
+  no-cache` is right); the page registers it with `updateViaCache: 'none'`.
+  A host that rewrites unknown paths to `index.html` must still serve this
+  file as itself.
+- Only the content layer (`src/game/content.ts` and what it imports)
+  previews this way. A draft can import only what the published build already
+  bundles; the preview says so when it imports something else.
+
 `<api-origin>` is the host the bundle dials (for the published `latest` SDK,
 the production API). `<tier-zone>` is that host minus its first label: the API
 hands clients to a per-datacenter and then a per-instance name under the same

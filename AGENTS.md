@@ -126,6 +126,25 @@ reserved for that org) through the same command a third party runs.
   starters to it; to prove one really builds, build it with
   `client.exec.modClientBuild` on dev (the build log names every step and the
   host calls it found).
+- The game is its content layer: `main.ts` reaches scenes and programs only
+  through `src/game/content.ts` (`contentApi: 1`), and the HMR accept on that
+  module is the one boundary. Importing `src/game/*` or `src/scenes/*` from
+  anything else in the host (`main.ts`, `src/ui/`) makes a scene edit reload
+  the page and end the Studio agent's turn. Bump `CONTENT_API` only with a
+  migration for older games: the loader refuses a mismatch.
+- Crowdy Studio's game editor (framework 0.4.0) has two draft backends, and
+  the framework owns both: `node/live-draft.mjs` (`LIVE_DRAFT=1`; the checkout
+  is the draft, its API answers the dev server's own page only) and the hosted
+  preview (`platform/live/draftLoader.ts` and `draftServiceWorker.ts`, the
+  worker built by `constructDraftPlugin`). The worker answers `<base>__draft/`
+  and nothing else; keep it that way, since it controls every page of the game.
+  The repository path policy is CrowdyJS's `isRepoPath`, copied verbatim into
+  `live-draft.mjs`.
+- `STUDIO.md` is the in-browser agent's guide (it has no shell); this file is
+  for an agent in a checkout. Keep `STUDIO.md` to the content layer and what
+  needs a rebuild. A Studio playbook arrives only through
+  `CONSTRUCT_PLAYBOOK_DIR` at build time; nothing here names or defaults to a
+  private playbook.
 - ck-exec builds, deploys and switches take the developer's own session (the
   org's `manage_compute`) on the app's own datacenter origin
   (`scripts/lib/cli.mjs#developerOnApp`), never an app token: another

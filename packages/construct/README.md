@@ -10,8 +10,9 @@ and the games built on it share.
 | `platform/` | Hosted sign-in and app entry (`AuthService`, `NetworkManager`), `GameSession`, World Stores presence and the pose codec, chat, voice, webcam, envScope storage |
 | `platform/exec/`, `platform/model/` | The game's world hub on ck-exec (`WorldHub`, one connection per page as `NetworkManager.worldHub`) and `ModelService`, which reads the pulse, programs and progression from it |
 | `platform/studio/` | The Crowdy Studio dock (a project runs as a ck-exec mod and its CLIENT half), grid claims and the world hub's claim registry (`GridService`), the CLIENT halves of the grid the player stands in (`GridClientHalves`, over CrowdyJS's `ExecClientHalves`) and the host calls they reach, the agent's player host |
+| `platform/live/` | Crowdy Studio's game editor: the content-layer contract and host (`content`), the draft stores (the dev server's, or CrowdyJS's hosted one), and the hosted preview (`draftLoader` and its service worker) |
 | `grid/` | JS grid programs (`GridProgramRunner`): player JavaScript with the full CrowdyJS SDK, sandboxed, relayed with a grid-scoped token |
-| `node/` | `security-headers` (site, `/dsh/`, `/grid-program.html`), `vite-plugins`, `construct-copy-dsh` |
+| `node/` | `security-headers` (site, `/dsh/`, `/grid-program.html`), `vite-plugins` (headers, and `constructDraftPlugin` for the hosted preview), `live-draft` (the dev server's draft), `construct-copy-dsh` |
 | `sandbox/boot` | The grid program sandbox bootstrap |
 
 It ships **TypeScript source** for Vite (it uses `?worker&url` and
@@ -72,6 +73,18 @@ plugins: constructHeaderPlugins({
 
 - `construct-copy-dsh` (in `predev` / `prebuild`) copies the agent harness
   into `public/dsh/`.
+- For Crowdy Studio's game editor (0.4.0; CrowdyJS 18.23 and crowdy-dsh 0.5):
+  default-export a `GameContent` from the game's content entry
+  (`src/game/content.ts`, `contentApi: 1`), load it in `main.ts` through
+  `GameContentHost` with an HMR accept on that module, pass the host to
+  `session.studio.attach({ ..., content })`, and add the two plugins:
+
+```ts
+import { liveDraftPlugin } from '@crowdedkingdoms/construct/node/live-draft';
+import { constructDraftPlugin } from '@crowdedkingdoms/construct/node/vite-plugins';
+
+plugins: [...headerPlugins, constructDraftPlugin(), liveDraftPlugin({ enabled: env.LIVE_DRAFT === '1' })],
+```
 
 ## Setup scripts
 

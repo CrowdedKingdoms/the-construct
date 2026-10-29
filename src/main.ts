@@ -35,34 +35,29 @@ import {
   type AppRoute,
 } from '@crowdedkingdoms/construct/platform/network/NetworkManager';
 import { localLiveCode } from '@crowdedkingdoms/construct/platform/localLiveCode';
-import { wantsStudioOpen } from '@crowdedkingdoms/construct/platform/studio/studioQuery';
-import { HOLODECK_SCENE_ID, HOLODECK_SPAWN, programById } from '@/game/programs';
-import { HolodeckScene } from '@/scenes/holodeck-three/HolodeckScene';
-import { PaintScene } from '@/scenes/program-pixi/PaintScene';
+import {
+  GameContentHost,
+  type GameContent,
+} from '@crowdedkingdoms/construct/platform/live/content';
+import { requestedProject } from '@crowdedkingdoms/construct/platform/studio/studioQuery';
+import bundledContent from '@/game/content';
 import { BootCard } from '@/ui/BootCard';
 import { ChatPanel } from '@/ui/ChatPanel';
 import { Hud } from '@/ui/Hud';
 import { showSignIn } from '@/ui/LoginForm';
 import { showNoApp } from '@/ui/NoAppCard';
 
-// Scene edits must stop at this module. Without an accept boundary, Vite
-// reloads the document, and that reload throws away the Studio agent mid-turn.
-let holodeckFactory = () => new HolodeckScene();
-let paintFactory = () => new PaintScene();
+// The game is its content layer (src/game/content.ts). Crowdy Studio's game
+// editor swaps it in place: Vite HMR here on a dev server, the draft loader on
+// a hosted game.
+const content = new GameContentHost(bundledContent);
 
+// Content edits must stop at this module. Without an accept boundary Vite
+// reloads the document, and that reload throws away the Studio agent mid-turn.
 if (import.meta.hot) {
-  import.meta.hot.accept(
-    ['@/scenes/holodeck-three/HolodeckScene', '@/scenes/program-pixi/PaintScene'],
-    (modules) => {
-      const [holodeck, paint] = modules as [
-        { HolodeckScene: typeof HolodeckScene } | undefined,
-        { PaintScene: typeof PaintScene } | undefined,
-      ];
-      if (holodeck) holodeckFactory = () => new holodeck.HolodeckScene();
-      if (paint) paintFactory = () => new paint.PaintScene();
-      if (holodeck || paint) void remountDraftScene();
-    },
-  );
+  import.meta.hot.accept('@/game/content', (module) => {
+    if (module) void content.replace(module);
+  });
 }
 
 const gameRoot = document.getElementById('game-root');
@@ -178,8 +173,7 @@ async function startGame(): Promise<void> {
   const saved = await session.loadSave();
 
   const router = new SceneRouter();
-  router.register(HOLODECK_SCENE_ID, () => holodeckFactory());
-  router.register('paint', () => paintFactory());
+  router.replace(content.current.scenes);
 
   const studioWalletUrl = STUDIO_WALLET_URL;
   const hud = new Hud(uiRoot!, {
@@ -215,8 +209,9 @@ async function startGame(): Promise<void> {
     },
     describeView: () => {
       const scene = router.current?.id;
-      return `Scene: ${scene ?? 'holodeck'}`;
+      return `Scene: ${scene ?? content.current.home.sceneId}`;
     },
+    content,
   });
 
   const game: RunningGame = { session, loop, router, hud, chat, timers: [], disposers: [] };
@@ -260,7 +255,7 @@ async function startGame(): Promise<void> {
   );
   game.disposers.push(
     router.events.on('scene', (scene) => {
-      const program = programById(scene.programId);
+      const program = content.programById(scene.programId);
       if (program) session.rememberProgram(program.programId);
       network.log(`scene: ${scene.id}`);
     }),
@@ -269,8 +264,9 @@ async function startGame(): Promise<void> {
     network.events.on('realtime', (status) => network.log(`realtime: ${String(status)}`)),
   );
 
-  // Join where we left off (holodeck only; programs re-spawn at their entry).
-  const spawn = saved.position && !saved.lastProgram ? saved.position : HOLODECK_SPAWN;
+  // Join where we left off (home only; programs re-spawn at their entry).
+  const home = content.current.home;
+  const spawn = saved.position && !saved.lastProgram ? saved.position : home.spawn;
   if (localLiveCode()) {
     network.log('local live-code mock: skipping Buddy join and grid claim');
     card.setStatus('Opening the local live-code session…');
@@ -278,12 +274,12 @@ async function startGame(): Promise<void> {
     card.setStatus('Joining the world…');
     await session.join({ x: spawn.x, y: spawn.y, z: spawn.z });
   }
-  await router.load(HOLODECK_SCENE_ID, spawn);
+  await router.load(home.sceneId, spawn);
   loop.start();
   card.hide();
-  if (localLiveCode() && wantsStudioOpen(window.location.search)) {
-    session.studio.openLocalLiveCode();
-  }
+  // Crowdy Studio's Live code link names the project: open its editor.
+  const project = requestedProject(window.location.search);
+  if (project) void session.studio.openProject(project);
   hud.toast(`Welcome to ${GAME_NAME}`);
   session.chat.system(
     'Proximity chat — nearby players hear you. T or Enter to type, B camera, V voice, F1 controls.',
@@ -362,27 +358,30 @@ async function signOut(): Promise<void> {
   void boot();
 }
 
-/** Swap the running scene for the modules Vite just hot-updated. Studio stays. */
-let remounting: Promise<void> = Promise.resolve();
-function remountDraftScene(): Promise<void> {
-  remounting = remounting
-    .then(async () => {
-      const game = running;
-      if (!game) return;
-      const current = game.router.current;
-      const id = current?.id ?? HOLODECK_SCENE_ID;
-      const pose = current?.localPose();
-      game.router.dispose();
-      await game.router.load(
-        id,
-        pose ? { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw } : undefined,
-      );
-    })
-    .catch((error: unknown) => {
-      running?.hud.toast(messageOf(error), 'error');
-    });
-  return remounting;
+/**
+ * Put new content on screen: the same scene if it still exists (where the
+ * player stood), otherwise home. Studio stays open. A throw keeps the old
+ * content, and the error is the preview status.
+ */
+async function remountContent(next: GameContent): Promise<void> {
+  const game = running;
+  if (!game) return;
+  const current = game.router.current;
+  const pose = current?.localPose();
+  const stays = current ? current.id in next.scenes : false;
+  const id = stays && current ? current.id : next.home.sceneId;
+  game.router.replace(next.scenes);
+  game.router.dispose();
+  await game.router.load(
+    id,
+    stays && pose ? { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw } : next.home.spawn,
+  );
 }
+
+content.bind({
+  remount: remountContent,
+  scene: () => running?.router.current?.id,
+});
 
 async function stopGame(): Promise<void> {
   const game = running;

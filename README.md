@@ -103,6 +103,7 @@ Put `VITE_DEV_PROXY=1`, `VITE_DEV_ALLOWED_HOSTS=1`, and/or
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Vite dev server with the production security headers |
+| `LIVE_DRAFT=1 npm run dev` | The same, with this checkout as Crowdy Studio's game-editor draft ([below](#editing-the-game-from-crowdy-studio)) |
 | `npm run build` / `npm run preview` | Production bundle, and serve it locally with the same headers |
 | `npm test` | Unit tests (vitest) + CSP builder tests (`node --test`) |
 | `npm run test:e2e` | Playwright: boots cross-origin isolated and shows hosted sign-in; with `CONSTRUCT_E2E=1` and credentials, completes Studio login / consent and opens Studio. Node token-seed is `CONSTRUCT_E2E_SEED_TOKEN=1` + `CROWDY_HTTP_URL` only |
@@ -156,6 +157,31 @@ flowchart LR
 - The world hub (`exec/construct`, a ck-exec hub in Rust) is the game's own
   server code. `ModelService` and `GridService` call it over one exec
   connection per page; `npm run deploy:exec` ships a change.
+
+## Editing the game from Crowdy Studio
+
+Bind the game's repository to a Crowdy Studio project and Studio edits the
+game itself (its **game editor**), not mods: the Files pane shows the
+repository, the agent works on it, the running world reloads what changed,
+and **Commit** publishes the changes to GitHub as one commit with a message.
+Nothing reaches GitHub before that. Studio's **Live code** link opens it.
+
+- **The content layer** is what reloads in place: `src/game/content.ts`
+  (`contentApi: 1`: the scenes, the home scene and spawn, the programs) and
+  everything it imports. `main.ts` loads the game through it and nothing else,
+  so adding a scene never edits `main.ts`. Other files (`main.ts`, `src/ui/`,
+  the world hub in `exec/`) still need a reload, a build or a deploy.
+- **On a dev server**, run `LIVE_DRAFT=1 npm run dev` in a clone of the bound
+  repository: the checkout is the draft, Vite hot-reloads it, and after a
+  commit the checkout moves to it (`git reset --mixed`, files untouched).
+- **On the hosted game**, the draft lives in the owner's browser and a service
+  worker previews it ([docs/HOSTING.md](docs/HOSTING.md#the-game-editors-preview-construct-draft-swjs)).
+- **The agent's guide** is [STUDIO.md](STUDIO.md) (a map of the content
+  layer), plus the skills of an optional Studio playbook
+  (`CONSTRUCT_PLAYBOOK_DIR`, copied into `public/playbook/`).
+
+Needs CrowdyJS 18.23 or later and `@crowdedkingdoms/crowdy-dsh` 0.5 or later;
+with older ones a bound project opens in the mod editor as before.
 
 ## Documentation
 
