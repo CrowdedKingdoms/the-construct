@@ -114,8 +114,9 @@ artifact; `CONSTRUCT_SKIP_DSH=1` builds without the agent pane.
 
 One serving detail: `preview/vfs-image.tar.gz` must reach the browser with NO
 `Content-Encoding` header, because the harness worker decompresses it itself.
-`vite dev`/`preview` handle this for `.gz` under `/dsh/` (see
-`dshHeadersPlugin` in `vite.config.ts`); a static host that adds
+`vite dev`/`preview` handle this for `.gz` under `/dsh/`, under the game's
+base too (`constructHeaderPlugins` in the framework's `node/vite-plugins.mjs`,
+which also types the image so preview compression leaves it alone); a static host that adds
 `Content-Encoding: gzip` for `.gz` files needs the same exception, and only
 for that suffix.
 
