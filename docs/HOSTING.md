@@ -28,6 +28,13 @@ What is different from self-hosting, and what is not:
   `redirect_uri`; the shell relays the returned code into your frame. Nothing in
   this repo changes for it. The PKCE verifier never leaves your origin and the
   shell never holds a token.
+- **The shell passes your frame only a few parameters.** It forwards the sign-in
+  `code` and `state` and Crowdy Studio's Live code parameters (`app` as digits,
+  `studio` as `open` or `closed`, `project` as an id), and nothing else from the
+  games-host address. A sign-in returns to the bare page address, here and
+  self-hosted, so the game keeps what it needs afterwards: `main.ts` remembers
+  the app id before sign-in, and `rememberRequestedProject` keeps a Live code
+  link's `project` for the tab until the editor opens it.
 - **Your origin is yours.** localStorage, IndexedDB, service workers and
   `BroadcastChannel` are per game; no other game shares them.
 - **The slug is global on the tier** and a DNS label (`a-z0-9-`, 1-63, no edge
@@ -114,8 +121,9 @@ artifact; `CONSTRUCT_SKIP_DSH=1` builds without the agent pane.
 
 One serving detail: `preview/vfs-image.tar.gz` must reach the browser with NO
 `Content-Encoding` header, because the harness worker decompresses it itself.
-`vite dev`/`preview` handle this for `.gz` under `/dsh/` (see
-`dshHeadersPlugin` in `vite.config.ts`); a static host that adds
+`vite dev`/`preview` handle this for `.gz` under `/dsh/`, under the game's
+base too (`constructHeaderPlugins` in the framework's `node/vite-plugins.mjs`,
+which also types the image so preview compression leaves it alone); a static host that adds
 `Content-Encoding: gzip` for `.gz` files needs the same exception, and only
 for that suffix.
 
@@ -123,6 +131,30 @@ for that suffix.
 voice (`VoiceService`) ask for the camera and microphone, and denies both to
 anything embedded. Some hosts ship a default policy that denies devices
 outright, so set it explicitly.
+
+### The game editor's preview: `construct-draft-sw.js`
+
+Crowdy Studio's game editor previews a player's uncommitted edits in the
+running world. On a hosted game that is a service worker the build writes
+next to `index.html` (`constructDraftPlugin` in `vite.config.ts`):
+
+- It is registered only when the game's owner opens the game editor, with the
+  game's base as its scope (a service worker sees only the requests of pages
+  it controls). It answers nothing but `<base>__draft/` URLs: draft modules
+  built from the edits in that browser, and shims onto the page's own
+  modules. Navigations, `/dsh/`, the API and the game's assets go to the
+  network untouched, so the headers above still apply and
+  `crossOriginIsolated` stays `true`.
+- It needs no header change: draft modules are same-origin scripts
+  (`script-src 'self'`), nothing is evaluated from a string or a blob, and the
+  worker itself is same-origin (`worker-src 'self'`).
+- Serve it as `text/javascript` and do not cache it for long (`Cache-Control:
+  no-cache` is right); the page registers it with `updateViaCache: 'none'`.
+  A host that rewrites unknown paths to `index.html` must still serve this
+  file as itself.
+- Only the content layer (`src/game/content.ts` and what it imports)
+  previews this way. A draft can import only what the published build already
+  bundles; the preview says so when it imports something else.
 
 `<api-origin>` is the host the bundle dials (for the published `latest` SDK,
 the production API). `<tier-zone>` is that host minus its first label: the API

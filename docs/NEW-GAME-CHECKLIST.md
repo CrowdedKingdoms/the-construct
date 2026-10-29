@@ -24,7 +24,8 @@ A checklist, in the order that keeps everything working at every step.
 ## 3. Replace the scenes
 
 - [ ] Implement `GameScene` for your first scene ([RENDERER-ADAPTER.md](RENDERER-ADAPTER.md)).
-- [ ] Register it in `src/main.ts`; decide whether the holodeck stays as a hub.
+- [ ] Register it in `src/game/content.ts` (the content layer `main.ts` loads);
+      decide whether the holodeck stays as the home scene.
 - [ ] Put your programs in `PROGRAM_CATALOG` (`model/catalog.mjs`) and their
       pads in `src/game/programs.ts`, then `npm run build:exec-sources`.
 - [ ] Remove the demo scene folders and unused renderer dependencies.

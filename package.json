@@ -9,9 +9,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "predev": "node scripts/copy-dsh-web.mjs && node scripts/copy-mmo-playbook.mjs",
+    "predev": "node scripts/copy-dsh-web.mjs && node scripts/copy-playbook.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/copy-dsh-web.mjs && node scripts/copy-mmo-playbook.mjs",
+    "prebuild": "node scripts/copy-dsh-web.mjs && node scripts/copy-playbook.mjs",
     "build": "tsc -p tsconfig.json && vite build",
     "dsh:copy": "node scripts/copy-dsh-web.mjs",
     "preview": "vite preview",
@@ -21,7 +21,7 @@
     "format:check": "prettier --check .",
     "test": "npm run test:unit && npm run test:headers && npm run test:release",
     "test:unit": "vitest run",
-    "test:headers": "node --test security-headers.test.mjs scripts/lib/dev-server-options.test.mjs scripts/lib/live-draft.test.mjs",
+    "test:headers": "node --test security-headers.test.mjs scripts/lib/dev-server-options.test.mjs packages/construct/node/live-draft.test.mjs packages/construct/node/vite-plugins.test.mjs scripts/copy-playbook.test.mjs",
     "test:release": "bash scripts/ci/resolve-construct-release.test.sh && node --test scripts/ci/check-package-content.test.mjs && node scripts/ci/check-package-content.mjs packages/construct",
     "test:e2e": "playwright test",
     "check:pin": "node scripts/ci/check-sdk-pin.mjs",
@@ -34,14 +34,14 @@
     "publish": "node scripts/publish.mjs"
   },
   "dependencies": {
-    "@crowdedkingdoms/construct": "0.3.11",
-    "@crowdedkingdoms/crowdyjs": "18.4.0-dev.1",
+    "@crowdedkingdoms/construct": "0.4.0",
+    "@crowdedkingdoms/crowdyjs": "18.23.0-dev.1",
     "dompurify": "3.4.17",
     "pixi.js": "^8.22.0",
     "three": "^0.186.1"
   },
   "devDependencies": {
-    "@crowdedkingdoms/crowdy-dsh": "0.4.5-dev.1",
+    "@crowdedkingdoms/crowdy-dsh": "0.5.0-dev.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.64.1",
     "@types/node": "^20.19.0",
