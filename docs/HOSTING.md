@@ -28,6 +28,13 @@ What is different from self-hosting, and what is not:
   `redirect_uri`; the shell relays the returned code into your frame. Nothing in
   this repo changes for it. The PKCE verifier never leaves your origin and the
   shell never holds a token.
+- **The shell passes your frame only a few parameters.** It forwards the sign-in
+  `code` and `state` and Crowdy Studio's Live code parameters (`app` as digits,
+  `studio` as `open` or `closed`, `project` as an id), and nothing else from the
+  games-host address. A sign-in returns to the bare page address, here and
+  self-hosted, so the game keeps what it needs afterwards: `main.ts` remembers
+  the app id before sign-in, and `rememberRequestedProject` keeps a Live code
+  link's `project` for the tab until the editor opens it.
 - **Your origin is yours.** localStorage, IndexedDB, service workers and
   `BroadcastChannel` are per game; no other game shares them.
 - **The slug is global on the tier** and a DNS label (`a-z0-9-`, 1-63, no edge

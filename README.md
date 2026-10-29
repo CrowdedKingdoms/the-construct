@@ -164,7 +164,9 @@ Bind the game's repository to a Crowdy Studio project and Studio edits the
 game itself (its **game editor**), not mods: the Files pane shows the
 repository, the agent works on it, the running world reloads what changed,
 and **Commit** publishes the changes to GitHub as one commit with a message.
-Nothing reaches GitHub before that. Studio's **Live code** link opens it.
+Nothing reaches GitHub before that. Studio's **Live code** link opens it, through a
+sign-in if the player has none: `main.ts` keeps the link's project for the tab
+(`rememberRequestedProject`) and the editor opens it once the player is in.
 
 - **The content layer** is what reloads in place: `src/game/content.ts`
   (`contentApi: 1`: the scenes, the home scene and spawn, the programs) and

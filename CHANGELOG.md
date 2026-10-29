@@ -28,6 +28,10 @@ world, and commits it to GitHub as one commit only when the player asks.
   Live code link), and serves the playbook from `public/playbook/`
   (`scripts/copy-playbook.mjs`, from `CONSTRUCT_PLAYBOOK_DIR`; skills marked
   `metadata.surface: dock` reach the dock). `STUDIO.md` is the agent's guide.
+- The Live code link's project survives a sign-in. A hosted sign-in returns to the bare
+  page address, so `rememberRequestedProject` (`platform/studio/studioQuery`, called by
+  `main.ts` at boot) keeps an id-shaped `project` in sessionStorage, keyed per API
+  environment, and `requestedProject` falls back to it once.
 - `VITE_LOCAL_LIVE_CODE` only skips the world join (no Buddy); the game editor no longer
   depends on it.
 - New dependencies `sucrase` and `es-module-lexer`. The game editor needs CrowdyJS

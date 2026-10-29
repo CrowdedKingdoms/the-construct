@@ -39,7 +39,10 @@ import {
   GameContentHost,
   type GameContent,
 } from '@crowdedkingdoms/construct/platform/live/content';
-import { requestedProject } from '@crowdedkingdoms/construct/platform/studio/studioQuery';
+import {
+  rememberRequestedProject,
+  requestedProject,
+} from '@crowdedkingdoms/construct/platform/studio/studioQuery';
 import bundledContent from '@/game/content';
 import { BootCard } from '@/ui/BootCard';
 import { ChatPanel } from '@/ui/ChatPanel';
@@ -65,6 +68,8 @@ const uiRoot = document.getElementById('ui-root');
 if (!gameRoot || !uiRoot) throw new Error('index.html is missing #game-root / #ui-root');
 
 ensureEnvScope();
+// A Live code link names a project, and a sign-in comes back without it.
+rememberRequestedProject(window.location.search);
 document.title = GAME_NAME;
 
 const network = NetworkManager.instance;
