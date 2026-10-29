@@ -34,11 +34,17 @@ function pathHeadersPlugin(name, match, headers, options = {}) {
         const isGzipArchive = options.keepGzipArchives && /\.gz$/i.test(pathname);
         const origSetHeader = res.setHeader.bind(res);
         res.setHeader = (header, value) => {
-          if (isGzipArchive && header.toLowerCase() === 'content-encoding') return res;
+          const lower = header.toLowerCase();
+          if (isGzipArchive && lower === 'content-encoding') return res;
+          // Its own type, so `vite preview`'s compression (which takes an untyped body
+          // for text/plain) leaves the archive alone instead of gzipping it twice.
+          if (isGzipArchive && lower === 'content-type')
+            return origSetHeader(header, 'application/gzip');
           const pinned = headers[header];
           return origSetHeader(header, pinned !== undefined ? pinned : value);
         };
         for (const [header, value] of Object.entries(headers)) origSetHeader(header, value);
+        if (isGzipArchive) origSetHeader('Content-Type', 'application/gzip');
       }
       next();
     });

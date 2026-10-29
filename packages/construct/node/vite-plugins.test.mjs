@@ -28,3 +28,24 @@ test('the harness headers follow the game under a Vite base', () => {
     assert.equal('Content-Security-Policy' in set, harness, `${base} ${url}`);
   }
 });
+
+test('the packed harness image reaches the worker as stored: typed, never re-encoded', () => {
+  const [plugin] = constructHeaderPlugins({ dshHeaders: {} });
+  let middleware;
+  plugin.configurePreviewServer({
+    config: { base: '/game/' },
+    middlewares: { use: (fn) => (middleware = fn) },
+  });
+  const set = {};
+  const res = {
+    setHeader(name, value) {
+      set[name.toLowerCase()] = value;
+      return res;
+    },
+  };
+  middleware({ url: '/game/dsh/preview/vfs-image.tar.gz' }, res, () => {});
+  res.setHeader('Content-Type', '');
+  res.setHeader('Content-Encoding', 'gzip');
+  assert.equal(set['content-type'], 'application/gzip');
+  assert.equal('content-encoding' in set, false);
+});
