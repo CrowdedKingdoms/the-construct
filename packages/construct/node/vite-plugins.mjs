@@ -20,8 +20,12 @@ import { fileURLToPath } from 'node:url';
 function pathHeadersPlugin(name, match, headers, options = {}) {
   /** @param {import('vite').ViteDevServer | import('vite').PreviewServer} server */
   const attach = (server) => {
+    // Matched against the path under the game's base, so `vite build --base /game/`
+    // previews `/game/dsh/` with the harness's headers.
+    const base = server.config?.base ?? '/';
     server.middlewares.use((req, res, next) => {
-      const pathname = (req.url ?? '').split('?')[0] ?? '';
+      const raw = (req.url ?? '').split('?')[0] ?? '';
+      const pathname = base !== '/' && raw.startsWith(base) ? `/${raw.slice(base.length)}` : raw;
       if (match(pathname)) {
         // The harness's packed VFS image is a .tar.gz its worker inflates with
         // DecompressionStream. Vite's static server adds `Content-Encoding: gzip`
