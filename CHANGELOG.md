@@ -35,9 +35,11 @@ world, and commits it to GitHub as one commit only when the player asks.
 - `VITE_LOCAL_LIVE_CODE` only skips the world join (no Buddy); the game editor no longer
   depends on it.
 - New dependencies `sucrase` and `es-module-lexer`. The game editor needs CrowdyJS
-  `18.23` and crowdy-dsh `0.5`; with older ones a bound project opens in the mod editor.
-  The peer ranges gain those prerelease lines. Still CrowdyJS `18.4.0-dev.1` here until
-  18.23 publishes.
+  `18.23` and crowdy-dsh `0.5`. `platform/live/sdk` re-exports the SDK's own draft types
+  in place of a copy, so the CrowdyJS peer is the 18.23 line alone (`>=18.23.0-dev.0 <19`):
+  a game re-pins CrowdyJS with this release. The SDK's classes are still looked up at
+  runtime, and with an older crowdy-dsh the agent says it cannot edit the game
+  repository. The starter pins CrowdyJS `18.23.0-dev.1` and crowdy-dsh `0.5.0-dev.1`.
 
 Docs: [docs/MANAGED-PLAYERS.md](docs/MANAGED-PLAYERS.md) shows how a studio that signs its
 own players in (org-managed players) replaces hosted sign-in: adopt the app token its backend

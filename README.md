@@ -184,8 +184,9 @@ sign-in if the player has none: `main.ts` keeps the link's project for the tab
   layer), plus the skills of an optional Studio playbook
   (`CONSTRUCT_PLAYBOOK_DIR`, copied into `public/playbook/`).
 
-Needs CrowdyJS 18.23 or later and `@crowdedkingdoms/crowdy-dsh` 0.5 or later;
-with older ones a bound project opens in the mod editor as before.
+Needs CrowdyJS 18.23 or later (the framework takes the game editor's types from it)
+and `@crowdedkingdoms/crowdy-dsh` 0.5 or later; with an older crowdy-dsh the agent
+says it cannot edit the game repository.
 
 ## Documentation
 
