@@ -400,7 +400,6 @@ Leave `gzip_static` off for `/dsh/`, so `vfs-image.tar.gz` goes out as it is.
     Cross-Origin-Embedder-Policy "credentialless"
     Cross-Origin-Resource-Policy "same-origin"
     Access-Control-Allow-Origin "null"
-    Referrer-Policy "strict-origin-when-cross-origin"
     X-Content-Type-Options "nosniff"
   }
 
@@ -417,12 +416,18 @@ Leave `gzip_static` off for `/dsh/`, so `vfs-image.tar.gz` goes out as it is.
   header @grid Permissions-Policy "camera=(), microphone=(), geolocation=()"
   header @grid Referrer-Policy "no-referrer"
 
+  @notGrid not path /grid-program.html
+  header @notGrid Referrer-Policy "strict-origin-when-cross-origin"
+
   @draft path /construct-draft-sw.js
   header @draft Cache-Control "no-cache"
 }
 ```
 
-Caddy serves `.gz` files as they are unless you turn on `precompressed`; leave it off.
+Caddy runs `header` lines with the most specific matcher first and the unmatched block last, so
+a header set in both places takes the unmatched value: that is why `Referrer-Policy` is set
+per path here. Caddy serves `.gz` files as they are unless you turn on `precompressed`;
+leave it off.
 
 ### GitHub Pages
 
