@@ -171,7 +171,9 @@ export class DraftLoader {
   }
 
   private async load(): Promise<void> {
-    const { base, content, log } = this.options;
+    const { base, content, log, store } = this.options;
+    // Not listed yet: the store announces its first load, which schedules this again.
+    if (store.snapshot().entries.length === 0) return;
     const revision = this.pendingRevision;
     const generation = ++this.generation;
     if (!this.paths().includes(CONTENT_ENTRY)) {

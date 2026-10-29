@@ -3,11 +3,15 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'vitest/config';
 
+import { constructDraftPlugin } from '@crowdedkingdoms/construct/node/vite-plugins';
+
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   // Unit tests must not inherit `.env.local` (same-origin API, app id, Studio URL).
   envDir: path.resolve(rootDir, 'src'),
+  // Provides `virtual:construct-draft-host`, which the game editor's loader imports.
+  plugins: [constructDraftPlugin()],
   resolve: {
     alias: { '@': path.resolve(rootDir, 'src') },
     // The framework package ships TypeScript source; resolve it from the
