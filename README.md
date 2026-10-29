@@ -173,7 +173,9 @@ Nothing reaches GitHub before that. Studio's **Live code** link opens it.
   the world hub in `exec/`) still need a reload, a build or a deploy.
 - **On a dev server**, run `LIVE_DRAFT=1 npm run dev` in a clone of the bound
   repository: the checkout is the draft, Vite hot-reloads it, and after a
-  commit the checkout moves to it (`git reset --mixed`, files untouched).
+  commit the checkout moves to it (`git reset --mixed`, files untouched). The
+  draft API answers this machine only; `LIVE_DRAFT_REMOTE=1` opens it to the
+  network the dev server listens on, which hands that network your checkout.
 - **On the hosted game**, the draft lives in the owner's browser and a service
   worker previews it ([docs/HOSTING.md](docs/HOSTING.md#the-game-editors-preview-construct-draft-swjs)).
 - **The agent's guide** is [STUDIO.md](STUDIO.md) (a map of the content
