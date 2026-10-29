@@ -182,10 +182,15 @@ function middlewareFor(root) {
     ws: { send: (message) => sent.push(message) },
     middlewares: { use: (fn) => (middleware = fn) },
   });
-  const call = (method, url, { headers = {}, body } = {}) =>
+  const call = (method, url, { headers = {}, body, remote = '127.0.0.1' } = {}) =>
     new Promise((resolve) => {
       const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]);
-      Object.assign(req, { method, url, headers: { host: 'localhost:5175', ...headers } });
+      Object.assign(req, {
+        method,
+        url,
+        headers: { host: 'localhost:5175', ...headers },
+        socket: { remoteAddress: remote },
+      });
       const res = {
         statusCode: 200,
         headers: {},

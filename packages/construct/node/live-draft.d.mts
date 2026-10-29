@@ -7,6 +7,11 @@ export function gitBlobSha(bytes: Uint8Array): string;
 
 /**
  * The dev-server backend of Crowdy Studio's game editor: the checkout is the
- * draft. Does nothing unless `enabled` (default: `LIVE_DRAFT=1`).
+ * draft. Does nothing unless `enabled` (default: `LIVE_DRAFT=1`); answers this
+ * machine only unless `allowRemote` (default: `LIVE_DRAFT_REMOTE=1`).
  */
-export function liveDraftPlugin(options?: { root?: string; enabled?: boolean }): Plugin;
+export function liveDraftPlugin(options?: {
+  root?: string;
+  enabled?: boolean;
+  allowRemote?: boolean;
+}): Plugin;

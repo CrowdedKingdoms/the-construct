@@ -15,9 +15,12 @@
  * - After Studio commits the draft to GitHub, `sync` moves HEAD to that
  *   commit (`git fetch`, then `git reset --mixed` when HEAD is its
  *   ancestor), so the checkout is clean again and no file is touched.
- * - Requests must come from this dev server's own page: same-origin
+ * - Requests must come from this machine (the dev server also listens on the
+ *   network) and from this dev server's own page: same-origin
  *   (`Sec-Fetch-Site`, else `Origin`), the per-server token the page carries
- *   (`X-Construct-Draft-Token`), and JSON bodies only.
+ *   (`X-Construct-Draft-Token`), and JSON bodies only. `LIVE_DRAFT_REMOTE=1`
+ *   lets another machine in; the token is then all that stands between it
+ *   and your checkout, so use it on a network you trust.
  *
  * Opt-in: `liveDraftPlugin()` in the game's vite config; it does nothing
  * unless the server runs with `LIVE_DRAFT=1`.
@@ -379,6 +382,10 @@ export class CheckoutDraft {
   }
 }
 
+function loopback(address) {
+  return typeof address === 'string' && (address === '::1' || /^(::ffff:)?127\./.test(address));
+}
+
 function sameOrigin(req) {
   const site = req.headers['sec-fetch-site'];
   if (typeof site === 'string') return site === 'same-origin';
@@ -442,12 +449,14 @@ function reachesBoundary(mod, contentEntry, seen = new Set()) {
 }
 
 /**
- * @param {{ root?: string, enabled?: boolean }} [options] `root` defaults to the Vite root;
- *   `enabled` to `LIVE_DRAFT=1` in the environment.
+ * @param {{ root?: string, enabled?: boolean, allowRemote?: boolean }} [options] `root` defaults
+ *   to the Vite root; `enabled` to `LIVE_DRAFT=1` and `allowRemote` to `LIVE_DRAFT_REMOTE=1` in
+ *   the environment.
  * @returns {import('vite').Plugin}
  */
 export function liveDraftPlugin(options = {}) {
   const enabled = options.enabled ?? process.env.LIVE_DRAFT === '1';
+  const allowRemote = options.allowRemote ?? process.env.LIVE_DRAFT_REMOTE === '1';
   const token = randomBytes(24).toString('base64url');
   /** @type {CheckoutDraft | null} */
   let draft = null;
@@ -485,6 +494,13 @@ export function liveDraftPlugin(options = {}) {
         const url = new URL(req.url ?? '/', 'http://dev.invalid');
         if (!url.pathname.startsWith(prefix)) return next();
         try {
+          if (!allowRemote && !loopback(req.socket?.remoteAddress)) {
+            throw new DraftHttpError(
+              403,
+              'DRAFT_PATH_REFUSED',
+              'The draft API answers this machine only (LIVE_DRAFT_REMOTE=1 lets others in).',
+            );
+          }
           if (!sameOrigin(req) || req.headers[TOKEN_HEADER] !== token) {
             throw new DraftHttpError(
               403,
