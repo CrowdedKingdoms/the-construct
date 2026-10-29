@@ -1,56 +1,28 @@
 # Hosting
 
-Two ways to put the game in front of players. The first is a command; the
-second is any static host you like.
+Crowded Kingdoms does not host games: you put the build on a host of your own. Any
+static host works if it can set response headers. (Crowdy Games, where
+`npm run publish` used to upload it, was retired on 2026-10-29, and the platform's
+hosting API answers `CONTENT_HOSTING_DISABLED` on every tier.)
 
-## Host on Crowdy Games (one command)
+## Five steps
 
-```sh
-CONSTRUCT_EMAIL=you@example.com CONSTRUCT_PASSWORD=... npm run publish
-# -> Play it at: https://<games host>/<slug>/
-```
-
-`npm run publish` signs in with your account (an identity session, from Node --
-a browser page cannot do this, by design), claims a **slug** for your app
-(default: the app's slug; `-- --slug my-game` to choose), builds, and uploads
-`dist/` to the platform. Your game is then reached at
-`https://<games host>/<slug>/` -- a first-party Crowded Kingdoms page (the
-*shell*) that frames your bundle from an origin of its own,
-`https://<slug>.<content host>`. Every header in the next section is served for
-you by the platform's edge, including the `/dsh/*` policy, and `crossOriginIsolated`
-is true inside the frame (the shell delegates it), so CLIENT mods work.
-
-What is different from self-hosting, and what is not:
-
-- **Sign-in is the same flow** (`portal.signIn` -> Studio `/authorize` ->
-  `portal.handleSignInCallback`). Inside the shell the SDK (CrowdyJS >= 17.2)
-  asks the shell to navigate the tab and uses the shell page as the
-  `redirect_uri`; the shell relays the returned code into your frame. Nothing in
-  this repo changes for it. The PKCE verifier never leaves your origin and the
-  shell never holds a token.
-- **The shell passes your frame only a few parameters.** It forwards the sign-in
-  `code` and `state` and Crowdy Studio's Live code parameters (`app` as digits,
-  `studio` as `open` or `closed`, `project` as an id), and nothing else from the
-  games-host address. A sign-in returns to the bare page address, here and
-  self-hosted, so the game keeps what it needs afterwards: `main.ts` remembers
-  the app id before sign-in, and `rememberRequestedProject` keeps a Live code
-  link's `project` for the tab until the editor opens it.
-- **Your origin is yours.** localStorage, IndexedDB, service workers and
-  `BroadcastChannel` are per game; no other game shares them.
-- **The slug is global on the tier** and a DNS label (`a-z0-9-`, 1-63, no edge
-  hyphens); first-party names are reserved. `HOSTED_SLUG_UNAVAILABLE` says
-  which rule you hit. Publishing is self-serve and immediate; being *listed* in
-  the Overworld lobby is an operator's decision.
-- **Quotas**: 2,000 files / 250 MB per publish, 60 MB per file, 10 publishes an
-  hour per app. A 0.6 build is ~130 files / ~23 MB.
-- **You publish from the tier your SDK pin dials.** A `prod` clone publishes to
-  production Crowdy Games; a `dev` clone to the dev tier. The same
-  `manage_apps` permission that let you run `npm run setup` is what lets you
-  publish. `--no-build` reuses an existing `dist/`; `--dir` points at another.
-- `CONTENT_HOSTING_DISABLED` means the tier you dialled has no content CDN yet;
-  self-host (below) until it does.
-
-Everything below is for hosting the build yourself.
+1. **Register your address.** In your checkout,
+   `npm run setup -- --origin https://play.example.com` adds that origin to the app's
+   redirect URIs and, when the app has no launch URL yet, makes it the launch URL. You
+   can also set both in Crowdy Studio: the app > Settings > Sign-in & redirect URIs.
+   Hosted sign-in returns players only to a registered origin, and the same list is the
+   API's CORS allow-list for your page.
+2. **Build.** `npm run build` writes a static site to `dist/`. Set `VITE_APP_ID` so the
+   build serves your app ([Pinning the app](#pinning-the-app)).
+3. **Upload `dist/` with the headers** in [The headers](#the-headers): cross-origin
+   isolation on every response, a Content-Security-Policy per page, the agent pane's
+   files under `/dsh/` with their own policy, and `construct-draft-sw.js` served as
+   itself. The [recipes](#recipes) do this for common hosts.
+4. **Check it.** Open the site: `crossOriginIsolated` must be `true` in the console, and
+   Crowdy Studio (M) opens with the agent pane ([How to tell it worked](#how-to-tell-it-worked)).
+5. **Use Live code on it.** Crowdy Studio's Live code opens the app's launch URL with the
+   dock on your bound project ([Live code on your host](#live-code-on-your-host)).
 
 ## Self-hosting
 
@@ -73,6 +45,64 @@ server only* so a plain-HTTP public IP can load; CLIENT mods stay off.
 
 ## The headers
 
+Every response, whatever the path:
+
+```text
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: credentialless
+Cross-Origin-Resource-Policy: same-origin
+Access-Control-Allow-Origin: null
+Referrer-Policy: strict-origin-when-cross-origin
+X-Content-Type-Options: nosniff
+```
+
+`Access-Control-Allow-Origin: null` is for the JS grid program sandbox: it is an opaque
+origin, so its module scripts are fetched with `Origin: null` and need that answer. The
+dev and preview servers send it only to those requests; a static host sends it on every
+file, which exposes nothing, because the files are your public build.
+
+Then one Content-Security-Policy and one Permissions-Policy per page. A build has three
+kinds of page, and each needs its own policy:
+
+| Path | Content-Security-Policy | Permissions-Policy |
+| --- | --- | --- |
+| `/` and `/index.html` | the game's, below | `camera=(self), microphone=(self)` |
+| `/dsh/*` | the agent pane's, below | `camera=(self), microphone=(self)` |
+| `/grid-program.html` | the grid program sandbox's, below | `camera=(), microphone=(), geolocation=()` |
+
+**Never set one policy on every path.** A browser enforces every Content-Security-Policy
+it receives, and many hosts combine overlapping rules, so the game's policy on `/*` lands
+on `/dsh/*` as well and keeps the agent pane from starting. Set each policy on its own
+paths, as the recipes do.
+
+The game's policy (`buildCsp()`):
+
+```text
+default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://<api-origin> wss://<api-origin> https://*.<tier-zone> wss://*.<tier-zone>; worker-src 'self' blob:; frame-src 'self'; media-src 'self' blob:; manifest-src 'self'
+```
+
+The agent pane's policy (`buildDshCsp()`), for the harness HTML, assets and worker
+under `/dsh/`:
+
+```text
+default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' blob: https://<api-origin> wss://<api-origin> https://*.<tier-zone> wss://*.<tier-zone>; worker-src 'self' blob:; frame-src 'self'; media-src 'self' blob:; manifest-src 'self'
+```
+
+The grid program sandbox's policy (`buildGridProgramCsp()`), which also sends
+`Referrer-Policy: no-referrer`:
+
+```text
+default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; worker-src 'none'; frame-src 'none'
+```
+
+Three serving details:
+
+- **`.wasm` as `application/wasm`.** Most hosts do this already.
+- **No fallback to `index.html`.** The game has no client-side routes. If your host
+  adds a fallback, keep it to paths without a file extension, so a missing script or
+  `construct-draft-sw.js` is never answered with the page.
+- **`/dsh/preview/vfs-image.tar.gz` without `Content-Encoding`.** See below.
+
 Behind a shell of your own? Set `CONSTRUCT_FRAME_ANCESTORS=https://your-shell.example`
 when you build/preview, or pass `frameAncestors` to `securityHeaders()`: the
 game then serves `frame-ancestors <that origin>` (the DSH pane `'self'` plus it)
@@ -82,23 +112,10 @@ and delegate `cross-origin-isolated` to the frame (`Permissions-Policy` +
 `allow=`), or `crossOriginIsolated` is false inside it. `tests/e2e/shell.spec.ts`
 is the working example.
 
-```text
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: credentialless
-Cross-Origin-Resource-Policy: same-origin
-Permissions-Policy: camera=(self), microphone=(self)
-Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://<api-origin> wss://<api-origin> https://*.<tier-zone> wss://*.<tier-zone>; worker-src 'self' blob:; frame-src 'self'; media-src 'self' blob:; manifest-src 'self'
-Referrer-Policy: strict-origin-when-cross-origin
-X-Content-Type-Options: nosniff
-```
-
 The game page embeds the Studio agent pane (`/dsh/index.html`) in a same-origin
-iframe, so `frame-src 'self'` is required. Responses under `/dsh/*` (the harness
-HTML, assets, and worker script) carry the relaxed DSH policy generated by
-`buildDshCsp()`:
-`script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:`,
-`connect-src 'self' blob: ...`, `frame-ancestors 'self'`.
-The game page's own policy remains strict (`wasm-unsafe-eval`, no JS eval).
+iframe, so `frame-src 'self'` is required. The game page's own policy remains
+strict (`wasm-unsafe-eval`, no JS eval); the agent pane's relaxed one applies only
+under `/dsh/`.
 
 That iframe is same-origin by design: the page and the harness worker talk
 over a `BroadcastChannel` and the harness persists sessions in OPFS, both of
@@ -135,7 +152,7 @@ outright, so set it explicitly.
 ### The game editor's preview: `construct-draft-sw.js`
 
 Crowdy Studio's game editor previews a player's uncommitted edits in the
-running world. On a hosted game that is a service worker the build writes
+running world. On your deployed game that is a service worker the build writes
 next to `index.html` (`constructDraftPlugin` in `vite.config.ts`):
 
 - It is registered only when the game's owner opens the game editor, with the
@@ -169,28 +186,90 @@ the same zone, so it needs nothing more; a build pointed at a proxy or a raw IP
 
 Open the site and check `crossOriginIsolated` in the console — it must be
 `true`. The game checks the same thing at boot and shows a banner when it is
-not. The Playwright smoke (`npm run test:e2e`) asserts it against `vite preview`.
+not. Then open Crowdy Studio (M): the agent pane starts only when `/dsh/` has its own
+policy and the image arrives undecoded. `curl -I https://your.host/dsh/index.html`
+should show the agent pane's policy, and `curl -I https://your.host/` the game's. The
+Playwright smoke (`npm run test:e2e`) asserts isolation against `vite preview`.
+
+## Live code on your host
+
+Crowdy Studio's Live code opens the app's launch URL with
+`?app=<id>&studio=open&project=<id>`: your game, with the dock on the bound project in
+the game editor. Your edits are a draft in your browser, previewed by
+`construct-draft-sw.js`, and Commit in the dock publishes them to GitHub as one commit.
+Live code does not deploy: build and upload again to ship the change.
+
+A sign-in returns to the bare page address, without that query, so the game keeps what
+it needs across it: `main.ts` remembers the app id before sign-in, and
+`rememberRequestedProject` keeps the requested project for the tab until the editor
+opens it.
+
+During development, `LIVE_DRAFT=1 npm run dev` in the bound repository's clone is the
+same flow against your checkout (README, "Editing the game from Crowdy Studio").
+
+## Letting players mod your game
+
+Mods are written in Crowdy Studio inside your running game, so the page you host is where
+players mod it. On top of the headers above, it takes:
+
+- **Access.** Writing mods needs an access tier with `use_studio_agent`. `npm run setup`
+  creates the Constructor tier with it and grants it to you; every visitor can run mods
+  others wrote.
+- **Allow Live Modding**, on the app's page in Crowdy Studio, for drafts and live deploys
+  from the dock.
+- **Cross-origin isolation** for CLIENT mods, which run in the player's browser. The page
+  shows a banner when it is missing.
+- **The agent pane**, which needs the `/dsh/` files and their policy.
+
+Server mods run on the platform's ck-exec, so nothing about them depends on your host.
+[MODDING.md](MODDING.md) has the details.
 
 ## Recipes
 
-### Netlify
+Each recipe puts the shared headers on every path and each Content-Security-Policy on its
+own paths. Replace `<the game's policy>` and the other placeholders with the lines in
+[The headers](#the-headers), with your API origin filled in.
 
-`public/_headers` (copied into `dist/`):
+### Netlify and Cloudflare Pages
+
+`public/_headers` (copied into `dist/`). The CSP rules name exact paths, so no path gets
+two policies:
 
 ```text
 /*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: credentialless
   Cross-Origin-Resource-Policy: same-origin
-  Permissions-Policy: camera=(self), microphone=(self)
-  Content-Security-Policy: <the CSP line above>
+  Access-Control-Allow-Origin: null
   Referrer-Policy: strict-origin-when-cross-origin
   X-Content-Type-Options: nosniff
+
+/
+  Content-Security-Policy: <the game's policy>
+  Permissions-Policy: camera=(self), microphone=(self)
+
+/index.html
+  Content-Security-Policy: <the game's policy>
+  Permissions-Policy: camera=(self), microphone=(self)
+
+/dsh/*
+  Content-Security-Policy: <the agent pane's policy>
+  Permissions-Policy: camera=(self), microphone=(self)
+
+/grid-program.html
+  Content-Security-Policy: <the grid program sandbox's policy>
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+/construct-draft-sw.js
+  Cache-Control: no-cache
 ```
+
+Load `/dsh/` once after deploying and watch the agent pane start: if the host labels
+`.gz` files `Content-Encoding: gzip`, `preview/vfs-image.tar.gz` needs an exception.
 
 ### Vercel
 
-`vercel.json`:
+`vercel.json`, again with each policy on its own paths:
 
 ```json
 {
@@ -201,68 +280,162 @@ not. The Playwright smoke (`npm run test:e2e`) asserts it against `vite preview`
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
         { "key": "Cross-Origin-Embedder-Policy", "value": "credentialless" },
         { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
-        { "key": "Permissions-Policy", "value": "camera=(self), microphone=(self)" },
-        { "key": "Content-Security-Policy", "value": "<the CSP line above>" },
+        { "key": "Access-Control-Allow-Origin", "value": "null" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "X-Content-Type-Options", "value": "nosniff" }
       ]
+    },
+    {
+      "source": "/",
+      "headers": [
+        { "key": "Content-Security-Policy", "value": "<the game's policy>" },
+        { "key": "Permissions-Policy", "value": "camera=(self), microphone=(self)" }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        { "key": "Content-Security-Policy", "value": "<the game's policy>" },
+        { "key": "Permissions-Policy", "value": "camera=(self), microphone=(self)" }
+      ]
+    },
+    {
+      "source": "/dsh/(.*)",
+      "headers": [
+        { "key": "Content-Security-Policy", "value": "<the agent pane's policy>" },
+        { "key": "Permissions-Policy", "value": "camera=(self), microphone=(self)" }
+      ]
+    },
+    {
+      "source": "/grid-program.html",
+      "headers": [
+        { "key": "Content-Security-Policy", "value": "<the grid program sandbox's policy>" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+      ]
+    },
+    {
+      "source": "/construct-draft-sw.js",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
     }
   ]
 }
 ```
 
-### Cloudflare Pages
-
-`public/_headers` with the same block as Netlify.
-
 ### AWS S3 + CloudFront
 
-Attach a **response headers policy** to the distribution's default behaviour
-with the six headers as custom headers (CloudFront's managed security-headers
-policy does not include COOP/COEP). Serve `index.html` for unknown paths with
-a viewer-request function if you add client-side routes.
+Three cache behaviours, each with a response headers policy carrying the shared headers
+(`Access-Control-Allow-Origin: null` among them) plus its own Content-Security-Policy and
+Permissions-Policy as custom headers: the
+default behaviour (the game's), `/dsh/*` (the agent pane's) and `/grid-program.html`
+(the grid program sandbox's). CloudFront's managed security-headers policy does not
+include COOP/COEP. Leave out any viewer-request rewrite to `index.html`: the game has no
+client-side routes.
 
 ### nginx
 
+nginx's `add_header` in a `location` replaces the server's, so each `location` repeats
+the shared headers:
+
 ```nginx
-location / {
-  add_header Cross-Origin-Opener-Policy "same-origin" always;
-  add_header Cross-Origin-Embedder-Policy "credentialless" always;
-  add_header Cross-Origin-Resource-Policy "same-origin" always;
-  add_header Permissions-Policy "camera=(self), microphone=(self)" always;
-  add_header Content-Security-Policy "<the CSP line above>" always;
-  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-  add_header X-Content-Type-Options "nosniff" always;
-  try_files $uri $uri/ /index.html;
+server {
+  listen 8080;
+  root /srv/game;  # your dist/
+
+  location / {
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    add_header Cross-Origin-Embedder-Policy "credentialless" always;
+    add_header Cross-Origin-Resource-Policy "same-origin" always;
+    add_header Access-Control-Allow-Origin "null" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Permissions-Policy "camera=(self), microphone=(self)" always;
+    add_header Content-Security-Policy "<the game's policy>" always;
+  }
+
+  location /dsh/ {
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    add_header Cross-Origin-Embedder-Policy "credentialless" always;
+    add_header Cross-Origin-Resource-Policy "same-origin" always;
+    add_header Access-Control-Allow-Origin "null" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Permissions-Policy "camera=(self), microphone=(self)" always;
+    add_header Content-Security-Policy "<the agent pane's policy>" always;
+  }
+
+  location = /grid-program.html {
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    add_header Cross-Origin-Embedder-Policy "credentialless" always;
+    add_header Cross-Origin-Resource-Policy "same-origin" always;
+    add_header Access-Control-Allow-Origin "null" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy "<the grid program sandbox's policy>" always;
+  }
+
+  location = /construct-draft-sw.js {
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    add_header Cross-Origin-Embedder-Policy "credentialless" always;
+    add_header Cross-Origin-Resource-Policy "same-origin" always;
+    add_header Access-Control-Allow-Origin "null" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Cache-Control "no-cache" always;
+  }
 }
 ```
+
+Leave `gzip_static` off for `/dsh/`, so `vfs-image.tar.gz` goes out as it is.
 
 ### Caddy
 
 ```caddyfile
-header {
-  Cross-Origin-Opener-Policy "same-origin"
-  Cross-Origin-Embedder-Policy "credentialless"
-  Cross-Origin-Resource-Policy "same-origin"
-  Permissions-Policy "camera=(self), microphone=(self)"
-  Content-Security-Policy "<the CSP line above>"
-  Referrer-Policy "strict-origin-when-cross-origin"
-  X-Content-Type-Options "nosniff"
+:8080 {
+  root * /srv/game
+  file_server
+
+  header {
+    Cross-Origin-Opener-Policy "same-origin"
+    Cross-Origin-Embedder-Policy "credentialless"
+    Cross-Origin-Resource-Policy "same-origin"
+    Access-Control-Allow-Origin "null"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    X-Content-Type-Options "nosniff"
+  }
+
+  @game path / /index.html
+  header @game Content-Security-Policy "<the game's policy>"
+  header @game Permissions-Policy "camera=(self), microphone=(self)"
+
+  @dsh path /dsh/*
+  header @dsh Content-Security-Policy "<the agent pane's policy>"
+  header @dsh Permissions-Policy "camera=(self), microphone=(self)"
+
+  @grid path /grid-program.html
+  header @grid Content-Security-Policy "<the grid program sandbox's policy>"
+  header @grid Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  header @grid Referrer-Policy "no-referrer"
+
+  @draft path /construct-draft-sw.js
+  header @draft Cache-Control "no-cache"
 }
-try_files {path} /index.html
 ```
+
+Caddy serves `.gz` files as they are unless you turn on `precompressed`; leave it off.
 
 ### GitHub Pages
 
 GitHub Pages cannot set response headers. The game runs there, but
 `crossOriginIsolated` is false, so CLIENT mods are disabled and the banner says
-so. Use any host above for the full experience.
+so, and the agent pane does not start. Use any host above for the full experience.
 
 ## Sub-path deployments
 
 The bundle is built for the site root. For `https://example.com/my-game/`, build
-with `npx vite build --base=/my-game/`. The app token store is namespaced per
-app and API origin, not per path, so two games on one origin do not collide.
+with `npx vite build --base=/my-game/`, and put the paths in your host's rules under
+`/my-game/` too. The app token store is namespaced per app and API origin, not per
+path, so two games on one origin do not collide.
 
 ## Pinning the app
 
@@ -275,4 +448,6 @@ started it, and the API accepts that return -- and any CORS request from the
 page -- only if the page's origin is one of the app's redirect URIs. Add your
 production origin once: `npm run setup -- --origin https://play.example.com`,
 or Studio > Apps > Settings > Sign-in & redirect URIs. `npm run setup` registers
-`http://localhost:5175` for the dev server automatically.
+`http://localhost:5175` for the dev server automatically, and makes the first
+`--origin` the app's launch URL when it has none; Crowdy Studio's Live code opens the
+launch URL.

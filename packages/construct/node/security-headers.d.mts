@@ -4,7 +4,7 @@ export interface SecurityHeaderOptions {
   /** Additional exact origins a fork needs in connect-src. No wildcards. */
   extraConnectSrc?: string[];
   /**
-   * Origins that may FRAME this game (the Crowdy Games shell, or a shell of your own).
+   * Origins that may FRAME this game (a shell page of your own).
    * Empty (the default) renders `frame-ancestors 'none'`; the DSH pane always adds
    * `'self'` beside them.
    */

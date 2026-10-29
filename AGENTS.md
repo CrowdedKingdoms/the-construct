@@ -66,16 +66,15 @@ workflow by file name, so renaming it needs the package's npm settings changed
 too. `npm run test:release` runs the gate's test and the tarball content check.
 
 There is no deploy workflow in this repo, deliberately. Hosting is the
-developer's -- and since 0.8.0 one of the developer's options is
-`npm run publish` (`scripts/publish.mjs`), which publishes `dist/` to Crowdy
-Games through the public hosting surface (`client.hosting`, ck-api v2.1) on the
-IDENTITY client, never the app token. A game published there runs framed by the
-platform's first-party shell; the SDK's `EmbeddedHost` bridge makes hosted
-sign-in work unchanged, and `tests/e2e/shell.spec.ts` proves the framed bundle
-is cross-origin isolated and routes sign-in through the shell. `security-headers.mjs`
-takes `frameAncestors` for a shell of your own; unframed output is unchanged.
-Crowded Kingdom Studios publishes this repo itself as `the-construct` (a slug
-reserved for that org) through the same command a third party runs.
+developer's: Crowded Kingdoms does not host games (Crowdy Games was retired on
+2026-10-29), and `docs/HOSTING.md` is how to put `dist/` on a host of your own.
+`npm run publish` is gone from `package.json`; `scripts/publish.mjs`, which uploaded
+to Crowdy Games through `client.hosting`, stays dormant because the API answers
+`CONTENT_HOSTING_DISABLED` on every tier. `security-headers.mjs` takes
+`frameAncestors` for a shell of your own, and `tests/e2e/shell.spec.ts` proves a
+framed bundle stays cross-origin isolated and routes sign-in through such a shell.
+`npm run setup -- --origin` registers the host's origin and makes it the app's launch
+URL when there is none, which is what Crowdy Studio's Live code opens.
 
 ## Working in this repo
 

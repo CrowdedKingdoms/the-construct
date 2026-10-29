@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+Starter 0.9.0 and `@crowdedkingdoms/construct` 0.4.1: you host the game. Crowded
+Kingdoms retired Crowdy Games on 2026-10-29 and no longer hosts games; the platform's
+hosting API answers `CONTENT_HOSTING_DISABLED` on every tier.
+
+- `npm run publish` is gone from `package.json` (`scripts/publish.mjs` stays, dormant).
+  docs/HOSTING.md now starts from five steps for your own host, gives each page its own
+  Content-Security-Policy in every recipe (the game's policy on `/*` also lands on
+  `/dsh/*` and keeps the agent pane from starting), adds `Access-Control-Allow-Origin:
+  null` for the grid program sandbox's module scripts, and covers Live code on your host
+  and what players need to mod your game.
+- `npm run setup -- --origin https://your.host` makes the first origin that is not
+  loopback the app's launch URL when the app has none (`ensureRedirectUris`), so Crowdy
+  Studio's Live code opens it.
+- `npm run setup` and `npm run seed` publish the Rust starter crates only. The JS
+  fountain program was refused (Studio's common files hold `Cargo.toml` and
+  `src/**.rs`), which stopped every fresh setup before the agent policy and GitHub
+  steps. `programCommonFiles()` is gone; `PROGRAM_TEMPLATES` stays.
+- Setup's agent step reports the effective funding: on a metered tier, model use is
+  charged to each player's wallet or the app's org wallet, which needs funds first.
+
 `@crowdedkingdoms/construct` 0.4.0: Crowdy Studio's game editor. A Studio project bound
 to a Construct game's repository now edits the game itself, previewed in the running
 world, and commits it to GitHub as one commit only when the player asks.

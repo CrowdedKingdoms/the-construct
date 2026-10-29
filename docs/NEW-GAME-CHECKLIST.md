@@ -66,8 +66,10 @@ A checklist, in the order that keeps everything working at every step.
 ## 7. Ship
 
 - [ ] `.env.local` with `VITE_APP_ID` for a single-app deployment.
-- [ ] Host with the headers ([HOSTING.md](HOSTING.md)); check
-      `crossOriginIsolated` on the live URL.
+- [ ] Host it yourself with the headers ([HOSTING.md](HOSTING.md)): register the
+      origin with `npm run setup -- --origin https://your.host`, upload `dist/`, and
+      check `crossOriginIsolated` and the agent pane on the live URL. Crowded Kingdoms
+      does not host games.
 - [ ] Keep the CrowdyJS pin exact and on `latest` for production
       (`npm run check:pin`). Read the SDK's `MIGRATION.md` before a major bump.
       A pin bump that brings a new realtime feature (15.5 brought webcam
@@ -78,7 +80,7 @@ A checklist, in the order that keeps everything working at every step.
 
 ## 8. Things this starter leaves to you
 
-- Teams/guilds, channels, the Overworld PKCE lobby, marketplace listings,
+- Teams/guilds, channels, a lobby of your own, marketplace listings,
   native clients. Each has a platform surface; see
   [PLATFORM-MAP.md](PLATFORM-MAP.md). Webcam (`WebcamService`), voice
   (`VoiceService`), and the Studio agent dock (`ConstructPlayerHostAdapter`)

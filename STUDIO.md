@@ -26,7 +26,8 @@ Outside the content layer a change needs a rebuild or a deploy, and
 `preview_status` says so:
 
 - `src/main.ts`, `src/ui/`, `src/style.css`: the host and its HUD. Ask the
-  player to reload the page (local) or to publish the game (hosted).
+  player to reload the page (local) or to build the game and upload it to their
+  host again (deployed).
 - `exec/`: the world hub (Rust). The hub runs on the platform; a change there
   needs `npm run build:exec-sources` and `npm run deploy:exec`, which this
   session cannot run.
@@ -36,7 +37,7 @@ Outside the content layer a change needs a rebuild or a deploy, and
 ## Adding a scene
 
 1. Add `src/scenes/<name>/<Name>Scene.ts` implementing `GameScene`. Reuse what
-   the existing scenes import; a hosted game can load only packages its build
+   the existing scenes import; a deployed game can load only packages its build
    already bundles.
 2. Register it in `src/game/content.ts` under its scene id.
 3. If players load it from home, add a row to `PROGRAM_CATALOG` in

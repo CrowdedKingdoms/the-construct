@@ -113,7 +113,6 @@ Put `VITE_DEV_PROXY=1`, `VITE_DEV_ALLOWED_HOSTS=1`, and/or
 | `npm run seed` | Re-deploy the world hub + Studio starter files to `APP_ID` after editing `exec/`, `model/` or `mods/` |
 | `npm run build:exec-sources` | Regenerate the hub's program catalog and the SERVER starter strings from `model/catalog.mjs` and `exec/mods/` (the unit tests fail while they are stale) |
 | `npm run smoke` | Verify an app has everything Setup should have produced, the world hub included |
-| `npm run publish [-- --slug my-game] [--no-build] [--dir dist]` | Publish the build to Crowdy Games: claim the slug, build, upload; prints the play URL. Needs `CONSTRUCT_EMAIL` / `CONSTRUCT_PASSWORD` and `VITE_APP_ID` |
 | `npm run check:pin` | The CrowdyJS pin is exact and matches the branch tier |
 
 ## How it is put together
@@ -212,15 +211,15 @@ figures:
 [Shared environment](https://docs.dev.crowdedkingdoms.com/management-api/shared-environment)
 and [Player billing](https://docs.dev.crowdedkingdoms.com/management-api/player-billing).
 
-## Hosting: one command, or yours
+## Hosting: yours
 
-`npm run publish` puts the game on **Crowdy Games**: it is reached at
-`https://<games host>/<slug>/` and runs on an origin of its own, with every
-security header served for you, and players sign in exactly as they would
-anywhere else. Or `npm run build` produces a static site you can put anywhere
-— with one requirement: the host must send the COOP/COEP headers or CLIENT halves
-will not run (the game says so on screen). Both in
-[docs/HOSTING.md](docs/HOSTING.md).
+Crowded Kingdoms does not host games. `npm run build` produces a static site you put
+on any host that can set response headers. The host must send the cross-origin
+isolation headers, or CLIENT halves will not run (the game says so on screen), and the
+agent pane's files under `/dsh/` need a policy of their own. Register the address with
+`npm run setup -- --origin https://your.host` (it becomes the app's launch URL when the
+app has none) so players can sign in there and Crowdy Studio's Live code opens it.
+[docs/HOSTING.md](docs/HOSTING.md) has the steps and recipes for common hosts.
 
 ## Branches and the SDK pin
 
