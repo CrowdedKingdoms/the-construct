@@ -108,7 +108,7 @@ export function ensureRedirectUris(
   identity: CrowdyClient,
   args: { appId: string; origins: string[] },
   log?: Logger,
-): Promise<{ redirectUris: string[]; added: string[] }>;
+): Promise<{ redirectUris: string[]; added: string[]; launchUrl: string | null }>;
 export function ensureConstructorTier(
   identity: CrowdyClient,
   input: { appId: string; userId: string },

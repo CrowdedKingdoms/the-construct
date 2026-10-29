@@ -26,8 +26,7 @@ export default defineConfig(({ mode }) => {
   const apiOrigin = env.VITE_CROWDY_HTTP_URL?.trim() || sdkDefaultHttpOrigin(rootDir);
   // Who may FRAME this game. Empty (the default) means nobody: a self-hosted game is a
   // top-level page. The shell e2e (tests/e2e/shell.spec.ts) sets it to its fixture's
-  // origin; a fork that runs behind a shell of its own sets it to that origin. On
-  // Crowdy Games the platform's edge serves the equivalent and this is not read.
+  // origin; a fork that runs behind a shell of its own sets it to that origin.
   const frameAncestors = (env.CONSTRUCT_FRAME_ANCESTORS ?? '')
     .split(',')
     .map((s) => s.trim())
