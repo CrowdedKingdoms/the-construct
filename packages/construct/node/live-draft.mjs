@@ -32,6 +32,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
+const COMMIT_SHA = /^[0-9a-f]{40}$/;
 
 const SAFE_PATH = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 const MAX_TEXT_BYTES = 512 * 1024;
@@ -91,6 +92,14 @@ class DraftHttpError extends Error {
   }
 }
 
+/** A full commit sha, or a refusal: a value that could read as a git option never reaches git. */
+function commitShaOf(value) {
+  if (typeof value !== 'string' || !COMMIT_SHA.test(value)) {
+    throw new DraftHttpError(400, 'DRAFT_PATH_REFUSED', 'sync needs the 40-character commit sha.');
+  }
+  return value;
+}
+
 /**
  * The checkout as a draft. Exported for tests; the plugin below is the way in.
  */
@@ -107,8 +116,12 @@ export class CheckoutDraft {
     this.ownWrites = new Map();
   }
 
-  async git(...args) {
-    const { stdout } = await run('git', args, { cwd: this.root, maxBuffer: 64 * 1024 * 1024 });
+  /** git with a fixed subcommand; a revision follows `--end-of-options` (or precedes `--`), so none reads as an option. */
+  async git(subcommand, ...args) {
+    const { stdout } = await run('git', [subcommand, ...args], {
+      cwd: this.root,
+      maxBuffer: 64 * 1024 * 1024,
+    });
     return stdout;
   }
 
@@ -333,16 +346,10 @@ export class CheckoutDraft {
   }
 
   /** Move HEAD to the commit Studio just made from this draft, leaving every file as it is. */
-  async sync(commitSha) {
-    if (typeof commitSha !== 'string' || !/^[0-9a-f]{40}$/.test(commitSha)) {
-      throw new DraftHttpError(
-        400,
-        'DRAFT_PATH_REFUSED',
-        'sync needs the 40-character commit sha.',
-      );
-    }
+  async sync(value) {
+    const commitSha = commitShaOf(value);
     try {
-      await this.git('cat-file', '-e', `${commitSha}^{commit}`);
+      await this.git('cat-file', '-e', '--end-of-options', `${commitSha}^{commit}`);
     } catch {
       try {
         await this.git('fetch', '--quiet', 'origin');
@@ -355,7 +362,7 @@ export class CheckoutDraft {
       }
     }
     try {
-      await this.git('merge-base', '--is-ancestor', 'HEAD', commitSha);
+      await this.git('merge-base', '--is-ancestor', '--end-of-options', 'HEAD', commitSha);
     } catch {
       throw new DraftHttpError(
         409,
@@ -363,7 +370,7 @@ export class CheckoutDraft {
         `Committed as ${commitSha.slice(0, 7)}, but HEAD is not behind it; pull to update this checkout.`,
       );
     }
-    await this.git('reset', '--mixed', '--quiet', commitSha);
+    await this.git('reset', '--mixed', '--quiet', commitSha, '--');
     this.head = null;
     this.revision += 1;
     return { baseCommitSha: commitSha, revision: this.revision };

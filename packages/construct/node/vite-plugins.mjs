@@ -130,6 +130,16 @@ const DRAFT_WORKER_ENTRY = fileURLToPath(
  */
 const forDrafts = (rel) => !rel.startsWith('platform/live/') || rel === 'platform/live/content';
 const SOURCE_FILE = /\.(ts|tsx|mts|js|mjs)$/;
+/** A bare module specifier as npm and the framework spell them. */
+const MODULE_SPECIFIER = /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(\/[\w.-]+)*$/i;
+
+/** A JavaScript string literal for `value`, safe to splice into generated code. */
+function jsString(value) {
+  return JSON.stringify(value).replace(
+    /[<>/\u2028\u2029]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+}
 const TEST_FILE = /\.test\.(ts|tsx|mts|js|mjs)$/;
 
 /** @param {string} dir @returns {Promise<string[]>} */
@@ -261,11 +271,9 @@ export function constructDraftPlugin(options = {}) {
         ...(options.extraModules ?? []),
       ]);
       const rows = [...specifiers]
+        .filter((specifier) => MODULE_SPECIFIER.test(specifier))
         .sort()
-        .map(
-          (specifier) =>
-            `  ${JSON.stringify(specifier)}: () => import(${JSON.stringify(specifier)}),`,
-        );
+        .map((specifier) => `  ${jsString(specifier)}: () => import(${jsString(specifier)}),`);
       return `export default {\n${rows.join('\n')}\n};\n`;
     },
     async generateBundle() {
