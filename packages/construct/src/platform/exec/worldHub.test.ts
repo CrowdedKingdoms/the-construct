@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { WorldHub, configureWorldHub, worldHubAddress } from './worldHub';
+import { WorldHub, configureWorldHub, localWorldHubReply, worldHubAddress } from './worldHub';
 
 function fakeClient(connectResults: Array<'fail' | 'ok'> = ['ok']) {
   const connection = {
@@ -15,6 +15,15 @@ function fakeClient(connectResults: Array<'fail' | 'ok'> = ['ok']) {
   };
   return { client: { exec } as never, exec, connection };
 }
+
+describe('local world hub mock', () => {
+  it('answers the reads the page polls without a hub', () => {
+    expect(localWorldHubReply('world')).toEqual({ pulses: 0 });
+    expect(localWorldHubReply('claims')).toEqual({ claims: [], total: 0 });
+    expect(localWorldHubReply('programs')).toEqual({ programs: [] });
+    expect(localWorldHubReply('status')).toMatchObject({ local: true });
+  });
+});
 
 describe('WorldHub', () => {
   it('opens one connection, on the host running the hub, for every call', async () => {

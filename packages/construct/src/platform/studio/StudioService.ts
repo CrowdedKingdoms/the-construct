@@ -44,6 +44,10 @@ import { messageOf } from '../network/NetworkManager';
 import { isTextEntry } from '../../engine/Input';
 import { chunkKey, worldToChunk, type ChunkCoord, type Vec3 } from '../realtime/space';
 import { AgentLocomotion } from './agentLocomotion';
+import { wantsStudioOpen } from './studioQuery';
+import type { GameContentHost, PreviewStatus } from '../live/content';
+import { DevServerDraftStore, devServerDraftToken } from '../live/devServerDraftStore';
+import { liveCodeSdk, type DraftProject, type DraftStore } from '../live/sdk';
 import { describeClientHalfPrompt, GridClientHalves, studioPreviewModName } from './clientHalves';
 import { ConstructPlayerHostAdapter } from './ConstructPlayerHostAdapter';
 import { HumanInputMonitor } from './HumanInputMonitor';
@@ -119,6 +123,26 @@ export interface StudioHooks {
   /** Screenshot hook for the agent pane. */
   captureFrame?(): Promise<HTMLCanvasElement | ImageBitmap | Blob | null>;
   describeView?(): string | undefined;
+  /**
+   * The game's content layer. With it, the game editor previews the draft in
+   * the running world (Vite HMR on a dev server, the draft service worker on
+   * a hosted page) and answers the agent's `preview_status`.
+   */
+  content?: GameContentHost;
+}
+
+/** The context the game editor opens in when no grid is open (mods cannot be built from it). */
+const GAME_EDITOR_GRID = 'game-editor';
+
+function baseUrl(): string {
+  return import.meta.env.BASE_URL.replace(/\/?$/, '/');
+}
+
+/** A Vite error's file, as a repository path (the dev server's root is not known here). */
+function repoPathOf(file: string | undefined): string | undefined {
+  if (!file) return undefined;
+  const match = /(?:^|\/)((?:src|model|packages)\/.+)$/.exec(file.replace(/\\/g, '/'));
+  return match?.[1];
 }
 
 /**
@@ -293,6 +317,24 @@ export class StudioService {
   attach(hooks: StudioHooks): void {
     this.hooks = hooks;
     const network = () => this.session.network;
+    const dsh = {
+      graphql: network().game.graphql,
+      // Under Vite's base, so a build served from a sub-path (`vite build
+      // --base /the-construct/`) finds its own harness instead of the
+      // origin's root. The default base is '/', which keeps '/dsh/'.
+      webBase: `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}dsh/`,
+      graphqlUrl: `${API_HTTP_URL}/graphql`,
+      apiOrigin: API_HTTP_URL,
+      getToken: () => network().game.getToken(),
+      persistScope: `${this.session.appId}/${this.session.selfUuid}`,
+      studioOrigin: STUDIO_ORIGIN ?? undefined,
+      openOnMount: wantsStudioOpen(globalThis.location?.search ?? ''),
+    };
+    // The game editor (CrowdyJS 18.23+), for a project bound to a Construct
+    // game the player owns: the controller asks for the draft when it opens one.
+    const gameEditor: { draftStore?: (project: DraftProject) => DraftStore | null } = hooks.content
+      ? { draftStore: (project) => this.draftStoreFor(project) }
+      : {};
     this.embed = new CrowdyStudioEmbed({
       // Resolved lazily: the game client exists only after enterApp, and is
       // rebuilt if the player switches apps.
@@ -323,19 +365,8 @@ export class StudioService {
       appId: () => this.session.appId,
       gameName: GAME_NAME,
       closeKeyCode: 'KeyM',
-      dsh: {
-        graphql: network().game.graphql,
-        // Under Vite's base, so a build served from a sub-path (`vite build
-        // --base /the-construct/`) finds its own harness instead of the
-        // origin's root. The default base is '/', which keeps '/dsh/'.
-        webBase: `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}dsh/`,
-        graphqlUrl: `${API_HTTP_URL}/graphql`,
-        apiOrigin: API_HTTP_URL,
-        getToken: () => network().game.getToken(),
-        persistScope: `${this.session.appId}/${this.session.selfUuid}`,
-        studioOrigin: STUDIO_ORIGIN ?? undefined,
-        openOnMount: true,
-      },
+      dsh,
+      ...gameEditor,
       onAgentMounted: (handle) => {
         this.watchStudio(handle.controller);
         this.state = { ...this.state, agentReady: true, agentReason: null };
@@ -360,6 +391,7 @@ export class StudioService {
           this.hud.remove(source);
         }
         this.studioGridId = null;
+        this.stopPreview();
         this.setOpen(false);
         void this.refreshClientHalves();
       },
@@ -375,6 +407,25 @@ export class StudioService {
 
   get isOpen(): boolean {
     return this.embed?.open ?? false;
+  }
+
+  /**
+   * Open Crowdy Studio on `projectId` (Crowdy Studio's Live code link names
+   * one): on the grid underfoot when the player may edit it, otherwise in the
+   * game editor alone. A project bound to a Construct game opens its editor
+   * either way; the controller decides from the repository.
+   */
+  openProject(projectId: string): void {
+    if (!this.embed) return;
+    if (this.embed.open) this.embed.close();
+    const grid =
+      this.currentGrid && hasAnyStudioPermission(this.currentGrid.permissions)
+        ? this.currentGrid
+        : null;
+    const opened: { projectId: string } = { projectId };
+    this.embed.toggle({ ...(grid ? this.contextFor(grid) : this.gameEditorContext()), ...opened });
+    this.studioGridId = grid && this.embed.open ? grid.gridId : null;
+    this.setOpen(true);
   }
 
   /** Claim the chunk under `position`, then open the studio on it. */
@@ -462,6 +513,7 @@ export class StudioService {
   }
 
   dispose(): void {
+    this.stopPreview();
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.halves?.stop();
@@ -539,12 +591,175 @@ export class StudioService {
           }
         : {}),
       playerHost: this.agentHost,
-      dshHost: {
-        captureFrame: async () => (await this.hooks?.captureFrame?.()) ?? null,
-        describeView: () => this.hooks?.describeView?.(),
-        grid: this.programs,
+      dshHost: this.dshHost(),
+    };
+  }
+
+  /** The game editor without a grid: no mod can be built or run from here. */
+  private gameEditorContext(): CrowdyStudioEmbedContext {
+    const none = { canWrite: false, canRun: false };
+    return {
+      gridId: GAME_EDITOR_GRID,
+      targetPermissions: { SERVER: none, CLIENT: none },
+      permissionsNote:
+        'Game editor: no grid is open. Stand on your claimed chunk and press M to build mods.',
+      playerHost: this.agentHost,
+      dshHost: this.dshHost(),
+    };
+  }
+
+  private dshHost(): NonNullable<CrowdyStudioEmbedContext['dshHost']> {
+    // CrowdyJS 18.23 reads these (the playbook, live-modding checks, the
+    // preview status); the template's SDK pin may not list them yet.
+    const extras: {
+      playbookBase: string;
+      authorizeLiveModding(action: 'draft_test' | 'deploy_live'): Promise<void>;
+      previewStatus?(params: {
+        afterRevision?: number;
+        timeoutMs?: number;
+      }): Promise<PreviewStatus>;
+    } = {
+      playbookBase: `${baseUrl()}playbook/`,
+      authorizeLiveModding: async (action) => {
+        await this.session.network.game.graphql.query(
+          `query CrowdyStudioLiveModding($appId: BigInt!, $action: String!) {
+            crowdyStudioLiveModding(appId: $appId, action: $action)
+          }`,
+          { appId: this.session.appId, action },
+        );
+      },
+      ...(this.hooks?.content
+        ? { previewStatus: (params) => this.hooks!.content!.status(params) }
+        : {}),
+    };
+    return {
+      captureFrame: async () => (await this.hooks?.captureFrame?.()) ?? null,
+      describeView: () => this.hooks?.describeView?.(),
+      grid: this.programs,
+      ...extras,
+    };
+  }
+
+  /**
+   * The draft of a game project: the dev server's checkout when this page is
+   * served by one with the live draft on, otherwise the hosted store (an
+   * overlay over GitHub in this browser). Starts the matching preview.
+   */
+  private draftStoreFor(project: DraftProject): DraftStore | null {
+    const sdk = liveCodeSdk();
+    if (!sdk) {
+      this.hooks?.notify(
+        'This game’s CrowdyJS predates the game editor; the project opens in the mod editor.',
+        'warn',
+      );
+      return null;
+    }
+    const transport = this.session.network.game.crowdyStudioGitHub;
+    const token = import.meta.env.DEV ? devServerDraftToken() : null;
+    const store: DraftStore = token
+      ? new DevServerDraftStore({
+          base: baseUrl(),
+          token,
+          appId: project.appId,
+          projectId: project.projectId,
+          transport,
+          sdk,
+          ...(import.meta.hot ? { hot: import.meta.hot } : {}),
+        })
+      : new sdk.GitHubDraftStore({
+          transport,
+          appId: project.appId,
+          projectId: project.projectId,
+          baseCommitSha: project.githubSha,
+          storage: new sdk.IndexedDbDraftOverlayStorage(),
+        });
+    this.startPreview(store, token ? 'hmr' : 'service-worker');
+    return store;
+  }
+
+  private preview: { dispose(): void } | null = null;
+
+  private startPreview(store: DraftStore, mode: 'hmr' | 'service-worker'): void {
+    this.stopPreview();
+    const content = this.hooks?.content;
+    if (!content) return;
+    if (mode === 'hmr') {
+      // main.ts's accept boundary swaps the content; this records what it did not see.
+      const hot = import.meta.hot;
+      const off = store.subscribe((event) => content.noteRevision(event.revision));
+      const onPreview = (data: {
+        path: string;
+        kind: 'not-loaded' | 'needs-reload';
+        revision: number;
+      }) => {
+        content.settleUnloaded(
+          data.revision,
+          data.kind === 'needs-reload'
+            ? `${data.path} is outside the content layer (src/game/content.ts and what it imports): reload the page to see it.`
+            : `${data.path} is not part of the running game; nothing to reload.`,
+        );
+      };
+      const onError = (payload: {
+        err: {
+          message: string;
+          loc?: { file?: string; line?: number; column?: number };
+          id?: string;
+        };
+      }) => {
+        const path = repoPathOf(payload.err.loc?.file ?? payload.err.id);
+        content.fail([
+          {
+            ...(path ? { path } : {}),
+            ...(payload.err.loc?.line ? { line: payload.err.loc.line } : {}),
+            ...(payload.err.loc?.column ? { column: payload.err.loc.column } : {}),
+            message: payload.err.message,
+          },
+        ]);
+      };
+      hot?.on('construct:preview', onPreview);
+      hot?.on('vite:error', onError);
+      this.preview = {
+        dispose: () => {
+          off();
+          hot?.off?.('construct:preview', onPreview);
+          hot?.off?.('vite:error', onError);
+        },
+      };
+      return;
+    }
+    let loader: { dispose(): void } | null = null;
+    let stopped = false;
+    this.preview = {
+      dispose: () => {
+        stopped = true;
+        loader?.dispose();
       },
     };
+    void import('../live/draftLoader')
+      .then(({ DraftLoader }) =>
+        DraftLoader.start({
+          base: baseUrl(),
+          store,
+          content,
+          env: { ...import.meta.env },
+          log: (line) => this.session.network.log(line),
+        }),
+      )
+      .then(
+        (started) => {
+          if (stopped) started.dispose();
+          else loader = started;
+        },
+        (error: unknown) => {
+          content.fail([{ message: messageOf(error) }]);
+          this.hooks?.notify(`The draft preview could not start: ${messageOf(error)}`, 'warn');
+        },
+      );
+  }
+
+  private stopPreview(): void {
+    this.preview?.dispose();
+    this.preview = null;
   }
 
   /**
