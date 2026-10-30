@@ -33,14 +33,14 @@
     "smoke": "node --experimental-websocket scripts/smoke.mjs"
   },
   "dependencies": {
-    "@crowdedkingdoms/construct": "0.4.1",
-    "@crowdedkingdoms/crowdyjs": "18.23.0-dev.1",
+    "@crowdedkingdoms/construct": "0.4.2",
+    "@crowdedkingdoms/crowdyjs": "18.23.1-dev.1",
     "dompurify": "3.4.17",
     "pixi.js": "^8.22.0",
     "three": "^0.186.1"
   },
   "devDependencies": {
-    "@crowdedkingdoms/crowdy-dsh": "0.5.0-dev.1",
+    "@crowdedkingdoms/crowdy-dsh": "0.5.1-dev.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.64.1",
     "@types/node": "^20.19.0",
