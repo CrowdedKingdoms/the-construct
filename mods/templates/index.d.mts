@@ -33,4 +33,3 @@ export interface ProgramTemplate {
   content: string;
 }
 export const PROGRAM_TEMPLATES: readonly ProgramTemplate[];
-export function programCommonFiles(): CommonFileSeed[];

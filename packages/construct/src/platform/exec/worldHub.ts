@@ -11,12 +11,34 @@
  */
 import type { CrowdyClient, ExecConnection } from '@crowdedkingdoms/crowdyjs';
 
+import { localLiveCode } from '../localLiveCode';
+
 export interface WorldHubAddress {
   nodeType: string;
   key: string;
 }
 
 let address: WorldHubAddress = { nodeType: 'world', key: 'main' };
+let announcedLocalHub = false;
+
+/**
+ * Answers used when the page is in the local live-code session.
+ * Not a deployed hub: the log line says so.
+ */
+export function localWorldHubReply(method: string): Record<string, unknown> {
+  switch (method) {
+    case 'world':
+      return { pulses: 0 };
+    case 'programs':
+      return { programs: [] };
+    case 'claims':
+      return { claims: [], total: 0 };
+    case 'progress':
+      return { player: 'local', xp: 0, level: 1, skillPoints: 0 };
+    default:
+      return { local: true, method };
+  }
+}
 
 /** After a failed connect, calls fail with its error for this long instead of dialling again. */
 const REDIAL_AFTER_MS = 15_000;
@@ -46,6 +68,13 @@ export class WorldHub {
    * own refusals throw it with their status.
    */
   async call<T>(method: string, args?: Record<string, unknown>): Promise<T> {
+    if (localLiveCode()) {
+      if (!announcedLocalHub) {
+        announcedLocalHub = true;
+        console.info('local live-code mock: world hub (not ck-exec)');
+      }
+      return localWorldHubReply(method) as T;
+    }
     const { nodeType, key } = address;
     const connection = await this.connect();
     return connection.call<T>(nodeType, key, method, args);

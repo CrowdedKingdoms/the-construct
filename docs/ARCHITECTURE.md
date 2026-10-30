@@ -155,7 +155,8 @@ Keep (or adapt) for any game: everything under `packages/construct/src/platform/
 `security-headers.mjs`, `scripts/`, `exec/` as a pattern, the Studio
 integration, the shell Setup.
 
-Replace with your game: `src/scenes/*` (the holodeck and Paint), `model/catalog.mjs`
+Replace with your game: `src/scenes/*` (the holodeck and Paint), `src/game/content.ts`
+(the content layer: scenes, home, programs), `model/catalog.mjs`
 and `src/game/programs.ts` (the programs and their pads), the world hub's rules
 (`exec/construct`), `mods/templates/` and `exec/mods/` (your starter mods), the
 HUD chrome in `src/ui/`.

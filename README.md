@@ -103,6 +103,7 @@ Put `VITE_DEV_PROXY=1`, `VITE_DEV_ALLOWED_HOSTS=1`, and/or
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Vite dev server with the production security headers |
+| `LIVE_DRAFT=1 npm run dev` | The same, with this checkout as Crowdy Studio's game-editor draft ([below](#editing-the-game-from-crowdy-studio)) |
 | `npm run build` / `npm run preview` | Production bundle, and serve it locally with the same headers |
 | `npm test` | Unit tests (vitest) + CSP builder tests (`node --test`) |
 | `npm run test:e2e` | Playwright: boots cross-origin isolated and shows hosted sign-in; with `CONSTRUCT_E2E=1` and credentials, completes Studio login / consent and opens Studio. Node token-seed is `CONSTRUCT_E2E_SEED_TOKEN=1` + `CROWDY_HTTP_URL` only |
@@ -112,7 +113,6 @@ Put `VITE_DEV_PROXY=1`, `VITE_DEV_ALLOWED_HOSTS=1`, and/or
 | `npm run seed` | Re-deploy the world hub + Studio starter files to `APP_ID` after editing `exec/`, `model/` or `mods/` |
 | `npm run build:exec-sources` | Regenerate the hub's program catalog and the SERVER starter strings from `model/catalog.mjs` and `exec/mods/` (the unit tests fail while they are stale) |
 | `npm run smoke` | Verify an app has everything Setup should have produced, the world hub included |
-| `npm run publish [-- --slug my-game] [--no-build] [--dir dist]` | Publish the build to Crowdy Games: claim the slug, build, upload; prints the play URL. Needs `CONSTRUCT_EMAIL` / `CONSTRUCT_PASSWORD` and `VITE_APP_ID` |
 | `npm run check:pin` | The CrowdyJS pin is exact and matches the branch tier |
 
 ## How it is put together
@@ -157,6 +157,36 @@ flowchart LR
   server code. `ModelService` and `GridService` call it over one exec
   connection per page; `npm run deploy:exec` ships a change.
 
+## Editing the game from Crowdy Studio
+
+Bind the game's repository to a Crowdy Studio project and Studio edits the
+game itself (its **game editor**), not mods: the Files pane shows the
+repository, the agent works on it, the running world reloads what changed,
+and **Commit** publishes the changes to GitHub as one commit with a message.
+Nothing reaches GitHub before that. Studio's **Live code** link opens it, through a
+sign-in if the player has none: `main.ts` keeps the link's project for the tab
+(`rememberRequestedProject`) and the editor opens it once the player is in.
+
+- **The content layer** is what reloads in place: `src/game/content.ts`
+  (`contentApi: 1`: the scenes, the home scene and spawn, the programs) and
+  everything it imports. `main.ts` loads the game through it and nothing else,
+  so adding a scene never edits `main.ts`. Other files (`main.ts`, `src/ui/`,
+  the world hub in `exec/`) still need a reload, a build or a deploy.
+- **On a dev server**, run `LIVE_DRAFT=1 npm run dev` in a clone of the bound
+  repository: the checkout is the draft, Vite hot-reloads it, and after a
+  commit the checkout moves to it (`git reset --mixed`, files untouched). The
+  draft API answers this machine only; `LIVE_DRAFT_REMOTE=1` opens it to the
+  network the dev server listens on, which hands that network your checkout.
+- **On the hosted game**, the draft lives in the owner's browser and a service
+  worker previews it ([docs/HOSTING.md](docs/HOSTING.md#the-game-editors-preview-construct-draft-swjs)).
+- **The agent's guide** is [STUDIO.md](STUDIO.md) (a map of the content
+  layer), plus the skills of an optional Studio playbook
+  (`CONSTRUCT_PLAYBOOK_DIR`, copied into `public/playbook/`).
+
+Needs CrowdyJS 18.23 or later (the framework takes the game editor's types from it)
+and `@crowdedkingdoms/crowdy-dsh` 0.5 or later; with an older crowdy-dsh the agent
+says it cannot edit the game repository.
+
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layers, authority, the boot sequence, what is generic and what is demo
@@ -181,15 +211,15 @@ figures:
 [Shared environment](https://docs.dev.crowdedkingdoms.com/management-api/shared-environment)
 and [Player billing](https://docs.dev.crowdedkingdoms.com/management-api/player-billing).
 
-## Hosting: one command, or yours
+## Hosting: yours
 
-`npm run publish` puts the game on **Crowdy Games**: it is reached at
-`https://<games host>/<slug>/` and runs on an origin of its own, with every
-security header served for you, and players sign in exactly as they would
-anywhere else. Or `npm run build` produces a static site you can put anywhere
-— with one requirement: the host must send the COOP/COEP headers or CLIENT halves
-will not run (the game says so on screen). Both in
-[docs/HOSTING.md](docs/HOSTING.md).
+Crowded Kingdoms does not host games. `npm run build` produces a static site you put
+on any host that can set response headers. The host must send the cross-origin
+isolation headers, or CLIENT halves will not run (the game says so on screen), and the
+agent pane's files under `/dsh/` need a policy of their own. Register the address with
+`npm run setup -- --origin https://your.host` (it becomes the app's launch URL when the
+app has none) so players can sign in there and Crowdy Studio's Live code opens it.
+[docs/HOSTING.md](docs/HOSTING.md) has the steps and recipes for common hosts.
 
 ## Branches and the SDK pin
 

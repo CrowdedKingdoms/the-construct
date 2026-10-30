@@ -127,6 +127,11 @@ export async function ensureApp(identity, { orgId, orgSlug, name, slug, datacent
  * on the return leg and no CORS headers on anything else. Idempotent: existing
  * entries are kept, the given ones added; origin-matched by the server, so the
  * path does not matter but `/` keeps the list readable.
+ *
+ * An app with no launch URL also gets the first origin that is not loopback as
+ * its launch URL. Crowded Kingdoms does not host games, so that origin is where
+ * the game lives, and Crowdy Studio's Live code opens it. A launch URL the app
+ * already has is left alone.
  */
 export async function ensureRedirectUris(identity, { appId, origins }, log = noop) {
   const app = await identity.apps.app(appId);
@@ -134,14 +139,21 @@ export async function ensureRedirectUris(identity, { appId, origins }, log = noo
   const have = new Set(existing.map((u) => originOf(u)).filter(Boolean));
   const wanted = origins.map((o) => originOf(o)).filter(Boolean);
   const missing = [...new Set(wanted)].filter((o) => !have.has(o));
-  if (missing.length === 0) {
+  const launchOrigin = app?.launchUrl ? null : wanted.find((o) => !isLoopback(o));
+  const launchUrl = launchOrigin ? `${launchOrigin}/` : null;
+  if (missing.length === 0 && !launchUrl) {
     log(`Redirect URIs already cover ${wanted.join(', ')}`);
-    return { redirectUris: existing, added: [] };
+    return { redirectUris: existing, added: [], launchUrl: app?.launchUrl ?? null };
   }
   const redirectUris = [...existing, ...missing.map((o) => `${o}/`)];
-  await identity.portal.setAppClientSettings({ appId, redirectUris });
-  log(`Registered redirect origin(s) ${missing.join(', ')}`);
-  return { redirectUris, added: missing };
+  await identity.portal.setAppClientSettings({
+    appId,
+    redirectUris,
+    ...(launchUrl ? { launchUrl } : {}),
+  });
+  if (missing.length) log(`Registered redirect origin(s) ${missing.join(', ')}`);
+  if (launchUrl) log(`Launch URL set to ${launchUrl} (Crowdy Studio's Live code opens it)`);
+  return { redirectUris, added: missing, launchUrl: launchUrl ?? app?.launchUrl ?? null };
 }
 
 function originOf(value) {
@@ -150,6 +162,11 @@ function originOf(value) {
   } catch {
     return null;
   }
+}
+
+function isLoopback(origin) {
+  const host = new URL(origin).hostname;
+  return host === 'localhost' || host === '[::1]' || host.startsWith('127.');
 }
 
 export async function ensureConstructorTier(identity, { appId, userId }, log = noop) {
@@ -350,8 +367,24 @@ const AGENT_POLICY_CORE = `
 
 const AGENT_APP_POLICY_QUERY = `query ConstructAgentPolicy($appId: BigInt!) {
   crowdyStudioAgentPolicy(appId: $appId) { ${AGENT_POLICY_CORE} }
-  crowdyStudioAgentEffectivePolicy(appId: $appId) { ${AGENT_POLICY_CORE} }
+  crowdyStudioAgentEffectivePolicy(appId: $appId) {
+    ${AGENT_POLICY_CORE} funding { billingMode payerKind walletDebitEnabled }
+  }
 }`;
+
+/**
+ * Who pays for the agent's model use, as the effective policy has it. Metered, a
+ * request the payer's wallet cannot cover is refused, so say so up front.
+ */
+function fundingNote(effective) {
+  const funding = effective?.funding;
+  if (!funding) return 'funding not reported';
+  if (funding.billingMode !== 'METERED' || funding.walletDebitEnabled !== true) {
+    return 'platform-funded';
+  }
+  const payer = funding.payerKind === 'ORG' ? "the app's org wallet" : "each player's own wallet";
+  return `metered: model use is charged to ${payer}, which needs funds before the agent answers`;
+}
 
 const SET_AGENT_APP_POLICY = `mutation ConstructSetAgentPolicy($input: SetCrowdyStudioAgentAppPolicyInput!) {
   setCrowdyStudioAgentPolicy(input: $input) { ${AGENT_POLICY_CORE} }
@@ -375,8 +408,8 @@ function catalogVisible(policy) {
  * The dock stays fail-closed until the *app* policy is enabled and the
  * player's Constructor tier holds `use_studio_agent`. The platform catalog is
  * an operator concern — this starter never reads or writes `cp*` fields.
- * Agent tokens are platform-funded; this does not touch a player wallet or an
- * OpenRouter key in the game.
+ * This touches no wallet and no OpenRouter key in the game; who pays for model
+ * use is the effective policy's funding, which the log reports.
  */
 export async function ensureAgentPolicy(identity, { appId }, log = noop) {
   let app;
@@ -400,7 +433,7 @@ export async function ensureAgentPolicy(identity, { appId }, log = noop) {
           'The dock stays closed until an operator publishes it. Studio → your app → Agent.',
       );
     } else {
-      log('Studio Agent app policy already enabled');
+      log(`Studio Agent app policy already enabled (${fundingNote(effective)})`);
     }
     return { enabled: true, skipped: true };
   }
@@ -447,7 +480,7 @@ export async function ensureAgentPolicy(identity, { appId }, log = noop) {
           'Studio → your app → Agent; dock stays closed.',
       );
     } else {
-      log('Studio Agent app policy enabled (platform-funded; no player OpenRouter key)');
+      log(`Studio Agent app policy enabled (${fundingNote(latestEffective)})`);
     }
     return { enabled: true, skipped: false };
   } catch (error) {

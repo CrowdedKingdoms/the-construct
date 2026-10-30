@@ -13,6 +13,10 @@ exec/Cargo.lock
 # scripts/copy-dsh-web.mjs before every dev/build (see docs/HOSTING.md)
 public/dsh/
 
+# the game's Studio playbook, copied from CONSTRUCT_PLAYBOOK_DIR by
+# scripts/copy-playbook.mjs before every dev/build
+public/playbook/
+
 # local environment (never commit an app id or credentials)
 .env
 .env.local

@@ -303,16 +303,3 @@ export default async function ({ client, grid, appId, box, log }) {
 `,
   },
 ];
-
-/** Common Files for the JS grid program templates (target CLIENT, under programs/). */
-export function programCommonFiles() {
-  return PROGRAM_TEMPLATES.map((program) => ({
-    slug: program.id,
-    title: program.title,
-    description: `${program.description} Add it to a project as ${program.path}, then ask the agent to run it.`,
-    path: program.path,
-    target: 'CLIENT',
-    tags: ['crowdy-studio', 'the-construct', 'grid-program', 'starter'],
-    content: program.content,
-  }));
-}

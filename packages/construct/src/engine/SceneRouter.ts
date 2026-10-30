@@ -26,6 +26,16 @@ export class SceneRouter {
     this.factories.set(id, factory);
   }
 
+  /**
+   * Swap every factory for a new set, e.g. when the game's content changed.
+   * Mounted and cached scenes stay until `dispose()`; the next `load()` then
+   * builds from the new factories.
+   */
+  replace(factories: Readonly<Record<string, SceneFactory>>): void {
+    this.factories.clear();
+    for (const [id, factory] of Object.entries(factories)) this.factories.set(id, factory);
+  }
+
   ids(): string[] {
     return [...this.factories.keys()];
   }

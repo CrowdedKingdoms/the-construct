@@ -2,6 +2,69 @@
 
 ## Unreleased
 
+Starter 0.9.0 and `@crowdedkingdoms/construct` 0.4.1 and 0.4.2: you host the game.
+Crowded Kingdoms retired Crowdy Games on 2026-10-29 and no longer hosts games; the
+platform's hosting API answers `CONTENT_HOSTING_DISABLED` on every tier.
+
+- 0.4.2 widens the peer ranges to CrowdyJS `18.23.1` and crowdy-dsh `0.5.1`, and the
+  starter pins `18.23.1-dev.1` and `0.5.1-dev.1`. Neither release changes behaviour:
+  CrowdyJS 18.23.1 deprecates the hosting surface, and crowdy-dsh 0.5.1 bundles it.
+
+- `npm run publish` is gone from `package.json` (`scripts/publish.mjs` stays, dormant).
+  docs/HOSTING.md now starts from five steps for your own host, gives each page its own
+  Content-Security-Policy in every recipe (the game's policy on `/*` also lands on
+  `/dsh/*` and keeps the agent pane from starting), adds `Access-Control-Allow-Origin:
+  null` for the grid program sandbox's module scripts, and covers Live code on your host
+  and what players need to mod your game.
+- `npm run setup -- --origin https://your.host` makes the first origin that is not
+  loopback the app's launch URL when the app has none (`ensureRedirectUris`), so Crowdy
+  Studio's Live code opens it.
+- `npm run setup` and `npm run seed` publish the Rust starter crates only. The JS
+  fountain program was refused (Studio's common files hold `Cargo.toml` and
+  `src/**.rs`), which stopped every fresh setup before the agent policy and GitHub
+  steps. `programCommonFiles()` is gone; `PROGRAM_TEMPLATES` stays.
+- Setup's agent step reports the effective funding: on a metered tier, model use is
+  charged to each player's wallet or the app's org wallet, which needs funds first.
+
+`@crowdedkingdoms/construct` 0.4.0: Crowdy Studio's game editor. A Studio project bound
+to a Construct game's repository now edits the game itself, previewed in the running
+world, and commits it to GitHub as one commit only when the player asks.
+
+- The content layer. `src/game/content.ts` (`contentApi: 1`) lists the scenes, the home
+  scene and spawn, and the programs; `main.ts` loads the game through it alone
+  (`platform/live/content`'s `GameContentHost`) and swaps it in place, keeping the
+  player where they stood. Vite's accept boundary is that one module, so a scene edit no
+  longer reloads the page, and adding a scene never edits `main.ts`.
+  `SceneRouter.replace(factories)` is new.
+- On a dev server, `LIVE_DRAFT=1` makes the checkout the draft
+  (`@crowdedkingdoms/construct/node/live-draft`): listed from git with blob ids, dirty
+  against HEAD, guarded writes, edits on disk announced to the page, and after a commit
+  HEAD moves to it with `git reset --mixed`. Its API answers only the dev server's own
+  page (same-origin, a per-server token, JSON). `LIVE_DRAFT_ROOT` and the `@/scenes`
+  alias are gone: run the dev server in the bound repository's clone.
+- On a hosted game, `constructDraftPlugin` (`node/vite-plugins`) writes
+  `construct-draft-sw.js` and a lazy registry of the modules a draft may share with the
+  page. The worker serves the owner's draft as ES modules under `<base>__draft/`
+  (TypeScript stripped by sucrase, imports rewritten with es-module-lexer) and leaves
+  every other request alone; the CSP is unchanged. See docs/HOSTING.md.
+- `StudioService` gives the game editor its draft store (the dev server's, or CrowdyJS's
+  `GitHubDraftStore` in the browser), answers `preview_status`, opens `?project=` (the
+  Live code link), and serves the playbook from `public/playbook/`
+  (`scripts/copy-playbook.mjs`, from `CONSTRUCT_PLAYBOOK_DIR`; skills marked
+  `metadata.surface: dock` reach the dock). `STUDIO.md` is the agent's guide.
+- The Live code link's project survives a sign-in. A hosted sign-in returns to the bare
+  page address, so `rememberRequestedProject` (`platform/studio/studioQuery`, called by
+  `main.ts` at boot) keeps an id-shaped `project` in sessionStorage, keyed per API
+  environment, and `requestedProject` falls back to it once.
+- `VITE_LOCAL_LIVE_CODE` only skips the world join (no Buddy); the game editor no longer
+  depends on it.
+- New dependencies `sucrase` and `es-module-lexer`. The game editor needs CrowdyJS
+  `18.23` and crowdy-dsh `0.5`. `platform/live/sdk` re-exports the SDK's own draft types
+  in place of a copy, so the CrowdyJS peer is the 18.23 line alone (`>=18.23.0-dev.0 <19`):
+  a game re-pins CrowdyJS with this release. The SDK's classes are still looked up at
+  runtime, and with an older crowdy-dsh the agent says it cannot edit the game
+  repository. The starter pins CrowdyJS `18.23.0-dev.1` and crowdy-dsh `0.5.0-dev.1`.
+
 Docs: [docs/MANAGED-PLAYERS.md](docs/MANAGED-PLAYERS.md) shows how a studio that signs its
 own players in (org-managed players) replaces hosted sign-in: adopt the app token its backend
 minted, or trade its signed assertion, where the starter finishes a hosted sign-in. No code
