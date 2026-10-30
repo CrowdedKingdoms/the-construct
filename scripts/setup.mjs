@@ -19,7 +19,7 @@
  * the checkout to that app. Idempotent: re-running finds instead of creating
  * (and deploys the same ck-exec code again, from the platform's build cache).
  */
-import { STARTER_TEMPLATES, commonFilesFor, programCommonFiles } from '../mods/templates/index.mjs';
+import { STARTER_TEMPLATES, commonFilesFor } from '../mods/templates/index.mjs';
 import { runOnboarding, slugify } from '@crowdedkingdoms/construct/platform/onboarding/steps';
 import { whenNotBusy } from './lib/busy-retry.mjs';
 import { developerOnApp, enterApp, loadDotEnv, messageOf, parseArgs, signIn } from './lib/cli.mjs';
@@ -47,7 +47,9 @@ try {
       client: (appId) => developerOnApp(identity, appId, log),
       retry: whenNotBusy,
     },
-    commonFiles: [...STARTER_TEMPLATES.flatMap(commonFilesFor), ...programCommonFiles()],
+    // Crates only: Studio's common files and projects hold Cargo.toml and src/**.rs, so the
+    // JS grid programs are not starter files (the API's path CHECK refuses them).
+    commonFiles: STARTER_TEMPLATES.flatMap(commonFilesFor),
     redirectOrigins: [
       'http://localhost:5175',
       ...[]

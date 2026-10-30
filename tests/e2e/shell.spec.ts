@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 
 /**
- * The game FRAMED by a Crowdy Games shell -- the arrangement a published game runs in
- * (`npm run publish`). Two things must hold, and neither is visible from the smoke
- * test against the top-level preview:
+ * The game FRAMED by a shell page of your own (`frameAncestors`), the arrangement
+ * Crowdy Games used until it was retired on 2026-10-29. Two things must hold, and
+ * neither is visible from the smoke test against the top-level preview:
  *
  *   1. Inside the frame the game is still cross-origin isolated (CLIENT mods need
  *      it). That takes COOP + COEP on the SHELL document too, and a `frame-ancestors`
@@ -33,7 +33,7 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../.
 let shell: Server | undefined;
 let game: ChildProcess | undefined;
 
-test.describe('framed by the Crowdy Games shell', () => {
+test.describe('framed by a shell page', () => {
   test.skip(!!process.env.CONSTRUCT_E2E_URL, 'the shell fixture needs the local preview');
 
   test.beforeAll(async () => {
