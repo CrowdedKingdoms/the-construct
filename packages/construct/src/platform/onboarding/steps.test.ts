@@ -494,3 +494,126 @@ describe('onboarding steps', () => {
     expect(resConnected.repo).toBe('modder/my-mod');
   });
 });
+
+describe('ensureRedirectUris', () => {
+  function clientFor(app: Any): Any {
+    return {
+      apps: { app: vi.fn(async () => app) },
+      portal: { setAppClientSettings: vi.fn(async () => ({})) },
+    };
+  }
+
+  it('adds the missing origins and makes the first public one the launch URL when there is none', async () => {
+    const client = clientFor({ redirectUris: ['http://localhost:5175/'], launchUrl: null });
+    const result = await steps.ensureRedirectUris(client, {
+      appId: '7',
+      origins: ['http://localhost:5175', 'https://play.example.com'],
+    });
+    expect(client.portal.setAppClientSettings).toHaveBeenCalledWith({
+      appId: '7',
+      redirectUris: ['http://localhost:5175/', 'https://play.example.com/'],
+      launchUrl: 'https://play.example.com/',
+    });
+    expect(result).toEqual({
+      redirectUris: ['http://localhost:5175/', 'https://play.example.com/'],
+      added: ['https://play.example.com'],
+      launchUrl: 'https://play.example.com/',
+    });
+  });
+
+  it('sets the launch URL even when the origin is already registered', async () => {
+    const client = clientFor({ redirectUris: ['https://play.example.com/'], launchUrl: null });
+    await steps.ensureRedirectUris(client, { appId: '7', origins: ['https://play.example.com'] });
+    expect(client.portal.setAppClientSettings).toHaveBeenCalledWith({
+      appId: '7',
+      redirectUris: ['https://play.example.com/'],
+      launchUrl: 'https://play.example.com/',
+    });
+  });
+
+  it('leaves a launch URL the app already has, and never makes loopback the launch URL', async () => {
+    const kept = clientFor({ redirectUris: [], launchUrl: 'https://mine.example/' });
+    await steps.ensureRedirectUris(kept, { appId: '7', origins: ['https://play.example.com'] });
+    expect(kept.portal.setAppClientSettings).toHaveBeenCalledWith({
+      appId: '7',
+      redirectUris: ['https://play.example.com/'],
+    });
+
+    const local = clientFor({ redirectUris: [], launchUrl: null });
+    const result = await steps.ensureRedirectUris(local, {
+      appId: '7',
+      origins: ['http://localhost:5175', 'http://127.0.0.1:4173'],
+    });
+    expect(local.portal.setAppClientSettings).toHaveBeenCalledWith({
+      appId: '7',
+      redirectUris: ['http://localhost:5175/', 'http://127.0.0.1:4173/'],
+    });
+    expect(result.launchUrl).toBeNull();
+  });
+
+  it('writes nothing when every origin is registered and the launch URL is set', async () => {
+    const client = clientFor({
+      redirectUris: ['https://play.example.com/'],
+      launchUrl: 'https://play.example.com/',
+    });
+    const result = await steps.ensureRedirectUris(client, {
+      appId: '7',
+      origins: ['https://play.example.com'],
+    });
+    expect(client.portal.setAppClientSettings).not.toHaveBeenCalled();
+    expect(result.added).toEqual([]);
+  });
+});
+
+describe('ensureAgentPolicy funding note', () => {
+  const ready = (funding: Any) => ({
+    enabled: true,
+    killSwitch: false,
+    allowedModelIds: [steps.STUDIO_AGENT_MODEL],
+    allowedModes: [...steps.STUDIO_AGENT_MODES],
+    funding,
+  });
+
+  it('says who pays when the tier meters model use', async () => {
+    const lines: string[] = [];
+    const policy = ready({ billingMode: 'METERED', payerKind: 'PLAYER', walletDebitEnabled: true });
+    const query = vi.fn(async () => ({
+      crowdyStudioAgentPolicy: policy,
+      crowdyStudioAgentEffectivePolicy: policy,
+    }));
+    await steps.ensureAgentPolicy({ graphql: { query } } as never, { appId: '77' }, (line) =>
+      lines.push(line),
+    );
+    expect(lines.join('\n')).toMatch(/metered: model use is charged to each player's own wallet/);
+
+    const orgLines: string[] = [];
+    const orgPolicy = ready({ billingMode: 'METERED', payerKind: 'ORG', walletDebitEnabled: true });
+    const orgQuery = vi.fn(async () => ({
+      crowdyStudioAgentPolicy: orgPolicy,
+      crowdyStudioAgentEffectivePolicy: orgPolicy,
+    }));
+    await steps.ensureAgentPolicy(
+      { graphql: { query: orgQuery } } as never,
+      { appId: '77' },
+      (line) => orgLines.push(line),
+    );
+    expect(orgLines.join('\n')).toMatch(/the app's org wallet/);
+  });
+
+  it('says platform-funded only when the tier does not meter', async () => {
+    const lines: string[] = [];
+    const policy = ready({
+      billingMode: 'PLATFORM_FUNDED',
+      payerKind: 'PLATFORM',
+      walletDebitEnabled: false,
+    });
+    const query = vi.fn(async () => ({
+      crowdyStudioAgentPolicy: policy,
+      crowdyStudioAgentEffectivePolicy: policy,
+    }));
+    await steps.ensureAgentPolicy({ graphql: { query } } as never, { appId: '77' }, (line) =>
+      lines.push(line),
+    );
+    expect(lines.join('\n')).toMatch(/already enabled \(platform-funded\)/);
+  });
+});

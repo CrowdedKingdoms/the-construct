@@ -43,11 +43,13 @@ with sample history for interpolation (`src/scenes/shared/interpolate.ts`).
 ## Replacing a scene
 
 1. Create `src/scenes/<your-scene>/YourScene.ts` implementing `GameScene`.
-2. Register it in `src/main.ts`: `router.register('your-id', () => new YourScene())`.
+2. Register it in `src/game/content.ts`: `scenes: { ..., 'your-id': () => new YourScene() }`.
+   That module is the game's content layer: `main.ts` registers whatever it
+   lists, and Crowdy Studio's game editor reloads it in place.
 3. Add it to `PROGRAM_CATALOG` in `model/catalog.mjs` and its pad to
    `src/game/programs.ts` if players should load it from the holodeck, then
    `npm run build:exec-sources` (the world hub serves the same catalog). Or make
-   it the first scene: change the `router.load(...)` call.
+   it the first scene: point `home` in `src/game/content.ts` at it.
 
 World units are shared across scenes: 16 units per chunk on each axis, floor
 at `y = 0` (chunk layer 0). Paint maps world `x`/`z` to screen and keeps `y`

@@ -195,8 +195,8 @@ crate-type = ["cdylib"]`, `[package.metadata.crowdy] tick_interval_ms` and
 dependencies on `crowdy-client-sdk`, `serde` and `serde_json`, with its entry
 points in `crowdy::register_module!(init: …, tick: …, invoke: …)` (and
 optionally `event: …`); the unit tests hold the starters to that. `npm run
-setup` and `npm run seed` publish them all; publishing is idempotent by
-content.
+setup` and `npm run seed` publish the crates (the fountain program is not a starter
+file); publishing is idempotent by content.
 
 ## Gaps under ck-exec
 
@@ -318,8 +318,9 @@ export default async function ({ client, grid, appId, gridId, box, log }) {
 }
 ```
 
-The Studio agent runs one with `grid_program_run` (crowdy-dsh 0.4); the
-starter's Common Files include `programs/fountain.js`. A hosting edge must
-serve `grid-program.html` with `gridProgramSecurityHeaders()` and answer the
-sandbox's `Origin: null` module requests with `Access-Control-Allow-Origin:
-null` (the framework's Vite plugins do both for `vite dev` / `vite preview`).
+The Studio agent runs one with `grid_program_run` (crowdy-dsh 0.4). The fountain
+program in `mods/templates/index.mjs` is not a starter file: Studio's common files and
+projects hold Rust crates only. Your host must serve `grid-program.html` with
+`gridProgramSecurityHeaders()` and answer the sandbox's `Origin: null` module requests
+with `Access-Control-Allow-Origin: null` (the framework's Vite plugins do both for
+`vite dev` / `vite preview`; [HOSTING.md](HOSTING.md) has the static-host recipes).
