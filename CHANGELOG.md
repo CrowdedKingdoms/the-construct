@@ -2,9 +2,13 @@
 
 ## Unreleased
 
-Starter 0.9.0 and `@crowdedkingdoms/construct` 0.4.1: you host the game. Crowded
-Kingdoms retired Crowdy Games on 2026-10-29 and no longer hosts games; the platform's
-hosting API answers `CONTENT_HOSTING_DISABLED` on every tier.
+Starter 0.9.0 and `@crowdedkingdoms/construct` 0.4.1 and 0.4.2: you host the game.
+Crowded Kingdoms retired Crowdy Games on 2026-10-29 and no longer hosts games; the
+platform's hosting API answers `CONTENT_HOSTING_DISABLED` on every tier.
+
+- 0.4.2 widens the peer ranges to CrowdyJS `18.23.1` and crowdy-dsh `0.5.1`, and the
+  starter pins `18.23.1-dev.1` and `0.5.1-dev.1`. Neither release changes behaviour:
+  CrowdyJS 18.23.1 deprecates the hosting surface, and crowdy-dsh 0.5.1 bundles it.
 
 - `npm run publish` is gone from `package.json` (`scripts/publish.mjs` stays, dormant).
   docs/HOSTING.md now starts from five steps for your own host, gives each page its own
