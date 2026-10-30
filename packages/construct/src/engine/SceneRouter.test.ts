@@ -77,4 +77,18 @@ describe('SceneRouter', () => {
     router.bind(context, size);
     await expect(router.load('nope')).rejects.toThrow(/No scene registered/);
   });
+
+  it('replaces every factory, so the next load after dispose builds the new content', async () => {
+    const router = new SceneRouter();
+    router.bind(context, size);
+    router.register('hub', () => fakeScene('hub', 0));
+    router.register('paint', () => fakeScene('paint', 1));
+    await router.load('hub');
+    const fresh = fakeScene('hub', 0);
+    router.replace({ hub: () => fresh, race: () => fakeScene('race', 2) });
+    expect(router.ids().sort()).toEqual(['hub', 'race']);
+    router.dispose();
+    expect(await router.load('hub')).toBe(fresh);
+    await expect(router.load('paint')).rejects.toThrow(/No scene registered as "paint"/);
+  });
 });

@@ -79,10 +79,9 @@ export function buildCsp({ apiOrigins = [], extraConnectSrc = [], frameAncestors
     "default-src 'self'",
     "base-uri 'none'",
     "object-src 'none'",
-    // 'none' when self-hosted at the top level. When this game is FRAMED -- by the
-    // Crowdy Games shell (which the platform's content edge sets for you), or by a
-    // shell of your own -- name exactly that origin here (`frameAncestors`); a game
-    // that can be framed anywhere is a clickjacking surface.
+    // 'none' when self-hosted at the top level. When this game is FRAMED by a shell
+    // page of your own, name exactly that origin here (`frameAncestors`); a game that
+    // can be framed anywhere is a clickjacking surface.
     `frame-ancestors ${frameAncestorsSource(frameAncestors)}`,
     // 'wasm-unsafe-eval' lets the SDK instantiate WebAssembly (the Rust
     // language worker and the player-mod runtime). It grants no JS eval.
@@ -127,8 +126,8 @@ export function buildDshCsp({ apiOrigins = [], extraConnectSrc = [], frameAncest
     "base-uri 'none'",
     "object-src 'none'",
     // 'self' (the game page frames the pane) PLUS whoever frames the game: frame-ancestors
-    // is checked against EVERY ancestor, so under the Crowdy Games shell the pane's
-    // ancestors are the game and the shell, and 'self' alone would refuse it.
+    // is checked against EVERY ancestor, so under a shell the pane's ancestors are the
+    // game and the shell, and 'self' alone would refuse it.
     `frame-ancestors 'self'${frameAncestors.length ? ` ${frameAncestorsSource(frameAncestors)}` : ''}`,
     "script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:",
     "style-src 'self' 'unsafe-inline'",

@@ -6,7 +6,7 @@
  *
  *   CONSTRUCT_EMAIL=... CONSTRUCT_PASSWORD=... APP_ID=<id> npm run seed
  */
-import { STARTER_TEMPLATES, commonFilesFor, programCommonFiles } from '../mods/templates/index.mjs';
+import { STARTER_TEMPLATES, commonFilesFor } from '../mods/templates/index.mjs';
 import {
   deployExec,
   ensureSelfClaimPolicy,
@@ -35,7 +35,7 @@ try {
   }
   await publishStarterFiles(
     game,
-    { appId, commonFiles: [...STARTER_TEMPLATES.flatMap(commonFilesFor), ...programCommonFiles()] },
+    { appId, commonFiles: STARTER_TEMPLATES.flatMap(commonFilesFor) },
     log,
   );
   console.log('\nSeed complete.');

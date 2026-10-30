@@ -55,7 +55,7 @@ test('dsh csp relaxes script-src for the worker and permits same-origin frame an
 });
 
 test('a framed game names exactly its framer; the DSH pane names the framer beside self', () => {
-  // The Crowdy Games shell (or a shell of your own) frames the game; frame-ancestors is
+  // A shell page of your own frames the game; frame-ancestors is
   // checked against EVERY ancestor, so the pane -- framed by the game, framed by the
   // shell -- must admit both, and the game page must admit only the shell.
   const framed = {

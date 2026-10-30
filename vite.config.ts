@@ -5,7 +5,11 @@ import { defineConfig, loadEnv } from 'vite';
 
 import { constructDevServerOptions, envFlag } from './scripts/lib/dev-server-options.mjs';
 import { sdkDefaultHttpOrigin } from './scripts/lib/sdk-default-origin.mjs';
-import { constructHeaderPlugins } from '@crowdedkingdoms/construct/node/vite-plugins';
+import { liveDraftPlugin } from '@crowdedkingdoms/construct/node/live-draft';
+import {
+  constructDraftPlugin,
+  constructHeaderPlugins,
+} from '@crowdedkingdoms/construct/node/vite-plugins';
 
 import {
   dshSecurityHeaders,
@@ -22,8 +26,7 @@ export default defineConfig(({ mode }) => {
   const apiOrigin = env.VITE_CROWDY_HTTP_URL?.trim() || sdkDefaultHttpOrigin(rootDir);
   // Who may FRAME this game. Empty (the default) means nobody: a self-hosted game is a
   // top-level page. The shell e2e (tests/e2e/shell.spec.ts) sets it to its fixture's
-  // origin; a fork that runs behind a shell of its own sets it to that origin. On
-  // Crowdy Games the platform's edge serves the equivalent and this is not read.
+  // origin; a fork that runs behind a shell of its own sets it to that origin.
   const frameAncestors = (env.CONSTRUCT_FRAME_ANCESTORS ?? '')
     .split(',')
     .map((s) => s.trim())
@@ -32,15 +35,22 @@ export default defineConfig(({ mode }) => {
   const dshHeaders = dshSecurityHeaders({ apiOrigins: [apiOrigin], frameAncestors });
 
   return {
-    plugins: constructHeaderPlugins({
-      dshHeaders,
-      gridProgramHeaders: gridProgramSecurityHeaders(),
-    }),
+    plugins: [
+      ...constructHeaderPlugins({
+        dshHeaders,
+        gridProgramHeaders: gridProgramSecurityHeaders(),
+      }),
+      // Crowdy Studio's game editor: the hosted preview (draft service worker and
+      // its host-module registry), and with LIVE_DRAFT=1 this checkout as the draft.
+      constructDraftPlugin(),
+      liveDraftPlugin({ enabled: env.LIVE_DRAFT === '1' }),
+    ],
     resolve: {
       alias: { '@': path.resolve(rootDir, 'src') },
     },
     server: {
       port: 5175,
+      strictPort: true,
       host: true,
       // Default: production isolation, no proxy. Local stacks opt in via
       // VITE_DEV_PROXY / VITE_DEV_ALLOWED_HOSTS / VITE_DEV_RELAX_ISOLATION.
@@ -51,6 +61,9 @@ export default defineConfig(({ mode }) => {
         relaxIsolation: envFlag(env, 'VITE_DEV_RELAX_ISOLATION'),
         proxyTarget: env.VITE_DEV_PROXY_TARGET?.trim(),
       }),
+      // A machine that is already out of inotify watches can still serve the
+      // game. Polling is opt-in so a normal checkout keeps native watches.
+      ...(env.VITE_DEV_POLL === '1' ? { watch: { usePolling: true, interval: 300 } } : {}),
     },
     preview: {
       headers,

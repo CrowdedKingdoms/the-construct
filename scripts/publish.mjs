@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 /**
+ * DORMANT. Crowdy Games was retired on 2026-10-29: Crowded Kingdoms no longer hosts
+ * games, the platform's hosting API answers CONTENT_HOSTING_DISABLED on every tier, and
+ * `npm run publish` is gone from package.json. Host `dist/` yourself (docs/HOSTING.md).
+ * What follows is how it worked.
+ *
  * Publish this game to Crowdy Games, from a shell -- the ONLY place it can run.
  *
  *   CONSTRUCT_EMAIL=you@example.com CONSTRUCT_PASSWORD=... \
