@@ -4,9 +4,9 @@
 //!
 //! The legacy SERVER template drew a felt box, sphere balls and a procedural-mesh cue as a
 //! construct.scene.v1 scene, sent as realtime server events, which a mod cannot send. This one
-//! builds the table once with `world.set_voxels` (at most 16 voxels a call, so in batches; it
-//! needs `update_voxel_data` on the grid, as a claim gives its owner) and moves the cue in whole
-//! blocks. The blocks stay in the chunk when the mod stops.
+//! builds the table once with `world.set_voxels` (at most `MAX_VOXEL_WRITES` voxels a call, so in
+//! batches; it needs `update_voxel_data` on the grid, as a claim gives its owner) and moves the
+//! cue in whole blocks. The blocks stay in the chunk when the mod stops.
 //!
 //! Endpoints: `state`.
 
@@ -17,14 +17,14 @@ const STROKE_MS: u64 = 1_000;
 /// Look again at who is here every this many strokes: world events can be lost.
 const LOOK_EVERY: u64 = 10;
 /// Voxel types from the holodeck's palette.
-const AIR: u16 = 0;
-const FELT: u16 = 1;
-const WOOD: u16 = 2;
-const WHITE: u16 = 3;
-const YELLOW: u16 = 7;
-const BLACK: u16 = 12;
+const AIR: i16 = 0;
+const FELT: i16 = 1;
+const WOOD: i16 = 2;
+const WHITE: i16 = 3;
+const YELLOW: i16 = 7;
+const BLACK: i16 = 12;
 
-type Voxel = ((i16, i16, i16), u16);
+type Voxel = ((i16, i16, i16), i16);
 
 #[derive(Serialize, Deserialize, Default, Debug, PartialEq)]
 pub struct Table {
@@ -182,7 +182,9 @@ mod tests {
     #[test]
     fn a_build_fits_the_voxel_limit_and_later_strokes_move_two_blocks() {
         let build = batches(ORIGIN, 1, false, false);
-        assert_eq!(build.iter().map(Vec::len).collect::<Vec<_>>(), [16, 9]);
+        assert_eq!(build.iter().map(Vec::len).sum::<usize>(), 25, "the table and the whole cue");
+        assert!(build.iter().all(|b| !b.is_empty() && b.len() <= MAX_VOXEL_WRITES));
+        assert_eq!(build.len(), 25usize.div_ceil(MAX_VOXEL_WRITES));
         assert!(build.iter().flatten().all(|w| w.chunk == ORIGIN && w.state.is_none()));
         assert_eq!(placed(&batches(ORIGIN, 1, true, false)[0]), cue(1));
         assert_eq!(placed(&batches(ORIGIN, 2, true, true)[0]), [((4, 2, 8), WOOD), ((6, 2, 8), AIR)]);
