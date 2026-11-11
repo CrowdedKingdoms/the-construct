@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased
+## 0.9.1 (2026-11-11)
+
+The SERVER starter mods build on the platform again.
+
+- `construct-spinning-child` and `construct-pool-cue` declared their voxel types as `u16`,
+  and `ckx_sdk::node::VoxelWrite::voxel_type` has been an `i16` since ckx-sdk 0.8.0, so an
+  unchanged starter failed `execModBuild` with `E0308 mismatched types`. Both palettes are
+  `i16` now. A copy you made of either crate needs the same change (four constants in the
+  spinning child, six and the `Voxel` alias in the pool cue).
+- The pool cue's test counts its batches from `MAX_VOXEL_WRITES` instead of assuming 16.
+- CI builds `exec/` (`cargo test`, `clippy`, the wasm32 release build) against the public
+  ckx-kit's `ckx-sdk` for the PR's tier, with that tier's Rust.
+
+## 0.9.0
 
 Starter 0.9.0 and `@crowdedkingdoms/construct` 0.4.1 and 0.4.2: you host the game.
 Crowded Kingdoms retired Crowdy Games on 2026-10-29 and no longer hosts games; the

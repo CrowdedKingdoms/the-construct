@@ -15,10 +15,10 @@ const STEP_MS: u64 = 1_000;
 /// Look again at who is here every this many steps: world events can be lost.
 const LOOK_EVERY: u64 = 10;
 /// Voxel types from the holodeck's palette.
-const AIR: u16 = 0;
-const WOOD: u16 = 2;
-const WHITE: u16 = 3;
-const PINK: u16 = 5;
+const AIR: i16 = 0;
+const WOOD: i16 = 2;
+const WHITE: i16 = 3;
+const PINK: i16 = 5;
 /// The post's foot and the hub the arm turns round, within the grid's low chunk.
 const POST: (i16, i16, i16) = (8, 0, 8);
 const HUB: (i16, i16, i16) = (8, 1, 8);
@@ -142,7 +142,7 @@ mod tests {
         Ctx { app: 7171, instance: 1, epoch: 1, version: 1, kind: Kind::Hub, node_type: "mod:spinner".into(), key: "5".into() }
     }
 
-    fn placed(writes: &[VoxelWrite]) -> Vec<((i16, i16, i16), u16)> {
+    fn placed(writes: &[VoxelWrite]) -> Vec<((i16, i16, i16), i16)> {
         writes.iter().map(|w| (w.voxel, w.voxel_type)).collect()
     }
 
