@@ -103,8 +103,13 @@ URL when there is none, which is what Crowdy Studio's Live code opens.
   SERVER starter mods under `mods/`. From `exec/`, `cargo test`,
   `cargo clippy --all-targets` (no warnings) and `cargo build --release
   --target wasm32-unknown-unknown` must pass when you touch it. They need a
-  ck-exec checkout beside this repository for `ckx-sdk`, which is not public,
-  so CI cannot run them; the platform's build replaces that dependency line.
+  ck-exec checkout beside this repository for `ckx-sdk`, or the public ckx-kit,
+  which carries the same crate at the same path. CI's `exec` job checks out
+  ckx-kit's branch for the PR's tier as `ck-exec` and runs all three with that
+  tier's Rust, so a crate the platform would refuse fails the PR (the SERVER
+  starters kept `u16` voxel types for a month after ckx-sdk 0.8.0 made them
+  `i16`, because nothing built them). The platform's build replaces that
+  dependency line.
 - `npm run build:exec-sources` after editing `model/catalog.mjs` or
   `exec/mods/`: it rewrites `exec/construct/src/catalog.rs` and
   `mods/templates/exec-mods.mjs`, and the unit tests (and every deploy) fail
