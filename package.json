@@ -37,20 +37,20 @@
     "@crowdedkingdoms/crowdyjs": "18.23.1-dev.1",
     "dompurify": "3.4.17",
     "pixi.js": "^8.22.0",
-    "three": "^0.186.1"
+    "three": "^0.187.0"
   },
   "devDependencies": {
     "@crowdedkingdoms/crowdy-dsh": "0.5.1-dev.1",
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.64.1",
+    "@playwright/test": "^1.65.0",
     "@types/node": "^20.19.0",
-    "@types/three": "^0.186.0",
-    "eslint": "^10.11.0",
+    "@types/three": "^0.187.0",
+    "eslint": "^10.14.0",
     "happy-dom": "^21.0.4",
     "prettier": "^3.9.10",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.71.2",
-    "vite": "^6.4.4",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^6.4.5",
     "vitest": "^4.1.12"
   },
   "workspaces": [
