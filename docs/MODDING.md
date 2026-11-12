@@ -92,12 +92,20 @@ module):
 
 - **Its grid, through the node API**: `ctx.grids().get` for its own grid,
   `ctx.world().chunk / voxels / actors / actors_near` inside the grid's
-  bounds, and `ctx.world().set_voxels` (up to 16 voxels a call) inside them
-  while its owner holds `update_voxel_data` there. The app's node API budget
-  is shared by every hub and mod: 200 reads and 50 voxel writes a second.
+  bounds, and `ctx.world().set_voxels` and `set_chunk` inside them while its
+  owner holds `update_voxel_data` there. Since Game API v2.68.1 a
+  `set_voxels` takes up to 4,096 voxels (16 before) and `set_chunk` replaces a
+  whole chunk, which nearby players are told to read again once; build a mod
+  that writes in bulk on `ckx-sdk` 0.14.1, because 0.14.0 runs out of a call's
+  fuel past about 750 writes. The app's node API budget is shared by every hub
+  and mod: 200 read and 50 write units a second on each Game API server, where
+  a `set_voxels` costs one unit per started 64 voxels.
 - **What happens in its grid**: `Hub::on_world` receives actors moving into or
-  out of a chunk (`actors`) and voxel changes (`voxels`). An actor arriving
-  starts a mod that is switched on but not running. Events can be lost.
+  out of a chunk (`actors`) and voxel changes (`voxels`), players' realtime
+  edits included (Game API v2.68.1 with replication servers v0.45.0). A mod
+  that is switched on starts when a player is in its grid: switched on with a
+  player already there, a player appearing there, or one walking in (Game API
+  v2.66.0); no call is needed. Events can be lost.
 - **Timers**: `ctx.timer_every` / `ctx.timer_after`, which run only while
   players are in the app — what automations did.
 - **Endpoints**: players standing in the grid call it by name,

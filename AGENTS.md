@@ -241,8 +241,16 @@ URL when there is none, which is what Crowdy Studio's Live code opens.
   `world.*` inside the grid's bounds, and `world.set_voxels` only while its
   owner holds `update_voxel_data` there. That is why the scene starters build
   with voxels, not construct.scene.v1 events.
-- Node API budget, shared by every hub and mod of an app: 200 reads and 50
-  voxel writes a second per ck-api replica.
+- Node API budget, shared by every hub and mod of an app: 200 read and 50
+  write units a second per ck-api replica. Since Game API v2.68.1 a
+  `set_voxels` (up to 4,096 voxels) costs one unit per started 64 voxels and
+  `world.set_chunk` replaces a whole chunk; a mod that writes in bulk needs
+  `ckx-sdk` 0.14.1 (0.14.0 runs out of a call's 20 million fuel past about
+  750 writes).
+- A switched-on mod starts when a player is in its grid (Game API v2.66.0),
+  and players' realtime voxel edits reach `on_world` (v2.68.1 with replication
+  servers v0.45.0). The 2026-11-11 workaround of calling a mod once after
+  switching it on is no longer needed.
 - The execution host's gateway is a `wss://` name under the tier's zone, which
   the CSP's zone wildcard already admits.
 
