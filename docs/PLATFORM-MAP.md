@@ -8,7 +8,7 @@ and its `AGENTS.md` carry the concept→API table this one extends.
 | Game concept | Platform surface | In this repo |
 | --- | --- | --- |
 | Accounts, sign-in | **Hosted**: `portal.signIn` → Studio `/authorize` → `portal.handleSignInCallback` — an app-scoped token, never a session. Pass `VITE_AUTHORIZE_URL` when the API origin is not a CK tier host. | `platform/auth/AuthService.ts`, `platform/network/NetworkManager.ts`, `ui/LoginForm.ts` |
-| Entering a game | `portal.mintAppToken(appId)` → app-scoped token + the app's endpoint | `platform/network/NetworkManager.ts#enterApp` |
+| Entering a game | The token from hosted sign-in names the app's endpoint (`gameApiUrl`), and the game client is built there; the browser never mints. Only the Node scripts mint, with a session (`portal.mintAppToken`). | `platform/network/NetworkManager.ts#enterApp`, `scripts/lib/cli.mjs` |
 | Org / app creation, tiers | `organizations.create`, `apps.create`, `appAccess.createTier` / `grant` | `platform/onboarding/steps.mjs` |
 | Version floor, UDP status | `serverStatus.gameClientBootstrap(appId)` | `NetworkManager#bootstrap` |
 | Presence & movement | World Stores `self` / `actors` over `udp.subscribe`; chunk-addressed fan-out | `platform/realtime/WorldStores.ts`, `engine/GameLoop.ts` |
