@@ -200,10 +200,10 @@ says it cannot edit the game repository.
 
 ## Free tier, plainly
 
-A new organization gets free apps on shared hosting (three by default) with
-monthly allowances per app (egress, ingress, compute hours, storage). Nothing
-here asks for a card. Sustained usage above the allowances bills the org
-wallet; a player's mods run on ck-exec and, on the dev preview, bill that
+An organization's apps on shared hosting share one free monthly allowance
+(egress, ingress, compute hours, storage, and module writes), and making more
+apps does not add to it. Nothing here asks for a card. Sustained usage above
+the allowance bills the org wallet; a player's mods run on ck-exec and, on the dev preview, bill that
 player's own wallet after a monthly trial. Crowdy Agent tokens are
 **platform-funded** on Crowded Kingdoms (this game never asks for an OpenRouter
 key). The HUD Wallet link is for the player's wallet, not the agent. Current
